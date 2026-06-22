@@ -913,7 +913,7 @@ A: As a temporary compatibility boundary for dependencies not yet annotated for 
 - Swift.org. "Enable data-race safety checking." Swift 6 Concurrency Migration Guide. https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/
 - Swift.org. "Using Upcoming Feature Flags." Swift.org Blog. https://swift.org/blog/using-upcoming-feature-flags/
 - Swift.org. "defaultIsolation(_:_:)." PackageDescription. https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/defaultisolation%28_%3A_%3A%29/
-- SwiftPM `swiftLanguageMode` documentation. TODO: verify source formatting
+- Swift.org. "SwiftLanguageMode." PackageDescription. https://docs.swift.org/swiftpm/documentation/packagedescription/swiftlanguagemode/
 - Swift.org. "strictMemorySafety(_:)." PackageDescription. https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/strictmemorysafety%28_%3A%29/
 - Apple Developer. "Xcode 16 Release Notes." Xcode Release Notes. https://developer.apple.com/documentation/xcode-release-notes/xcode-16-release-notes
 - Apple Developer. "Embracing Swift concurrency." WWDC25. https://developer.apple.com/videos/play/wwdc2025/268/

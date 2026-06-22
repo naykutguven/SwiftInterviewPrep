@@ -941,4 +941,4 @@ A: Debug assertions may expose an invariant violation that release removes. Remo
 - GitHub. "Cross-Module Inlining and Specialization." Swift Evolution SE-0193. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md
 - Swift.org. "Code Size Optimization Mode in Swift 4.1." Swift.org Blog. https://swift.org/blog/osize/
 - Apple Developer. "precondition(_:_:file:line:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/precondition%28_%3a_%3afile%3aline%3a%29
-- Apple Instruments documentation: performance/resource analysis and allocation tracking. TODO: verify source formatting
+- Apple Developer. "Profiling apps using Instruments." Apple Developer Documentation. https://developer.apple.com/tutorials/instruments

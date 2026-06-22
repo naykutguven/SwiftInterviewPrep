@@ -944,7 +944,7 @@ A: `deinit` does not run, the memory graph shows a strong reference path, often 
 - Apple Developer. "Using LLDB as a Standalone Debugger." LLDB Transition Guide. https://developer.apple.com/library/archive/documentation/IDEs/Conceptual/gdb_to_lldb_transition_guide/document/lldb-terminal-workflow-tutorial.html
 - Apple Developer. "What’s new in Xcode 26." WWDC25. https://developer.apple.com/videos/play/wwdc2025/247/
 - Apple Developer. "Task." Apple Developer Documentation. https://developer.apple.com/documentation/swift/task
-- Swift Evolution SE-0469 task names. TODO: verify source formatting
+- GitHub. "Task Naming." Swift Evolution SE-0469. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0469-task-names.md
 - Swift.org. "Calling an Actor-Isolated Method from a Synchronous Nonisolated Context." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/
-- Swift 6 concurrency migration guidance for non-`Sendable` data. TODO: verify source formatting
+- Swift.org. "Common Compiler Errors." Swift 6 Concurrency Migration Guide. https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/commonproblems/
 - Apple Developer. "Detect and diagnose memory issues." WWDC21. https://developer.apple.com/videos/play/wwdc2021/10180/

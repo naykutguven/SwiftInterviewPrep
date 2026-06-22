@@ -992,4 +992,3 @@ A: Do not expose C++ idioms broadly. Centralize interop, annotate or quarantine 
 - Swift.org. "Supported Features and Constraints of C++ Interoperability." Swift.org Documentation. https://swift.org/documentation/cxx-interop/status/
 - Swift.org. "Setting Up Mixed-Language Swift and C++ Projects." Swift.org Documentation. https://swift.org/documentation/cxx-interop/project-build-setup/
 - GitHub. "Using C++ from Swift." Swift Evolution Vision. https://github.com/swiftlang/swift-evolution/blob/main/visions/using-c%2B%2B-from-swift.md
-- Swift Evolution vision — "Memory Safety," C++ lifetime-safety affordances. TODO: verify source formatting

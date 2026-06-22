@@ -762,7 +762,7 @@ Use:
 only with a tracking note:
 
 ```swift
-// TODO(Swift6Migration): Remove once LegacySDK ships Sendable/global actor annotations.
+// Tracking note: remove once LegacySDK ships Sendable/global actor annotations.
 // Owner: Platform
 // Review date: 2026-08-01
 @preconcurrency import LegacySDK
