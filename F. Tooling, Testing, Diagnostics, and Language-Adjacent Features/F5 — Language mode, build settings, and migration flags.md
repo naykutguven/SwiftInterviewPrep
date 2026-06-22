@@ -57,7 +57,7 @@ Feature flags let you preview or migrate future behavior.
 Frameworks add their own isolation/import/generated-code behavior.
 ```
 
-Swift 6 language mode is the big semantic switch for data-race safety: the Swift migration guide says Swift 6 enables full data-race safety checking by default. ([Swift.org](https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/?utm_source=chatgpt.com "Enable data-race safety checking | Documentation")) But Swift 6.2 adds more knobs around approachability, especially default actor isolation and `nonisolated async` behavior. Swift 6.2 lets code be main-actor isolated by default, changes how `nonisolated async` can run, and introduces `@concurrent` to explicitly move work off an actor. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+Swift 6 language mode is the big semantic switch for data-race safety: the Swift migration guide says Swift 6 enables full data-race safety checking by default. ([Swift.org, "Enable data-race safety checking"](https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/)) But Swift 6.2 adds more knobs around approachability, especially default actor isolation and `nonisolated async` behavior. Swift 6.2 lets code be main-actor isolated by default, changes how `nonisolated async` can run, and introduces `@concurrent` to explicitly move work off an actor. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
 The staff-level skill is not “turn everything on.” It is knowing which targets should have which semantics. A UI-heavy app target may reasonably use default `MainActor` isolation. A general-purpose networking, parsing, crypto, SDK, or model package usually should not silently become main-actor isolated.
 
@@ -82,7 +82,7 @@ Toolchain: Swift 6.2 / Xcode 26
 Language mode: Swift 5 or Swift 6
 ```
 
-Using a newer compiler does not automatically mean every target is compiled under the newest language mode. Xcode 16 added support for the Swift 6 language mode while still supporting earlier Swift language modes. ([Apple Developer](https://developer.apple.com/documentation/xcode-release-notes/xcode-16-release-notes?utm_source=chatgpt.com "Xcode 16 Release Notes"))
+Using a newer compiler does not automatically mean every target is compiled under the newest language mode. Xcode 16 added support for the Swift 6 language mode while still supporting earlier Swift language modes. ([Apple Developer, "Xcode 16 Release Notes"](https://developer.apple.com/documentation/xcode-release-notes/xcode-16-release-notes))
 
 For SwiftPM, language mode can be set per target:
 
@@ -112,7 +112,7 @@ main-actor state used from background/concurrent code
 escaping closures/tasks that lose isolation assumptions
 ```
 
-In Swift 5 migration mode, these can appear as warnings. In Swift 6 language mode, many become errors because full data-race safety checking is enabled by default. ([Swift.org](https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/?utm_source=chatgpt.com "Enable data-race safety checking | Documentation"))
+In Swift 5 migration mode, these can appear as warnings. In Swift 6 language mode, many become errors because full data-race safety checking is enabled by default. ([Swift.org, "Enable data-race safety checking"](https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/))
 
 Bad:
 
@@ -154,7 +154,7 @@ The fix is not “silence Sendable.” The fix is choosing an ownership/isolatio
 
 ### 2.3 Default actor isolation changes inferred isolation
 
-Swift 6.2 adds a way for a module to infer unannotated declarations as isolated to a global actor, currently `MainActor.self`, or remain `nil`/nonisolated. The SwiftPM docs describe `defaultIsolation` and state that the default is nonisolated when unspecified; valid arguments are `MainActor.self` and `nil`. ([docs.swift.org](https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/defaultisolation%28_%3A_%3A%29/?utm_source=chatgpt.com "defaultIsolation(_:_:)"))
+Swift 6.2 adds a way for a module to infer unannotated declarations as isolated to a global actor, currently `MainActor.self`, or remain `nil`/nonisolated. The SwiftPM docs describe `defaultIsolation` and state that the default is nonisolated when unspecified; valid arguments are `MainActor.self` and `nil`. ([Swift.org, "defaultIsolation(_:_:)"](https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/defaultisolation%28_%3A_%3A%29/))
 
 UI-heavy module:
 
@@ -180,11 +180,11 @@ General-purpose library module:
 )
 ```
 
-Apple’s WWDC25 guidance says main-actor-by-default is driven by a build setting and should primarily be used for the main app module and UI-focused modules. It also says Approachable Concurrency is recommended broadly, while default actor isolation to `MainActor` is recommended for UI-focused modules. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2025/268/?time=853 "Embracing Swift concurrency - WWDC25 - Videos - Apple Developer"))
+Apple’s WWDC25 guidance says main-actor-by-default is driven by a build setting and should primarily be used for the main app module and UI-focused modules. It also says Approachable Concurrency is recommended broadly, while default actor isolation to `MainActor` is recommended for UI-focused modules. ([Apple Developer, "Embracing Swift concurrency"](https://developer.apple.com/videos/play/wwdc2025/268/))
 
 ### 2.4 `@concurrent` is an explicit escape hatch from actor execution
 
-Under Swift 6.2’s approachable concurrency model, code can remain on the caller’s actor unless you explicitly introduce concurrency. Swift 6.2 introduces `@concurrent` to say “this work should run concurrently/off actor.” ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+Under Swift 6.2’s approachable concurrency model, code can remain on the caller’s actor unless you explicitly introduce concurrency. Swift 6.2 introduces `@concurrent` to say “this work should run concurrently/off actor.” ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
 ```swift
 struct ImageDecoder {
@@ -199,7 +199,7 @@ Do not use `@concurrent` as a magical performance annotation. It changes isolati
 
 ### 2.5 Upcoming feature flags are migration tools
 
-Upcoming feature flags let you opt into future language behavior target by target. Swift added the generalized `-enable-upcoming-feature FeatureName` mechanism in Swift 5.8, and SwiftPM exposes this as `.enableUpcomingFeature(...)`. ([Swift.org](https://swift.org/blog/using-upcoming-feature-flags/ "Using Upcoming Feature Flags | Swift.org"))
+Upcoming feature flags let you opt into future language behavior target by target. Swift added the generalized `-enable-upcoming-feature FeatureName` mechanism in Swift 5.8, and SwiftPM exposes this as `.enableUpcomingFeature(...)`. ([Swift.org, "Using Upcoming Feature Flags"](https://swift.org/blog/using-upcoming-feature-flags/))
 
 ```swift
 .target(
@@ -226,7 +226,7 @@ Feature flags are most valuable when you want to measure migration cost before a
 
 ### 2.6 Warning groups and warning severity are migration controls
 
-Swift 6.2 added more precise warning control in SwiftPM, including warning groups and treating warnings as errors. The release notes show `.treatAllWarnings(as: .error)` and `.treatWarning("DeprecatedDeclaration", as: .warning)`. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+Swift 6.2 added more precise warning control in SwiftPM, including warning groups and treating warnings as errors. The release notes show `.treatAllWarnings(as: .error)` and `.treatWarning("DeprecatedDeclaration", as: .warning)`. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
 ```swift
 .target(
@@ -242,7 +242,7 @@ This is useful for preventing regression after a target is migrated. It is dange
 
 ### 2.7 Strict memory safety is not strict concurrency
 
-Strict memory safety is about unsafe memory constructs, not actor isolation. Swift 6.2 introduced opt-in strict memory safety to flag unsafe constructs so you can replace them with safe alternatives or explicitly acknowledge them. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org")) The SwiftPM documentation describes it as an opt-in compiler feature that identifies constructs or APIs that break memory safety and reports issues as warnings that can be acknowledged with unsafe annotations. ([docs.swift.org](https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/strictmemorysafety%28_%3A%29/?utm_source=chatgpt.com "strictMemorySafety(_:)"))
+Strict memory safety is about unsafe memory constructs, not actor isolation. Swift 6.2 introduced opt-in strict memory safety to flag unsafe constructs so you can replace them with safe alternatives or explicitly acknowledge them. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/)) The SwiftPM documentation describes it as an opt-in compiler feature that identifies constructs or APIs that break memory safety and reports issues as warnings that can be acknowledged with unsafe annotations. ([Swift.org, "strictMemorySafety(_:)"](https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/strictmemorysafety%28_%3A%29/))
 
 Example target:
 
@@ -301,7 +301,7 @@ Core parsing/networking/storage libraries: defaultIsolation(nil)
 Shared mutable state: actor, lock, value semantics, or explicit ownership model
 ```
 
-Main-actor-by-default can be appropriate for app and UI modules, but a general-purpose library should usually stay nonisolated and let clients choose where work runs. Apple’s WWDC25 guidance explicitly recommends nonisolated APIs for general-purpose libraries when clients should decide whether to offload work. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2025/268/?time=853 "Embracing Swift concurrency - WWDC25 - Videos - Apple Developer"))
+Main-actor-by-default can be appropriate for app and UI modules, but a general-purpose library should usually stay nonisolated and let clients choose where work runs. Apple’s WWDC25 guidance explicitly recommends nonisolated APIs for general-purpose libraries when clients should decide whether to offload work. ([Apple Developer, "Embracing Swift concurrency"](https://developer.apple.com/videos/play/wwdc2025/268/))
 
 ### Trap 3: “Strict concurrency and strict memory safety are the same kind of safety”
 
@@ -360,11 +360,11 @@ That is migration drift.
 
 ### Q1. What kinds of issues are surfaced by strict concurrency, default isolation, and strict memory safety, respectively?
 
-Strict concurrency surfaces data-race-safety issues: non-Sendable values crossing isolation boundaries, unsafe `@Sendable` captures, actor-isolation violations, global mutable state, and places where tasks/closures lose isolation assumptions. Swift 6 language mode enables full data-race safety checking by default. ([Swift.org](https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/?utm_source=chatgpt.com "Enable data-race safety checking | Documentation"))
+Strict concurrency surfaces data-race-safety issues: non-Sendable values crossing isolation boundaries, unsafe `@Sendable` captures, actor-isolation violations, global mutable state, and places where tasks/closures lose isolation assumptions. Swift 6 language mode enables full data-race safety checking by default. ([Swift.org, "Enable data-race safety checking"](https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/))
 
-Default isolation surfaces inference differences. It changes what unannotated declarations mean in a target. With `defaultIsolation(MainActor.self)`, unannotated code in that module is inferred as main-actor isolated. This can reduce UI boilerplate, but it can also reveal code that should be `nonisolated`, moved into a separate actor, or explicitly marked `@concurrent`. Swift 6.2 introduced this as part of approachable concurrency. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+Default isolation surfaces inference differences. It changes what unannotated declarations mean in a target. With `defaultIsolation(MainActor.self)`, unannotated code in that module is inferred as main-actor isolated. This can reduce UI boilerplate, but it can also reveal code that should be `nonisolated`, moved into a separate actor, or explicitly marked `@concurrent`. Swift 6.2 introduced this as part of approachable concurrency. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
-Strict memory safety surfaces unsafe memory boundaries: unsafe pointers, raw memory, unsafe imported APIs, and code that must be replaced with safe wrappers or explicitly acknowledged as unsafe. Swift 6.2 introduced it as opt-in because most projects do not need that level of enforcement. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+Strict memory safety surfaces unsafe memory boundaries: unsafe pointers, raw memory, unsafe imported APIs, and code that must be replaced with safe wrappers or explicitly acknowledged as unsafe. Swift 6.2 introduced it as opt-in because most projects do not need that level of enforcement. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
 Interview version:
 
@@ -908,9 +908,12 @@ A: As a temporary compatibility boundary for dependencies not yet annotated for 
 
 ## 12. Sources
 
-- Uploaded Swift Senior/Staff rubric, F5 section.
-- Swift.org — Swift 6.2 Released: approachable concurrency, default isolation, `@concurrent`, strict memory safety, warning control, and migration tooling. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
-- Swift.org — Swift 6 migration guide: Swift 6 language mode enables full data-race safety checking by default. ([Swift.org](https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/?utm_source=chatgpt.com "Enable data-race safety checking | Documentation"))
-- Swift.org — Using Upcoming Feature Flags: `-enable-upcoming-feature`, `hasFeature`, Xcode flags, and SwiftPM `.enableUpcomingFeature`. ([Swift.org](https://swift.org/blog/using-upcoming-feature-flags/ "Using Upcoming Feature Flags | Swift.org"))
-- SwiftPM PackageDescription docs/search snippets — `defaultIsolation`, `swiftLanguageMode`, and `strictMemorySafety`. ([docs.swift.org](https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/defaultisolation%28_%3A_%3A%29/?utm_source=chatgpt.com "defaultIsolation(_:_:)"))
-- Apple WWDC25 — Embracing Swift concurrency: main-actor-by-default guidance, `@concurrent`, nonisolated library guidance, and recommended app build settings. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2025/268/?time=853 "Embracing Swift concurrency - WWDC25 - Videos - Apple Developer"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — F5 section.
+- Swift.org. "Swift 6.2 Released." Swift.org Blog. https://swift.org/blog/swift-6.2-released/
+- Swift.org. "Enable data-race safety checking." Swift 6 Concurrency Migration Guide. https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/
+- Swift.org. "Using Upcoming Feature Flags." Swift.org Blog. https://swift.org/blog/using-upcoming-feature-flags/
+- Swift.org. "defaultIsolation(_:_:)." PackageDescription. https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/defaultisolation%28_%3A_%3A%29/
+- SwiftPM `swiftLanguageMode` documentation. TODO: verify source formatting
+- Swift.org. "strictMemorySafety(_:)." PackageDescription. https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/strictmemorysafety%28_%3A%29/
+- Apple Developer. "Xcode 16 Release Notes." Xcode Release Notes. https://developer.apple.com/documentation/xcode-release-notes/xcode-16-release-notes
+- Apple Developer. "Embracing Swift concurrency." WWDC25. https://developer.apple.com/videos/play/wwdc2025/268/

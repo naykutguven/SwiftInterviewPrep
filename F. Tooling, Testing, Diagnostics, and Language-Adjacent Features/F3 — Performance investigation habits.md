@@ -49,7 +49,7 @@ That budget includes your code, framework work, layout, rendering commits, image
 
 For Swift specifically, performance investigation requires separating language-level suspicion from measured cost. Protocol existentials, generics, ARC traffic, copy-on-write, dynamic dispatch, result builders, property wrappers, and SwiftUI body recomputation can matter. But they are rarely the first explanation by default. The question is not “is this abstraction theoretically slower?” The question is “does this abstraction show up in the trace, under real workload, in a release/profile build, on real hardware?”
 
-Apple’s own performance guidance points you toward matching the tool to the metric: Time Profiler for hangs/unresponsiveness, Allocations/Leaks for memory issues, Energy Log for power, and File Activity for I/O. ([Apple Developer](https://developer.apple.com/documentation/xcode/improving-your-app-s-performance?utm_source=chatgpt.com "Improving your app's performance")) For SwiftUI scroll performance, Apple recommends the SwiftUI profiling template, which combines View Body, View Properties, Core Animation Commits, and Time Profiler, and explicitly warns not to profile SwiftUI scrolling performance on the simulator. ([Apple Developer](https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks?utm_source=chatgpt.com "Creating performant scrollable stacks"))
+Apple’s own performance guidance points you toward matching the tool to the metric: Time Profiler for hangs/unresponsiveness, Allocations/Leaks for memory issues, Energy Log for power, and File Activity for I/O. ([Apple Developer, "Improving your app's performance"](https://developer.apple.com/documentation/xcode/improving-your-app-s-performance)) For SwiftUI scroll performance, Apple recommends the SwiftUI profiling template, which combines View Body, View Properties, Core Animation Commits, and Time Profiler, and explicitly warns not to profile SwiftUI scrolling performance on the simulator. ([Apple Developer, "Creating performant scrollable stacks"](https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks))
 
 The key idea:
 
@@ -113,7 +113,7 @@ For performance work, the scenario is part of the bug report. Without it, you ar
 
 ### 2.2 Add signposts around app-level operations
 
-Instruments shows system behavior, but your app needs semantic markers. Signposts let you mark important intervals and see them in Instruments. Apple documents `OSSignposter` as a way to record task durations using the unified logging system and view those intervals in the Instruments timeline. ([Apple Developer](https://developer.apple.com/documentation/os/ossignposter?utm_source=chatgpt.com "OSSignposter | Apple Developer Documentation"))
+Instruments shows system behavior, but your app needs semantic markers. Signposts let you mark important intervals and see them in Instruments. Apple documents `OSSignposter` as a way to record task durations using the unified logging system and view those intervals in the Instruments timeline. ([Apple Developer, "OSSignposter"](https://developer.apple.com/documentation/os/ossignposter))
 
 Minimal example:
 
@@ -185,7 +185,7 @@ Micro/regression benchmark:
     XCTest performance tests
 ```
 
-Apple’s Xcode performance guidance explicitly maps different issue types to different Instruments templates, such as Time Profiler for hangs and Allocations/Leaks for memory. ([Apple Developer](https://developer.apple.com/documentation/xcode/improving-your-app-s-performance?utm_source=chatgpt.com "Improving your app's performance")) Xcode 26 also adds newer analysis tools such as Processor Trace, SwiftUI view profiling, and Power Profiler according to Apple’s release notes. ([Apple Developer](https://developer.apple.com/documentation/xcode-release-notes/xcode-26-release-notes?utm_source=chatgpt.com "Xcode 26 Release Notes | Apple Developer Documentation"))
+Apple’s Xcode performance guidance explicitly maps different issue types to different Instruments templates, such as Time Profiler for hangs and Allocations/Leaks for memory. ([Apple Developer, "Improving your app's performance"](https://developer.apple.com/documentation/xcode/improving-your-app-s-performance)) Xcode 26 also adds newer analysis tools such as Processor Trace, SwiftUI view profiling, and Power Profiler according to Apple’s release notes. ([Apple Developer, "Xcode 26 Release Notes"](https://developer.apple.com/documentation/xcode-release-notes/xcode-26-release-notes))
 
 ---
 
@@ -212,7 +212,7 @@ final class FeedDiffPerformanceTests: XCTestCase {
 }
 ```
 
-Apple documents XCTest performance tests and `measure` APIs for recording metrics around blocks of code. ([Apple Developer](https://developer.apple.com/documentation/xcode/writing-and-running-performance-tests?utm_source=chatgpt.com "Writing and running performance tests"))
+Apple documents XCTest performance tests and `measure` APIs for recording metrics around blocks of code. ([Apple Developer, "Writing and running performance tests"](https://developer.apple.com/documentation/xcode/writing-and-running-performance-tests))
 
 A benchmark should not replace profiling. Profiling finds the bottleneck. Benchmarking protects the isolated fix from regressing.
 
@@ -259,7 +259,7 @@ Profile a Release/Profile build on real devices using representative data.
 Use simulator/debug only for initial reproduction, not final performance conclusions.
 ```
 
-Apple explicitly warns against profiling SwiftUI scroll performance using the iOS simulator. ([Apple Developer](https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks?utm_source=chatgpt.com "Creating performant scrollable stacks")) Debug builds also disable or reduce optimizations, so abstraction-heavy Swift can look far worse than it will in optimized builds.
+Apple explicitly warns against profiling SwiftUI scroll performance using the iOS simulator. ([Apple Developer, "Creating performant scrollable stacks"](https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks)) Debug builds also disable or reduce optimizations, so abstraction-heavy Swift can look far worse than it will in optimized builds.
 
 ---
 
@@ -695,7 +695,7 @@ UIKit screen:
 - Leaks if lifetime looks suspicious
 ```
 
-Apple specifically recommends the SwiftUI profiling template for scrollable stack performance, combining View Body, View Properties, Core Animation Commits, and Time Profiler. ([Apple Developer](https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks?utm_source=chatgpt.com "Creating performant scrollable stacks"))
+Apple specifically recommends the SwiftUI profiling template for scrollable stack performance, combining View Body, View Properties, Core Animation Commits, and Time Profiler. ([Apple Developer, "Creating performant scrollable stacks"](https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks))
 
 #### Step 4: Classify the hitch
 
@@ -950,7 +950,7 @@ Q: Why is profiling Debug builds misleading?
 A: Debug builds do not reflect optimized Swift performance; abstractions, generics, ARC, and inlining behavior can look very different from release/profile builds.
 
 Q: Why should scrolling performance be tested on real devices?  
-A: Simulator behavior does not reliably represent device CPU, GPU, memory, display, thermal behavior, or framework rendering cost. Apple specifically warns against simulator profiling for SwiftUI scroll performance. ([Apple Developer](https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks?utm_source=chatgpt.com "Creating performant scrollable stacks"))
+A: Simulator behavior does not reliably represent device CPU, GPU, memory, display, thermal behavior, or framework rendering cost. Apple specifically warns against simulator profiling for SwiftUI scroll performance. ([Apple Developer, "Creating performant scrollable stacks"](https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks))
 
 Q: What does Time Profiler answer?  
 A: Where CPU time is spent, including main-thread hot spots and expensive call stacks.
@@ -991,9 +991,9 @@ A: Users feel spikes. p95/p99 frame times and worst-frame hitches often matter m
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — F3 performance investigation habits, rubric questions, and exercise.
-- Apple Developer Documentation — Improving your app’s performance; maps issue types to relevant Instruments templates such as Time Profiler, Allocations/Leaks, Energy Log, and File Activity. ([Apple Developer](https://developer.apple.com/documentation/xcode/improving-your-app-s-performance?utm_source=chatgpt.com "Improving your app's performance"))
-- Apple Developer Documentation — Creating performant scrollable stacks; recommends the SwiftUI profiling template and real-device profiling for SwiftUI scroll performance. ([Apple Developer](https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks?utm_source=chatgpt.com "Creating performant scrollable stacks"))
-- Apple Developer Documentation — `OSSignposter`; signposted intervals can be recorded and visualized in Instruments. ([Apple Developer](https://developer.apple.com/documentation/os/ossignposter?utm_source=chatgpt.com "OSSignposter | Apple Developer Documentation"))
-- Apple Developer Documentation — Writing and running performance tests / XCTest performance metrics. ([Apple Developer](https://developer.apple.com/documentation/xcode/writing-and-running-performance-tests?utm_source=chatgpt.com "Writing and running performance tests"))
-- Apple Developer Documentation — Xcode 26 Release Notes; notes newer performance analysis instruments including SwiftUI view profiling, Processor Trace, and Power Profiler. ([Apple Developer](https://developer.apple.com/documentation/xcode-release-notes/xcode-26-release-notes?utm_source=chatgpt.com "Xcode 26 Release Notes | Apple Developer Documentation"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — F3 performance investigation habits, rubric questions, and exercise.
+- Apple Developer. "Improving your app's performance." Apple Developer Documentation. https://developer.apple.com/documentation/xcode/improving-your-app-s-performance
+- Apple Developer. "Creating performant scrollable stacks." Apple Developer Documentation. https://developer.apple.com/documentation/swiftui/creating-performant-scrollable-stacks
+- Apple Developer. "OSSignposter." Apple Developer Documentation. https://developer.apple.com/documentation/os/ossignposter
+- Apple Developer. "Writing and running performance tests." Apple Developer Documentation. https://developer.apple.com/documentation/xcode/writing-and-running-performance-tests
+- Apple Developer. "Xcode 26 Release Notes." Xcode Release Notes. https://developer.apple.com/documentation/xcode-release-notes/xcode-26-release-notes

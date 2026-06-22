@@ -34,11 +34,11 @@ Observation tools are convenient, but they do **not** suspend Swift’s normal r
 
 Observation and property wrappers are **syntax compression**, not semantic escape hatches.
 
-A property wrapper changes the storage/access pattern of a property. Swift synthesizes backing storage and computed accessors around `wrappedValue`; if the wrapper exposes `projectedValue`, the `$property` projection becomes available. SE-0258 defines wrappers as types marked with `@propertyWrapper` that must provide `wrappedValue`, and explains that applying a wrapper makes the source property computed while introducing synthesized storage. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+A property wrapper changes the storage/access pattern of a property. Swift synthesizes backing storage and computed accessors around `wrappedValue`; if the wrapper exposes `projectedValue`, the `$property` projection becomes available. SE-0258 defines wrappers as types marked with `@propertyWrapper` that must provide `wrappedValue`, and explains that applying a wrapper makes the source property computed while introducing synthesized storage. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
 
-`@Observable` is an attached macro. Apple’s docs describe `Observable()` as a macro that adds observation support and conforms a type to `Observable`; SwiftUI’s model-data guidance says the macro generates code at compile time. ([Apple Developer](https://developer.apple.com/documentation/observation/observable%28%29?utm_source=chatgpt.com "Observable() | Apple Developer Documentation"))
+`@Observable` is an attached macro. Apple’s docs describe `Observable()` as a macro that adds observation support and conforms a type to `Observable`; SwiftUI’s model-data guidance says the macro generates code at compile time. ([Apple Developer, "Observable()"](https://developer.apple.com/documentation/observation/observable%28%29))
 
-The important part is what the macro expands into. SE-0395 says `@Observable` synthesizes `Observable` conformance, an observation registrar, helper methods for tracking access/mutation, and transforms stored properties into tracked computed properties backed by underscored storage. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0395-observability.md "swift-evolution/proposals/0395-observability.md at main · swiftlang/swift-evolution · GitHub"))
+The important part is what the macro expands into. SE-0395 says `@Observable` synthesizes `Observable` conformance, an observation registrar, helper methods for tracking access/mutation, and transforms stored properties into tracked computed properties backed by underscored storage. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
 
 The key idea:
 
@@ -47,7 +47,7 @@ The key idea:
 they do not decide ownership, isolation, lifetime, or domain invariants for you.
 ```
 
-Observation tracks **property access** and invalidates dependents when accessed properties change. That is a very different model from “notify the whole world whenever anything changes.” SE-0395 describes `withObservationTracking` as capturing tracked-property accesses in a scope and calling `onChange` when one of those accessed properties changes. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0395-observability.md "swift-evolution/proposals/0395-observability.md at main · swiftlang/swift-evolution · GitHub"))
+Observation tracks **property access** and invalidates dependents when accessed properties change. That is a very different model from “notify the whole world whenever anything changes.” SE-0395 describes `withObservationTracking` as capturing tracked-property accesses in a scope and calling `onChange` when one of those accessed properties changes. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
 
 For iOS 18+ SwiftUI code, the default mental model should be:
 
@@ -113,7 +113,7 @@ final class SearchModel: Observable {
 }
 ```
 
-That is not exact public source code, but it is the right mental model. The proposal explicitly says the macro adds registrar storage, helper methods, and converts each stored property to a computed property with underscored ignored storage. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0395-observability.md "swift-evolution/proposals/0395-observability.md at main · swiftlang/swift-evolution · GitHub"))
+That is not exact public source code, but it is the right mental model. The proposal explicitly says the macro adds registrar storage, helper methods, and converts each stored property to a computed property with underscored ignored storage. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
 
 ### Mechanic 2: SwiftUI observes what the view reads
 
@@ -141,7 +141,7 @@ struct LibraryView: View {
 
 The view reads `library.filteredBooks`, and that computed property reads `books` and `searchText`. The dependency is therefore broader than it looks at the call site.
 
-SE-0395 explicitly states that computed properties deriving from stored properties are automatically tracked because they rely on tracked properties. It also says computed properties backed by remote storage or other indirection require manual tracking through generated access/mutation helpers. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0395-observability.md "swift-evolution/proposals/0395-observability.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0395 explicitly states that computed properties deriving from stored properties are automatically tracked because they rely on tracked properties. It also says computed properties backed by remote storage or other indirection require manual tracking through generated access/mutation helpers. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
 
 ### Mechanic 3: `@Bindable` creates bindings into an observable model; it does not own the model
 
@@ -164,7 +164,7 @@ struct BookEditor: View {
 }
 ```
 
-Apple’s `Bindable` documentation says it creates bindings to mutable properties of a data model object that conforms to `Observable`. ([Apple Developer](https://developer.apple.com/documentation/swiftui/bindable?utm_source=chatgpt.com "Bindable | Apple Developer Documentation"))
+Apple’s `Bindable` documentation says it creates bindings to mutable properties of a data model object that conforms to `Observable`. ([Apple Developer, "Bindable"](https://developer.apple.com/documentation/swiftui/bindable))
 
 That means:
 
@@ -186,7 +186,7 @@ struct SearchScreen: View {
 }
 ```
 
-Apple’s `State` documentation says `@State` can store observable objects created with the `Observable()` macro. ([Apple Developer](https://developer.apple.com/documentation/SwiftUI/State%28%29?utm_source=chatgpt.com "State() | Apple Developer Documentation"))
+Apple’s `State` documentation says `@State` can store observable objects created with the `Observable()` macro. ([Apple Developer, "State()"](https://developer.apple.com/documentation/SwiftUI/State%28%29))
 
 For iOS 18+ code, this is the normal replacement for many old `@StateObject` / `ObservableObject` patterns when using the new Observation framework.
 
@@ -206,7 +206,7 @@ final class SearchModel {
 
 Use this for implementation detail that should not trigger UI updates: tasks, caches, loggers, services, formatters, dependencies, locks, and other plumbing.
 
-Apple documents `ObservationIgnored()` as disabling observation tracking for a property. SE-0395 also explains that developers can apply it to stored properties that should not participate in tracking. ([Apple Developer](https://developer.apple.com/documentation/Observation/ObservationIgnored%28%29?utm_source=chatgpt.com "ObservationIgnored() | Apple Developer Documentation"))
+Apple documents `ObservationIgnored()` as disabling observation tracking for a property. SE-0395 also explains that developers can apply it to stored properties that should not participate in tracking. ([Apple Developer, "ObservationIgnored()"](https://developer.apple.com/documentation/Observation/ObservationIgnored%28%29))
 
 ---
 
@@ -374,7 +374,7 @@ The name suggests synchronization, but this wrapper does nothing thread-safe. Wo
 counter += 1
 ```
 
-because that can become a separate get and set. SE-0258’s historical notes explicitly call out that atomic property-wrapper examples can encourage races because useful atomic operations cannot be built from independent load/store wrappers. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+because that can become a separate get and set. SE-0258’s historical notes explicitly call out that atomic property-wrapper examples can encourage races because useful atomic operations cannot be built from independent load/store wrappers. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
 
 ---
 
@@ -432,7 +432,7 @@ final class Model {
 }
 ```
 
-But it changes the shape of the type. Stored properties become tracked computed properties with backing storage and registrar calls. SE-0395 also notes that changing a type to `@Observable` has the same ABI impact as changing a property from stored to computed, and removing `@Observable` removes a conformance, which is ABI breaking. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0395-observability.md "swift-evolution/proposals/0395-observability.md at main · swiftlang/swift-evolution · GitHub"))
+But it changes the shape of the type. Stored properties become tracked computed properties with backing storage and registrar calls. SE-0395 also notes that changing a type to `@Observable` has the same ABI impact as changing a property from stored to computed, and removing `@Observable` removes a conformance, which is ABI breaking. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
 
 Property wrappers are similar. A simple wrapper:
 
@@ -440,7 +440,7 @@ Property wrappers are similar. A simple wrapper:
 @Clamped var score = 120
 ```
 
-is not “a stored `Int` with decoration.” It is wrapper storage plus synthesized accessors around `wrappedValue`. SE-0258 explains that property wrappers introduce stored wrapper storage and make the source property computed. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+is not “a stored `Int` with decoration.” It is wrapper storage plus synthesized accessors around `wrappedValue`. SE-0258 explains that property wrappers introduce stored wrapper storage and make the source property computed. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
 
 Interview version:
 
@@ -965,12 +965,12 @@ A: Use it as a UI invalidation mechanism, not as an architecture. Keep source of
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — F6 expectation, caveats, questions, and exercise.
-- Apple Developer Documentation — Observation framework overview. ([Apple Developer](https://developer.apple.com/documentation/observation?utm_source=chatgpt.com "Observation | Apple Developer Documentation"))
-- Apple Developer Documentation — `Observable()` macro. ([Apple Developer](https://developer.apple.com/documentation/observation/observable%28%29?utm_source=chatgpt.com "Observable() | Apple Developer Documentation"))
-- Apple Developer Documentation — Managing model data in SwiftUI. ([Apple Developer](https://developer.apple.com/documentation/swiftui/managing-model-data-in-your-app?utm_source=chatgpt.com "Managing model data in your app"))
-- Apple Developer Documentation — `Bindable`. ([Apple Developer](https://developer.apple.com/documentation/swiftui/bindable?utm_source=chatgpt.com "Bindable | Apple Developer Documentation"))
-- Apple Developer Documentation — `State`. ([Apple Developer](https://developer.apple.com/documentation/SwiftUI/State%28%29?utm_source=chatgpt.com "State() | Apple Developer Documentation"))
-- Apple Developer Documentation — `ObservationIgnored()`. ([Apple Developer](https://developer.apple.com/documentation/Observation/ObservationIgnored%28%29?utm_source=chatgpt.com "ObservationIgnored() | Apple Developer Documentation"))
-- SE-0395 — Observation. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0395-observability.md "swift-evolution/proposals/0395-observability.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0258 — Property Wrappers. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — F6 expectation, caveats, questions, and exercise.
+- Apple Developer. "Observation." Apple Developer Documentation. https://developer.apple.com/documentation/observation
+- Apple Developer. "Observable()." Apple Developer Documentation. https://developer.apple.com/documentation/observation/observable%28%29
+- Apple Developer. "Managing model data in your app." Apple Developer Documentation. https://developer.apple.com/documentation/swiftui/managing-model-data-in-your-app
+- Apple Developer. "Bindable." Apple Developer Documentation. https://developer.apple.com/documentation/swiftui/bindable
+- Apple Developer. "State()." Apple Developer Documentation. https://developer.apple.com/documentation/SwiftUI/State%28%29
+- Apple Developer. "ObservationIgnored()." Apple Developer Documentation. https://developer.apple.com/documentation/Observation/ObservationIgnored%28%29
+- GitHub. "Observation." Swift Evolution SE-0395. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md
+- GitHub. "Property Wrappers." Swift Evolution SE-0258. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md

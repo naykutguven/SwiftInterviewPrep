@@ -182,7 +182,7 @@ Debugging approach:
 
 ### 2.3 LLDB basics: inspect state without changing the program first
 
-LLDB is Xcode’s debugger engine. The LLDB docs describe it as the debugger used by Xcode on macOS and Apple platform simulators/devices, and Apple’s LLDB guide shows the standard workflow of inspecting threads, backtraces, frames, variables, and expressions. ([lldb.llvm.org](https://lldb.llvm.org/ "LLDB"))
+LLDB is Xcode’s debugger engine. The LLDB docs describe it as the debugger used by Xcode on macOS and Apple platform simulators/devices, and Apple’s LLDB guide shows the standard workflow of inspecting threads, backtraces, frames, variables, and expressions. ([LLDB, "LLDB"](https://lldb.llvm.org/))
 
 Core commands:
 
@@ -219,9 +219,9 @@ Use `expr` when you intentionally need evaluation:
 
 ### 2.4 Async debugging: follow tasks, not just threads
 
-In Swift concurrency, “which thread am I on?” is often the wrong first question. Tasks can suspend and resume on different threads. Xcode 26 improves Swift concurrency debugging by following execution into asynchronous functions even across thread switches, showing task IDs, and displaying easier-to-read representations of tasks, task groups, and actors. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2025/247/ "What’s new in Xcode 26 - WWDC25 - Videos - Apple Developer"))
+In Swift concurrency, “which thread am I on?” is often the wrong first question. Tasks can suspend and resume on different threads. Xcode 26 improves Swift concurrency debugging by following execution into asynchronous functions even across thread switches, showing task IDs, and displaying easier-to-read representations of tasks, task groups, and actors. ([Apple Developer, "What’s new in Xcode 26"](https://developer.apple.com/videos/play/wwdc2025/247/))
 
-Modern Swift also supports named tasks. `Task.init(name:priority:operation:)` exists for creating named tasks, and Swift Evolution SE-0469 introduced task names specifically to help tools such as debuggers, profilers, and task dumpers identify asynchronous work. ([Apple Developer](https://developer.apple.com/documentation/swift/task?utm_source=chatgpt.com "Task | Apple Developer Documentation"))
+Modern Swift also supports named tasks. `Task.init(name:priority:operation:)` exists for creating named tasks, and Swift Evolution SE-0469 introduced task names specifically to help tools such as debuggers, profilers, and task dumpers identify asynchronous work. ([Apple Developer, "Task"](https://developer.apple.com/documentation/swift/task))
 
 Example:
 
@@ -270,7 +270,7 @@ Use the right tool for the suspected bug.
 |Stale-state bug|Logs, task IDs, breakpoints, sequence numbers|Old async result overwrites newer UI state|
 |Hang/deadlock|Backtraces, task context, locks/actors|Waiting cycle, blocked executor, actor reentrancy issue|
 
-Apple’s memory debugging material highlights retain cycles as a common Swift leak pattern and explains that closure captures can create strong reference cycles. Apple’s Xcode runtime diagnostics also include Thread Sanitizer for detecting race conditions. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2021/10180/?utm_source=chatgpt.com "Detect and diagnose memory issues - WWDC21 - Videos"))
+Apple’s memory debugging material highlights retain cycles as a common Swift leak pattern and explains that closure captures can create strong reference cycles. Apple’s Xcode runtime diagnostics also include Thread Sanitizer for detecting race conditions. ([Apple Developer, "Detect and diagnose memory issues"](https://developer.apple.com/videos/play/wwdc2021/10180/))
 
 ---
 
@@ -610,7 +610,7 @@ The diagnostic is not saying “classes are forbidden.” It is saying:
 A mutable, non-Sendable reference cannot safely cross this isolation boundary.
 ```
 
-Swift’s concurrency diagnostics document this general category: accessing actor-isolated state from outside the actor can create data races, and non-`Sendable` values generally cannot be safely shared across concurrency domains. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/?utm_source=chatgpt.com "Calling an actor-isolated method from a synchronous ..."))
+Swift’s concurrency diagnostics document this general category: accessing actor-isolated state from outside the actor can create data races, and non-`Sendable` values generally cannot be safely shared across concurrency domains. ([Swift.org, "Calling an Actor-Isolated Method from a Synchronous Nonisolated Context"](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/))
 
 ### Fix or redesign
 
@@ -939,10 +939,12 @@ A: `deinit` does not run, the memory graph shows a strong reference path, often 
 
 ## 12. Sources
 
-- Uploaded Swift Senior/Staff rubric, F2 section.
-- LLDB official documentation: LLDB is the default debugger in Xcode and supports Apple platform debugging. ([lldb.llvm.org](https://lldb.llvm.org/ "LLDB"))
-- Apple LLDB guide: `thread list`, `thread backtrace`, `thread backtrace all`, `frame variable`, and `expr` workflows. ([Apple Developer](https://developer.apple.com/library/archive/documentation/IDEs/Conceptual/gdb_to_lldb_transition_guide/document/lldb-terminal-workflow-tutorial.html "Using LLDB as a Standalone Debugger"))
-- Apple WWDC25 “What’s new in Xcode 26”: async stepping across thread switches, task IDs, and readable task/task-group/actor debugger representations. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2025/247/ "What’s new in Xcode 26 - WWDC25 - Videos - Apple Developer"))
-- Apple/Swift Task documentation and SE-0469 task names. ([Apple Developer](https://developer.apple.com/documentation/swift/task?utm_source=chatgpt.com "Task | Apple Developer Documentation"))
-- Swift compiler diagnostics for actor-isolated calls and Swift 6 concurrency migration guidance for non-`Sendable` data. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/?utm_source=chatgpt.com "Calling an actor-isolated method from a synchronous ..."))
-- Apple memory/debugging resources on retain cycles, closure contexts, Memory Graph Debugger, and Thread Sanitizer. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2021/10180/?utm_source=chatgpt.com "Detect and diagnose memory issues - WWDC21 - Videos"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — F2 section.
+- LLDB. "LLDB." LLDB Documentation. https://lldb.llvm.org/
+- Apple Developer. "Using LLDB as a Standalone Debugger." LLDB Transition Guide. https://developer.apple.com/library/archive/documentation/IDEs/Conceptual/gdb_to_lldb_transition_guide/document/lldb-terminal-workflow-tutorial.html
+- Apple Developer. "What’s new in Xcode 26." WWDC25. https://developer.apple.com/videos/play/wwdc2025/247/
+- Apple Developer. "Task." Apple Developer Documentation. https://developer.apple.com/documentation/swift/task
+- Swift Evolution SE-0469 task names. TODO: verify source formatting
+- Swift.org. "Calling an Actor-Isolated Method from a Synchronous Nonisolated Context." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/
+- Swift 6 concurrency migration guidance for non-`Sendable` data. TODO: verify source formatting
+- Apple Developer. "Detect and diagnose memory issues." WWDC21. https://developer.apple.com/videos/play/wwdc2021/10180/

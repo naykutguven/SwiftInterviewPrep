@@ -39,9 +39,9 @@ Testing modern Swift is not mainly about choosing XCTest versus Swift Testing. T
 
 For synchronous pure logic, tests can call a function and compare output. For async and concurrent code, the hard parts are different: time, task lifetime, cancellation, ordering, actor hops, stale results, and shared state. If those are hidden inside `Task {}`, `Task.sleep`, `DispatchQueue.main.asyncAfter`, singletons, or global mutable state, tests become timing guesses instead of correctness proofs.
 
-Swift Testing gives modern syntax with `@Test`, `#expect`, parameterized tests, and good integration with Swift Concurrency. Apple describes Swift Testing as a framework for Swift packages and Xcode projects, and its `#expect` API captures expression values to explain failures. Swift Testing tests also integrate with Swift Concurrency and run in parallel by default. ([Apple Developer](https://developer.apple.com/documentation/testing?utm_source=chatgpt.com "Swift Testing | Apple Developer Documentation"))
+Swift Testing gives modern syntax with `@Test`, `#expect`, parameterized tests, and good integration with Swift Concurrency. Apple describes Swift Testing as a framework for Swift packages and Xcode projects, and its `#expect` API captures expression values to explain failures. Swift Testing tests also integrate with Swift Concurrency and run in parallel by default. ([Apple Developer, "Swift Testing"](https://developer.apple.com/documentation/testing))
 
-XCTest is still relevant. It remains widely used in existing Apple-platform projects, supports UI tests, performance tests, test plans, expectations, and legacy asynchronous styles. Apple’s XCTest guidance says to use expectations when there is no Swift async alternative, such as Objective-C callbacks, delegate methods, completion handlers, or Combine-style futures/promises. ([Apple Developer](https://developer.apple.com/documentation/xctest/asynchronous-tests-and-expectations?utm_source=chatgpt.com "Asynchronous Tests and Expectations"))
+XCTest is still relevant. It remains widely used in existing Apple-platform projects, supports UI tests, performance tests, test plans, expectations, and legacy asynchronous styles. Apple’s XCTest guidance says to use expectations when there is no Swift async alternative, such as Objective-C callbacks, delegate methods, completion handlers, or Combine-style futures/promises. ([Apple Developer, "Asynchronous Tests and Expectations"](https://developer.apple.com/documentation/xctest/asynchronous-tests-and-expectations))
 
 The senior/staff-level move is to separate **business semantics** from **execution mechanics**. For example, a debounced search feature should expose rules like “only the latest query can publish results” and “previous in-flight work is cancelled” independently from wall-clock time or UIKit lifecycle details.
 
@@ -59,7 +59,7 @@ Swift guarantees that `await` marks a suspension point and that actor isolation 
 
 ### 2.1 Swift Testing: modern default for Swift-first unit tests
 
-Swift Testing uses ordinary Swift functions annotated with `@Test`. Assertions are written with `#expect` and can be used in async tests by marking the test function `async`. Apple’s async testing docs show the basic model: mark the test `async`, then `await` the asynchronous operation and assert normally. ([Apple Developer](https://developer.apple.com/documentation/testing/testing-asynchronous-code?utm_source=chatgpt.com "Testing asynchronous code"))
+Swift Testing uses ordinary Swift functions annotated with `@Test`. Assertions are written with `#expect` and can be used in async tests by marking the test function `async`. Apple’s async testing docs show the basic model: mark the test `async`, then `await` the asynchronous operation and assert normally. ([Apple Developer, "Testing asynchronous code"](https://developer.apple.com/documentation/testing/testing-asynchronous-code))
 
 ```swift
 import Testing
@@ -108,7 +108,7 @@ Tests assuming serial execution
 Tests depending on XCTest-only APIs
 ```
 
-Swift Testing runs tests in parallel by default. Apple’s WWDC material says this improves speed, but also means shared mutable state in tests becomes more dangerous; `.serialized` exists, but Apple recommends refactoring tests to run safely in parallel where possible. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2024/10195/?utm_source=chatgpt.com "Go further with Swift Testing - WWDC24 - Videos"))
+Swift Testing runs tests in parallel by default. Apple’s WWDC material says this improves speed, but also means shared mutable state in tests becomes more dangerous; `.serialized` exists, but Apple recommends refactoring tests to run safely in parallel where possible. ([Apple Developer, "Go further with Swift Testing"](https://developer.apple.com/videos/play/wwdc2024/10195/))
 
 ---
 
@@ -292,7 +292,7 @@ func fetchesUser() async throws {
 }
 ```
 
-For callback/event-style APIs, Swift Testing provides confirmations. Apple describes confirmations as a way to confirm that asynchronous events occur during a function invocation; by default a confirmation is expected once, and you can specify a different expected count. ([Apple Developer](https://developer.apple.com/documentation/testing/expectations?utm_source=chatgpt.com "Expectations and confirmations"))
+For callback/event-style APIs, Swift Testing provides confirmations. Apple describes confirmations as a way to confirm that asynchronous events occur during a function invocation; by default a confirmation is expected once, and you can specify a different expected count. ([Apple Developer, "Expectations and confirmations"](https://developer.apple.com/documentation/testing/expectations))
 
 Conceptually:
 
@@ -401,7 +401,7 @@ final class SearchService {
 }
 ```
 
-Tests now depend on global mutable state and can interfere with each other, especially when Swift Testing runs tests in parallel by default. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2024/10195/?utm_source=chatgpt.com "Go further with Swift Testing - WWDC24 - Videos"))
+Tests now depend on global mutable state and can interfere with each other, especially when Swift Testing runs tests in parallel by default. ([Apple Developer, "Go further with Swift Testing"](https://developer.apple.com/videos/play/wwdc2024/10195/))
 
 Better:
 
@@ -1314,7 +1314,7 @@ A: Actors prevent data races on isolated state, but `await` can allow interleavi
 
 Q: Why can Swift Testing expose bad tests after migration?
 
-A: Swift Testing runs tests in parallel by default, so tests that depend on shared mutable state or serial execution may become unreliable. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2024/10195/?utm_source=chatgpt.com "Go further with Swift Testing - WWDC24 - Videos"))
+A: Swift Testing runs tests in parallel by default, so tests that depend on shared mutable state or serial execution may become unreliable. ([Apple Developer, "Go further with Swift Testing"](https://developer.apple.com/videos/play/wwdc2024/10195/))
 
 Q: What is the right response when a feature is hard to test?
 
@@ -1342,10 +1342,10 @@ A: Empty-query suppression, debounce behavior, search triggering, cancellation, 
 
 ## 12. Sources
 
-- Uploaded Swift Senior/Staff rubric, F1 testing strategy section.
-- Apple Developer Documentation — Swift Testing overview: create and run tests for Swift packages and Xcode projects. ([Apple Developer](https://developer.apple.com/documentation/testing?utm_source=chatgpt.com "Swift Testing | Apple Developer Documentation"))
-- Apple Xcode — Swift Testing: `#expect`, parameterized tests, Swift Concurrency integration, and default parallel execution. ([Apple Developer](https://developer.apple.com/xcode/swift-testing/?utm_source=chatgpt.com "Swift Testing - Xcode"))
-- Apple Developer Documentation — Testing asynchronous code with Swift Testing. ([Apple Developer](https://developer.apple.com/documentation/testing/testing-asynchronous-code?utm_source=chatgpt.com "Testing asynchronous code"))
-- Apple Developer Documentation — XCTest asynchronous tests and expectations. ([Apple Developer](https://developer.apple.com/documentation/xctest/asynchronous-tests-and-expectations?utm_source=chatgpt.com "Asynchronous Tests and Expectations"))
-- Apple Developer Documentation — Swift Testing expectations and confirmations. ([Apple Developer](https://developer.apple.com/documentation/testing/expectations?utm_source=chatgpt.com "Expectations and confirmations"))
-- Apple WWDC24 — Go further with Swift Testing: default parallel execution, `.serialized`, async testing, and confirmations. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2024/10195/?utm_source=chatgpt.com "Go further with Swift Testing - WWDC24 - Videos"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — F1 testing strategy section.
+- Apple Developer. "Swift Testing." Apple Developer Documentation. https://developer.apple.com/documentation/testing
+- Apple Developer. "Swift Testing." Xcode. https://developer.apple.com/xcode/swift-testing/
+- Apple Developer. "Testing asynchronous code." Apple Developer Documentation. https://developer.apple.com/documentation/testing/testing-asynchronous-code
+- Apple Developer. "Asynchronous Tests and Expectations." Apple Developer Documentation. https://developer.apple.com/documentation/xctest/asynchronous-tests-and-expectations
+- Apple Developer. "Expectations and confirmations." Apple Developer Documentation. https://developer.apple.com/documentation/testing/expectations
+- Apple Developer. "Go further with Swift Testing." WWDC24. https://developer.apple.com/videos/play/wwdc2024/10195/

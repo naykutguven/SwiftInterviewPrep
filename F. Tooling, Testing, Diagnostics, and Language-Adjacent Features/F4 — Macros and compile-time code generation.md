@@ -32,9 +32,9 @@ Macros move complexity to compile time; they do **not** eliminate complexity.
 
 Swift macros are **compile-time source transformations**. You write a macro use site, the compiler asks a macro implementation to expand it, and the generated Swift source is compiled as if it had been written there. The important point is that macros are not runtime reflection, not dynamic dispatch, and not magic metadata. They are source-level generation integrated into the compiler pipeline.
 
-Swift has two broad macro families: **freestanding** macros and **attached** macros. Freestanding macros appear independently, using `#`, for example `#stringify(x + y)`. Attached macros are written with attribute syntax, using `@`, and attach to a declaration, for example `@Observable`, `@attached(member)`, or a custom `@Endpoint`. The Swift book describes this top-level distinction directly: freestanding macros stand on their own, while attached macros modify the declaration they are attached to. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/macros/?utm_source=chatgpt.com "Macros - Documentation | Swift.org"))
+Swift has two broad macro families: **freestanding** macros and **attached** macros. Freestanding macros appear independently, using `#`, for example `#stringify(x + y)`. Attached macros are written with attribute syntax, using `@`, and attach to a declaration, for example `@Observable`, `@attached(member)`, or a custom `@Endpoint`. The Swift book describes this top-level distinction directly: freestanding macros stand on their own, while attached macros modify the declaration they are attached to. ([Swift.org, "Macros"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/macros/))
 
-Swift’s macro model is intentionally **additive**. Apple’s documentation states that calling a macro adds new code alongside your code and does not modify or delete code already in the project. That matters because a macro should make generated behavior inspectable and predictable, not secretly rewrite arbitrary program semantics. ([Apple Developer](https://developer.apple.com/documentation/Swift/applying-macros?utm_source=chatgpt.com "Applying Macros | Apple Developer Documentation"))
+Swift’s macro model is intentionally **additive**. Apple’s documentation states that calling a macro adds new code alongside your code and does not modify or delete code already in the project. That matters because a macro should make generated behavior inspectable and predictable, not secretly rewrite arbitrary program semantics. ([Apple Developer, "Applying Macros"](https://developer.apple.com/documentation/Swift/applying-macros))
 
 Macros are best understood as an API-design tool for **repetitive, mechanical, syntactic boilerplate**. They are a bad fit for business rules, state machines, networking behavior, concurrency semantics, and domain decisions that need to remain obvious in review.
 
@@ -44,7 +44,7 @@ The key idea:
 Macro = compile-time source generation. Use it to remove mechanical repetition, not to hide design.
 ```
 
-Swift guarantees that macro uses participate in normal compilation: macro arguments and generated output are type-checked according to macro declarations and context. SE-0382 describes expression macros as source-to-source syntax transformations whose expanded syntax tree is type-checked against the macro result type. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0382-expression-macros.md "swift-evolution/proposals/0382-expression-macros.md at main · swiftlang/swift-evolution · GitHub"))
+Swift guarantees that macro uses participate in normal compilation: macro arguments and generated output are type-checked according to macro declarations and context. SE-0382 describes expression macros as source-to-source syntax transformations whose expanded syntax tree is type-checked against the macro result type. ([GitHub, "Expression Macros"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0382-expression-macros.md))
 
 Swift does **not** guarantee that a macro-heavy codebase is easier to understand, faster to build, easier to debug, or safer by default. Macros can emit diagnostics and reduce boilerplate, but they can also hide generated API surface, introduce confusing compile errors, and make builds depend on compiler-plugin infrastructure.
 
@@ -65,7 +65,7 @@ let result = #stringify(user.id + 1)
 let result = (user.id + 1, "user.id + 1")
 ```
 
-SE-0382 introduced expression macros as `#`-prefixed expressions that expand into expressions. The proposal also emphasizes that the expansion is syntactic source generation, then type-checked. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0382-expression-macros.md "swift-evolution/proposals/0382-expression-macros.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0382 introduced expression macros as `#`-prefixed expressions that expand into expressions. The proposal also emphasizes that the expansion is syntactic source generation, then type-checked. ([GitHub, "Expression Macros"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0382-expression-macros.md))
 
 Freestanding declaration macro example:
 
@@ -73,7 +73,7 @@ Freestanding declaration macro example:
 #warning("This API is temporary")
 ```
 
-SE-0397 generalized freestanding macros so `#`-prefixed macros can also generate declarations rather than values. Declaration macros can be used where a declaration is permitted and can produce zero or more declarations. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0397-freestanding-declaration-macros.md "swift-evolution/proposals/0397-freestanding-declaration-macros.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0397 generalized freestanding macros so `#`-prefixed macros can also generate declarations rather than values. Declaration macros can be used where a declaration is permitted and can produce zero or more declarations. ([GitHub, "Freestanding Declaration Macros"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0397-freestanding-declaration-macros.md))
 
 Use freestanding macros when the generated code belongs **at the use site** rather than to an existing declaration.
 
@@ -110,7 +110,7 @@ extension GetUserRequest: Endpoint {
 }
 ```
 
-Attached macros were introduced by SE-0389. The proposal describes them as a way to create and extend declarations through syntactic transformations, including generating members, accessors, wrapper functions, attributes, and conformances. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0389-attached-macros.md "swift-evolution/proposals/0389-attached-macros.md at main · swiftlang/swift-evolution · GitHub"))
+Attached macros were introduced by SE-0389. The proposal describes them as a way to create and extend declarations through syntactic transformations, including generating members, accessors, wrapper functions, attributes, and conformances. ([GitHub, "Attached Macros"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0389-attached-macros.md))
 
 Use attached macros when the generated code is naturally derived from a declaration’s shape.
 
@@ -138,7 +138,7 @@ This is why good macros usually have small, predictable expansions. A macro that
 
 ### Macro package support
 
-Custom macros are distributed through Swift packages. SE-0394 added package manager support for custom macros and introduced a macro target type. Macro implementations are built as host executables, and the compiler runs them on demand during compilation. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0394-swiftpm-expression-macros.md "swift-evolution/proposals/0394-swiftpm-expression-macros.md at main · swiftlang/swift-evolution · GitHub"))
+Custom macros are distributed through Swift packages. SE-0394 added package manager support for custom macros and introduced a macro target type. Macro implementations are built as host executables, and the compiler runs them on demand during compilation. ([GitHub, "Package Manager Support for Custom Macros"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0394-swiftpm-expression-macros.md))
 
 Typical package shape:
 
@@ -376,7 +376,7 @@ Interview version:
 
 Macro-heavy codebases can become harder because the source you read is not the full source the compiler sees. Generated declarations affect overload resolution, conformances, diagnostics, and autocomplete. When an error appears inside generated code, the developer often has to inspect an expansion rather than the original source.
 
-Builds can also become heavier because macro implementations are compiler plugins. SE-0394 describes macro implementations as external programs built for the host and run by the compiler during compilation. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0394-swiftpm-expression-macros.md "swift-evolution/proposals/0394-swiftpm-expression-macros.md at main · swiftlang/swift-evolution · GitHub")) SE-0382 also notes that syntactic expansions are re-parsed and re-type-checked, which adds compile-time overhead. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0382-expression-macros.md "swift-evolution/proposals/0382-expression-macros.md at main · swiftlang/swift-evolution · GitHub"))
+Builds can also become heavier because macro implementations are compiler plugins. SE-0394 describes macro implementations as external programs built for the host and run by the compiler during compilation. ([GitHub, "Package Manager Support for Custom Macros"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0394-swiftpm-expression-macros.md)) SE-0382 also notes that syntactic expansions are re-parsed and re-type-checked, which adds compile-time overhead. ([GitHub, "Expression Macros"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0382-expression-macros.md))
 
 Reasoning cost increases when macros generate large API surfaces, hide side effects, or encode conventions that are not obvious at the use site.
 
@@ -426,7 +426,7 @@ Expansion:
 Then normal Swift type-checking and execution happen.
 ```
 
-This is a good macro shape because the expansion is small, local, and easy to understand. SE-0382 uses this kind of example to describe expression macros. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0382-expression-macros.md "swift-evolution/proposals/0382-expression-macros.md at main · swiftlang/swift-evolution · GitHub"))
+This is a good macro shape because the expansion is small, local, and easy to understand. SE-0382 uses this kind of example to describe expression macros. ([GitHub, "Expression Macros"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0382-expression-macros.md))
 
 ---
 
@@ -873,10 +873,10 @@ A: When many endpoints share repetitive mechanical conformance code and the macr
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — F4 macro expectations, questions, and exercise.
-- Swift Book — Macros chapter: freestanding vs attached macros. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/macros/?utm_source=chatgpt.com "Macros - Documentation | Swift.org"))
-- Apple Developer Documentation — Applying Macros and additive expansion model. ([Apple Developer](https://developer.apple.com/documentation/Swift/applying-macros?utm_source=chatgpt.com "Applying Macros | Apple Developer Documentation"))
-- SE-0382 — Expression Macros. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0382-expression-macros.md "swift-evolution/proposals/0382-expression-macros.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0389 — Attached Macros. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0389-attached-macros.md "swift-evolution/proposals/0389-attached-macros.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0394 — Package Manager Support for Custom Macros. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0394-swiftpm-expression-macros.md "swift-evolution/proposals/0394-swiftpm-expression-macros.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0397 — Freestanding Declaration Macros. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0397-freestanding-declaration-macros.md "swift-evolution/proposals/0397-freestanding-declaration-macros.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — F4 macro expectations, questions, and exercise.
+- Swift.org. "Macros." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/macros/
+- Apple Developer. "Applying Macros." Apple Developer Documentation. https://developer.apple.com/documentation/Swift/applying-macros
+- GitHub. "Expression Macros." Swift Evolution SE-0382. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0382-expression-macros.md
+- GitHub. "Attached Macros." Swift Evolution SE-0389. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0389-attached-macros.md
+- GitHub. "Package Manager Support for Custom Macros." Swift Evolution SE-0394. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0394-swiftpm-expression-macros.md
+- GitHub. "Freestanding Declaration Macros." Swift Evolution SE-0397. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0397-freestanding-declaration-macros.md
