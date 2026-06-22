@@ -51,9 +51,9 @@ The key distinction:
 dynamic = force Objective-C runtime dispatch for that declaration
 ```
 
-`@objc` makes a declaration visible to Objective-C when it can be represented there. Swift’s reference manual says `@objc` applies only to declarations representable in Objective-C, such as nonnested classes, protocols, nongeneric integer-backed enums, class/protocol methods and properties, initializers, and subscripts. It also notes that the compiler can infer `@objc` in cases such as overriding Objective-C declarations, satisfying `@objc` protocol requirements, and Interface Builder annotations like `IBAction`/`IBOutlet`. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/ReferenceManual/Attributes.md "raw.githubusercontent.com"))
+`@objc` makes a declaration visible to Objective-C when it can be represented there. Swift’s reference manual says `@objc` applies only to declarations representable in Objective-C, such as nonnested classes, protocols, nongeneric integer-backed enums, class/protocol methods and properties, initializers, and subscripts. It also notes that the compiler can infer `@objc` in cases such as overriding Objective-C declarations, satisfying `@objc` protocol requirements, and Interface Builder annotations like `IBAction`/`IBOutlet`. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
 
-`dynamic` goes further: it forces access through Objective-C runtime dispatch, meaning the compiler must not inline or devirtualize the access. Swift’s reference manual explicitly says `dynamic` members are always dynamically dispatched through the Objective-C runtime and therefore must also be `@objc`. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/ReferenceManual/Declarations.md "raw.githubusercontent.com"))
+`dynamic` goes further: it forces access through Objective-C runtime dispatch, meaning the compiler must not inline or devirtualize the access. Swift’s reference manual explicitly says `dynamic` members are always dynamically dispatched through the Objective-C runtime and therefore must also be `@objc`. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
 
 Use Objective-C interop deliberately. It is necessary for UIKit/AppKit target-action, Interface Builder, some delegate patterns, KVC/KVO, runtime reflection, old SDK surfaces, mixed Swift/Objective-C codebases, and SDKs that must serve Objective-C clients. It is not a general-purpose API design style for new Swift-only code.
 
@@ -91,7 +91,7 @@ A selector names an Objective-C runtime method.
 Swift-only private methods are not selector-addressable unless exposed to ObjC.
 ```
 
-`@objc(SomeName)` can also control the Objective-C name and runtime name. Swift’s reference manual notes that the `@objc` attribute accepts a name argument, and that this name is used both in Objective-C code and as the runtime name for APIs like `NSClassFromString`. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/ReferenceManual/Attributes.md "raw.githubusercontent.com"))
+`@objc(SomeName)` can also control the Objective-C name and runtime name. Swift’s reference manual notes that the `@objc` attribute accepts a name argument, and that this name is used both in Objective-C code and as the runtime name for APIs like `NSClassFromString`. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
 
 Example:
 
@@ -160,7 +160,7 @@ public final class LegacyUser: NSObject {
 }
 ```
 
-Use this sparingly. Swift’s reference manual says most code should use `@objc` directly and expose only what is needed; `@objcMembers` is mainly a convenience for libraries that heavily use Objective-C runtime introspection, and unnecessary `@objc` exposure can increase binary size and hurt performance. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/ReferenceManual/Attributes.md "raw.githubusercontent.com"))
+Use this sparingly. Swift’s reference manual says most code should use `@objc` directly and expose only what is needed; `@objcMembers` is mainly a convenience for libraries that heavily use Objective-C runtime introspection, and unnecessary `@objc` exposure can increase binary size and hurt performance. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
 
 Better default:
 
@@ -194,7 +194,7 @@ final class FormatterBridge: NSObject {
 }
 ```
 
-Swift’s reference manual describes `@nonobjc` as a way to suppress an implicit `@objc` attribute and make a declaration unavailable to Objective-C even if it could otherwise be represented there. It is also useful for resolving overload/circularity issues in `@objc` classes. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/ReferenceManual/Attributes.md "raw.githubusercontent.com"))
+Swift’s reference manual describes `@nonobjc` as a way to suppress an implicit `@objc` attribute and make a declaration unavailable to Objective-C even if it could otherwise be represented there. It is also useful for resolving overload/circularity issues in `@objc` classes. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
 
 ### `NSError` bridging
 
@@ -214,7 +214,7 @@ Swift import:
 func replaceItem(at url: URL, options: ReplacingOptions = []) throws -> URL
 ```
 
-Swift Evolution SE-0112 describes this direct interoperability: Objective-C methods with `NSError **` parameters import as throwing Swift methods, and Swift `Error`-conforming values bridge to `NSError`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/master/proposals/0112-nserror-bridging.md "swift-evolution/proposals/0112-nserror-bridging.md at main · swiftlang/swift-evolution · GitHub"))
+Swift Evolution SE-0112 describes this direct interoperability: Objective-C methods with `NSError **` parameters import as throwing Swift methods, and Swift `Error`-conforming values bridge to `NSError`. ([GitHub, "Improved NSError Bridging"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0112-nserror-bridging.md))
 
 For Swift errors that must cross Objective-C boundaries, prefer:
 
@@ -246,7 +246,7 @@ This preserves an Objective-C-friendly domain/code/userInfo shape while keeping 
 
 ### Objective-C completion handlers and Swift concurrency
 
-Objective-C does not have Swift’s native `async`/`await` language model, but Swift has interop rules for completion-handler APIs. SE-0297 says Objective-C completion-handler methods can be translated into Swift `async` methods, and Swift `async @objc` methods can be exported to Objective-C as completion-handler methods. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md "swift-evolution/proposals/0297-concurrency-objc.md at main · swiftlang/swift-evolution · GitHub"))
+Objective-C does not have Swift’s native `async`/`await` language model, but Swift has interop rules for completion-handler APIs. SE-0297 says Objective-C completion-handler methods can be translated into Swift `async` methods, and Swift `async @objc` methods can be exported to Objective-C as completion-handler methods. ([GitHub, "Concurrency Interoperability with Objective-C"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md))
 
 Swift:
 
@@ -264,7 +264,7 @@ Objective-C sees a completion-handler-shaped method roughly like:
            completionHandler:(void (^)(NSInteger result))completionHandler;
 ```
 
-For `async throws`, Objective-C completion handlers receive an `NSError *` parameter. SE-0297 also states that the synthesized Objective-C implementation creates a detached task to call the Swift async method and forward the result to the completion handler. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md "swift-evolution/proposals/0297-concurrency-objc.md at main · swiftlang/swift-evolution · GitHub"))
+For `async throws`, Objective-C completion handlers receive an `NSError *` parameter. SE-0297 also states that the synthesized Objective-C implementation creates a detached task to call the Swift async method and forward the result to the completion handler. ([GitHub, "Concurrency Interoperability with Objective-C"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md))
 
 Production caveat: this bridge is useful, but it is not a full Objective-C model of Swift structured concurrency. Be careful with cancellation, actor isolation, Sendable assumptions, and callback threading.
 
@@ -1121,8 +1121,8 @@ A: Keep a Swift-native core and expose a narrow Objective-C adapter layer.
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, section E1: Objective-C interoperability.
-- Swift Reference Manual — `@objc`, `@objcMembers`, `@nonobjc`, Interface Builder attributes, and Objective-C representability rules. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/ReferenceManual/Attributes.md "raw.githubusercontent.com"))
-- Swift Reference Manual — `dynamic` declaration modifier and Objective-C runtime dispatch. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/ReferenceManual/Declarations.md "raw.githubusercontent.com"))
-- Swift Evolution SE-0112 — improved `NSError` bridging. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/master/proposals/0112-nserror-bridging.md "swift-evolution/proposals/0112-nserror-bridging.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0297 — concurrency interoperability with Objective-C. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md "swift-evolution/proposals/0297-concurrency-objc.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E1 — Objective-C interoperability.
+- Swift.org. "Attributes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/
+- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/
+- GitHub. "Improved NSError Bridging." Swift Evolution SE-0112. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0112-nserror-bridging.md
+- GitHub. "Concurrency Interoperability with Objective-C." Swift Evolution SE-0297. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md

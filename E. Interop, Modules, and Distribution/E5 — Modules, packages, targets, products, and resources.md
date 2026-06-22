@@ -42,11 +42,11 @@ Package
       └─ Resources
 ```
 
-A **package** is the distribution and dependency-resolution unit. It has a `Package.swift` manifest, declares supported platforms, package dependencies, products, targets, resources, and build settings. The `PackageDescription` library is what you use in `Package.swift` to configure these details. ([Swift Belgeleri](https://docs.swift.org/swiftpm/documentation/packagedescription/?utm_source=chatgpt.com "PackageDescription | Documentation"))
+A **package** is the distribution and dependency-resolution unit. It has a `Package.swift` manifest, declares supported platforms, package dependencies, products, targets, resources, and build settings. The `PackageDescription` library is what you use in `Package.swift` to configure these details. ([Swift.org, "PackageDescription"](https://docs.swift.org/swiftpm/documentation/packagedescription/))
 
-A **target** is the basic build boundary. SwiftPM compiles each target’s source files into a module or test suite; a target may depend on other targets in the same package and on products vended by external package dependencies. ([Swift Belgeleri](https://docs.swift.org/swiftpm/documentation/packagedescription/target/?utm_source=chatgpt.com "Target | Documentation"))
+A **target** is the basic build boundary. SwiftPM compiles each target’s source files into a module or test suite; a target may depend on other targets in the same package and on products vended by external package dependencies. ([Swift.org, "Target"](https://docs.swift.org/swiftpm/documentation/packagedescription/target/))
 
-A **product** is the vendable API surface of the package. It is how clients consume the package. A library product is created to let clients that declare a dependency on the package use the package’s functionality, and it is made from one or more targets. ([Swift Belgeleri](https://docs.swift.org/swiftpm/documentation/packagedescription/product/library%28name%3Atype%3Atargets%3A%29/?utm_source=chatgpt.com "library(name:type:targets:)"))
+A **product** is the vendable API surface of the package. It is how clients consume the package. A library product is created to let clients that declare a dependency on the package use the package’s functionality, and it is made from one or more targets. ([Swift.org, "library(name:type:targets:)"](https://docs.swift.org/swiftpm/documentation/packagedescription/product/library%28name%3Atype%3Atargets%3A%29/))
 
 The key idea:
 
@@ -58,7 +58,7 @@ Resources belong to the target whose code owns their runtime meaning.
 
 This distinction matters because a target can exist only for internal package structure without becoming a public product. That is how you keep implementation helpers, adapters, generated code, mocks, fixtures, and test support out of the external API surface.
 
-Swift 5.9 added the `package` access level, which lets modules in the same package share APIs without making them public to external clients. SwiftPM automatically configures this for packages. This is especially useful when splitting a large module into smaller targets without turning internal seams into public API. ([Swift.org](https://swift.org/blog/swift-5.9-released/ "Swift 5.9 Released | Swift.org"))
+Swift 5.9 added the `package` access level, which lets modules in the same package share APIs without making them public to external clients. SwiftPM automatically configures this for packages. This is especially useful when splitting a large module into smaller targets without turning internal seams into public API. ([Swift.org, "Swift 5.9 Released"](https://swift.org/blog/swift-5.9-released/))
 
 ---
 
@@ -224,7 +224,7 @@ This turns internal decomposition into external API.
 
 ### 2.4 Resources are target-scoped
 
-SwiftPM resources are intentionally scoped to targets. SE-0271 says resources are part of a target just like source files, and SwiftPM generates `Bundle.module` for each module that has resources. ([GitHub](https://github.com/apple/swift-evolution/blob/master/proposals/0271-package-manager-resources.md "swift-evolution/proposals/0271-package-manager-resources.md at main · swiftlang/swift-evolution · GitHub"))
+SwiftPM resources are intentionally scoped to targets. SE-0271 says resources are part of a target just like source files, and SwiftPM generates `Bundle.module` for each module that has resources. ([GitHub, "Package Manager Resources"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0271-package-manager-resources.md))
 
 ```swift
 .target(
@@ -436,7 +436,7 @@ Split around meaningful ownership and dependency boundaries, not around every fi
 
 A **target** is a build/module/test boundary. A **product** is what the package vends to external clients.
 
-A target contains source files, resources, dependencies, and build settings. SwiftPM compiles targets into modules or test suites. A product groups one or more targets into something clients can depend on, such as a library product. ([Swift Belgeleri](https://docs.swift.org/swiftpm/documentation/packagedescription/target/?utm_source=chatgpt.com "Target | Documentation"))
+A target contains source files, resources, dependencies, and build settings. SwiftPM compiles targets into modules or test suites. A product groups one or more targets into something clients can depend on, such as a library product. ([Swift.org, "Target"](https://docs.swift.org/swiftpm/documentation/packagedescription/target/))
 
 Interview version:
 
@@ -444,7 +444,7 @@ Interview version:
 
 ### Q2. Why should resources be scoped deliberately to the target that owns them?
 
-Because resources are runtime dependencies of the code that interprets them. SwiftPM’s resource model scopes resources to targets and generates `Bundle.module` for modules with resources, so package code should not assume resources live in the main bundle or in the same physical bundle as compiled code. ([GitHub](https://github.com/apple/swift-evolution/blob/master/proposals/0271-package-manager-resources.md "swift-evolution/proposals/0271-package-manager-resources.md at main · swiftlang/swift-evolution · GitHub"))
+Because resources are runtime dependencies of the code that interprets them. SwiftPM’s resource model scopes resources to targets and generates `Bundle.module` for modules with resources, so package code should not assume resources live in the main bundle or in the same physical bundle as compiled code. ([GitHub, "Package Manager Resources"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0271-package-manager-resources.md))
 
 If resources are placed in the wrong target, you get hidden coupling:
 
@@ -1015,10 +1015,10 @@ A: Dependency cycles, public APIs created only to cross target boundaries, or co
 
 ## 12. Sources
 
-- Uploaded rubric: E5 expectation, caveats, questions, and exercise.
-- Swift Package Manager documentation: SwiftPM organizes, manages, builds, tests, documents, and runs packages. ([Swift Belgeleri](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/?utm_source=chatgpt.com "Swift Package Manager | Documentation"))
-- PackageDescription documentation: `Package.swift` manifest configuration. ([Swift Belgeleri](https://docs.swift.org/swiftpm/documentation/packagedescription/?utm_source=chatgpt.com "PackageDescription | Documentation"))
-- SwiftPM `Target` documentation: targets compile sources into modules or test suites and may depend on other targets or external products. ([Swift Belgeleri](https://docs.swift.org/swiftpm/documentation/packagedescription/target/?utm_source=chatgpt.com "Target | Documentation"))
-- SwiftPM `Product.library` documentation: library products let clients use package functionality. ([Swift Belgeleri](https://docs.swift.org/swiftpm/documentation/packagedescription/product/library%28name%3Atype%3Atargets%3A%29/?utm_source=chatgpt.com "library(name:type:targets:)"))
-- SE-0271 Package Manager Resources: target-scoped resources and `Bundle.module`. ([GitHub](https://github.com/apple/swift-evolution/blob/master/proposals/0271-package-manager-resources.md "swift-evolution/proposals/0271-package-manager-resources.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift 5.9 release notes: `package` access modifier and SwiftPM support. ([Swift.org](https://swift.org/blog/swift-5.9-released/ "Swift 5.9 Released | Swift.org"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E5 expectation, caveats, questions, and exercise.
+- Swift.org. "Swift Package Manager." Swift Package Manager Documentation. https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/
+- Swift.org. "PackageDescription." PackageDescription. https://docs.swift.org/swiftpm/documentation/packagedescription/
+- Swift.org. "Target." PackageDescription. https://docs.swift.org/swiftpm/documentation/packagedescription/target/
+- Swift.org. "library(name:type:targets:)." PackageDescription. https://docs.swift.org/swiftpm/documentation/packagedescription/product/library%28name%3Atype%3Atargets%3A%29/
+- GitHub. "Package Manager Resources." Swift Evolution SE-0271. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0271-package-manager-resources.md
+- Swift.org. "Swift 5.9 Released." Swift.org Blog. https://swift.org/blog/swift-5.9-released/

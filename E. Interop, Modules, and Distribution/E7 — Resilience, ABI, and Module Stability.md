@@ -53,7 +53,7 @@ These solve different problems.
 
 **ABI compatibility** is about already-compiled binaries. If an app was compiled against SDK version 1.0, can it load SDK version 1.1 without recompiling? This is what matters for OS frameworks, plug-in systems, and binary SDKs distributed separately from clients.
 
-**Module stability** is about Swift compiler compatibility. Swift’s binary `.swiftmodule` format is compiler-version-specific, so a client using a different Xcode / Swift compiler may fail to import a prebuilt Swift framework unless the framework ships a stable textual module interface, usually a `.swiftinterface`. Swift.org describes module stability as allowing Swift modules built with different compiler versions to be used together in one app. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+**Module stability** is about Swift compiler compatibility. Swift’s binary `.swiftmodule` format is compiler-version-specific, so a client using a different Xcode / Swift compiler may fail to import a prebuilt Swift framework unless the framework ships a stable textual module interface, usually a `.swiftinterface`. Swift.org describes module stability as allowing Swift modules built with different compiler versions to be used together in one app. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 The key idea:
 
@@ -63,7 +63,7 @@ ABI stability protects already-compiled binaries.
 Module stability protects cross-compiler import of prebuilt Swift modules.
 ```
 
-Swift 5.0 introduced stable ABI for Swift itself on Apple platforms, meaning apps can use the Swift runtime and standard library from the OS instead of bundling their own copy. That does **not** automatically make every third-party Swift framework ABI-stable. For your own binary SDK, you need to build and evolve it under the library-evolution model. ([Swift.org](https://swift.org/blog/abi-stability-and-more/ "ABI Stability and More | Swift.org"))
+Swift 5.0 introduced stable ABI for Swift itself on Apple platforms, meaning apps can use the Swift runtime and standard library from the OS instead of bundling their own copy. That does **not** automatically make every third-party Swift framework ABI-stable. For your own binary SDK, you need to build and evolve it under the library-evolution model. ([Swift.org, "ABI Stability and More"](https://swift.org/blog/abi-stability-and-more/))
 
 ---
 
@@ -121,7 +121,7 @@ ABI compatibility means already-compiled clients can keep working with a newer f
 
 Without library evolution, the compiler can make aggressive assumptions about public type layout and implementation details. That is good for optimization but bad for binary replacement.
 
-With library evolution enabled, the compiler preserves flexibility across the resilience boundary. Swift.org describes library evolution support as allowing binary frameworks to make certain additive API changes while remaining binary-compatible with previous versions. It should be used when a framework is built and updated separately from its clients. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+With library evolution enabled, the compiler preserves flexibility across the resilience boundary. Swift.org describes library evolution support as allowing binary frameworks to make certain additive API changes while remaining binary-compatible with previous versions. It should be used when a framework is built and updated separately from its clients. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 In Xcode, this is enabled with:
 
@@ -129,7 +129,7 @@ In Xcode, this is enabled with:
 BUILD_LIBRARY_FOR_DISTRIBUTION = YES
 ```
 
-Swift.org states that this Xcode setting turns on both library evolution and module stability. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+Swift.org states that this Xcode setting turns on both library evolution and module stability. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 Command-line equivalent:
 
@@ -149,7 +149,7 @@ Do not wait until v2.0 to enable library evolution for a binary SDK.
 Turning it on later is itself binary-incompatible.
 ```
 
-Swift.org explicitly notes that frameworks built without library evolution do not provide binary compatibility guarantees, and enabling it later is binary-incompatible. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+Swift.org explicitly notes that frameworks built without library evolution do not provide binary compatibility guarantees, and enabling it later is binary-incompatible. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 ---
 
@@ -221,7 +221,7 @@ public struct UserProfile {
 }
 ```
 
-Adding, removing, or reordering stored properties in a frozen public struct is ABI-breaking. SE-0260 defines library evolution mode and explains that `@frozen` opts a type out of layout flexibility for optimization. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md "swift-evolution/proposals/0260-library-evolution.md at main · swiftlang/swift-evolution · GitHub"))
+Adding, removing, or reordering stored properties in a frozen public struct is ABI-breaking. SE-0260 defines library evolution mode and explains that `@frozen` opts a type out of layout flexibility for optimization. ([GitHub, "Library Evolution for Stable ABIs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md))
 
 ---
 
@@ -243,7 +243,7 @@ Swift's runtime / standard library ABI stability is not the same as my SDK's ABI
 A binary SDK needs library evolution enabled from the beginning and must avoid ABI-breaking public changes.
 ```
 
-Swift 5 ABI stability on Apple platforms means the OS can provide Swift runtime and standard library compatibility. It does not mean your framework’s public ABI is automatically resilient. ([Swift.org](https://swift.org/blog/abi-stability-and-more/ "ABI Stability and More | Swift.org"))
+Swift 5 ABI stability on Apple platforms means the OS can provide Swift runtime and standard library compatibility. It does not mean your framework’s public ABI is automatically resilient. ([Swift.org, "ABI Stability and More"](https://swift.org/blog/abi-stability-and-more/))
 
 ---
 
@@ -323,7 +323,7 @@ public enum PaymentState {
 }
 ```
 
-For non-frozen public enums in resilient libraries, clients should switch with `@unknown default`. SE-0192 introduced handling for future enum cases and explains why plain `default` hides useful exhaustiveness diagnostics. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md "swift-evolution/proposals/0192-non-exhaustive-enums.md at main · swiftlang/swift-evolution · GitHub"))
+For non-frozen public enums in resilient libraries, clients should switch with `@unknown default`. SE-0192 introduced handling for future enum cases and explains why plain `default` hides useful exhaustiveness diagnostics. ([GitHub, "Handling Future Enum Cases"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md))
 
 ---
 
@@ -362,7 +362,7 @@ Interview version:
 
 Because Swift’s normal `.swiftmodule` files are tied to a specific compiler version. A binary SDK vendor cannot assume all clients use the exact same Xcode version.
 
-Module stability lets the SDK ship a stable textual `.swiftinterface` so the client’s compiler can import the framework across supported compiler versions. Swift.org describes module stability as allowing Swift modules built with different compiler versions to be used together in one app. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+Module stability lets the SDK ship a stable textual `.swiftinterface` so the client’s compiler can import the framework across supported compiler versions. Swift.org describes module stability as allowing Swift modules built with different compiler versions to be used together in one app. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 Interview version:
 
@@ -483,7 +483,7 @@ Compatibility result:
 
 ### Why?
 
-`@frozen` trades future layout flexibility for optimization. SE-0260 describes `@frozen` as a promise that stored properties for a struct, or cases for an enum, will not be added, removed, or reordered. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md "swift-evolution/proposals/0260-library-evolution.md at main · swiftlang/swift-evolution · GitHub"))
+`@frozen` trades future layout flexibility for optimization. SE-0260 describes `@frozen` as a promise that stored properties for a struct, or cases for an enum, will not be added, removed, or reordered. ([GitHub, "Library Evolution for Stable ABIs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md))
 
 ---
 
@@ -767,8 +767,8 @@ A: Yes. Changing a default retry count, timeout, sorting order, or error behavio
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — E7, tier placement, and staff-level compatibility emphasis.
-- Swift.org — “Library Evolution in Swift.” ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
-- Swift.org — “ABI Stability and More.” ([Swift.org](https://swift.org/blog/abi-stability-and-more/ "ABI Stability and More | Swift.org"))
-- Swift Evolution — SE-0260: “Library Evolution for Stable ABIs.” ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md "swift-evolution/proposals/0260-library-evolution.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution — SE-0192: “Handling Future Enum Cases.” ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md "swift-evolution/proposals/0192-non-exhaustive-enums.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E7, tier placement, and staff-level compatibility emphasis.
+- Swift.org. "Library Evolution in Swift." Swift.org Blog. https://swift.org/blog/library-evolution/
+- Swift.org. "ABI Stability and More." Swift.org Blog. https://swift.org/blog/abi-stability-and-more/
+- GitHub. "Library Evolution for Stable ABIs." Swift Evolution SE-0260. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md
+- GitHub. "Handling Future Enum Cases." Swift Evolution SE-0192. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md

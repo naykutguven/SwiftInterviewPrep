@@ -33,9 +33,9 @@ Performance annotations can freeze implementation detail into a public contract.
 
 Swift normally hides implementation bodies across module boundaries. A client that imports a binary framework sees the framework’s public interface, but not arbitrary private/internal implementation bodies. This is essential for resilience: the framework author can change internals without forcing clients to recompile.
 
-`@inlinable` deliberately punches a hole through that boundary. It makes the function body available as part of the module interface so the client compiler can optimize calls from another module. That can enable inlining, specialization, constant folding, and removal of abstraction overhead. But it also means the implementation body becomes something clients can compile against. SE-0193 states that `@inlinable` exports the body as part of the module interface, while `@usableFromInline` marks an internal declaration as part of the binary interface without making it part of the source-level public API. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md "swift-evolution/proposals/0193-cross-module-inlining-and-specialization.md at main · swiftlang/swift-evolution · GitHub"))
+`@inlinable` deliberately punches a hole through that boundary. It makes the function body available as part of the module interface so the client compiler can optimize calls from another module. That can enable inlining, specialization, constant folding, and removal of abstraction overhead. But it also means the implementation body becomes something clients can compile against. SE-0193 states that `@inlinable` exports the body as part of the module interface, while `@usableFromInline` marks an internal declaration as part of the binary interface without making it part of the source-level public API. ([GitHub, "Cross-Module Inlining and Specialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md))
 
-The dangerous part: client binaries may contain optimized copies of an old implementation. If you later change an `@inlinable` function, old clients may still run old inlined logic until recompiled. SE-0193 explicitly warns that changing an `@inlinable` body can leave binaries using the old definition, the new definition, or a mix of both depending on call sites. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md "swift-evolution/proposals/0193-cross-module-inlining-and-specialization.md at main · swiftlang/swift-evolution · GitHub"))
+The dangerous part: client binaries may contain optimized copies of an old implementation. If you later change an `@inlinable` function, old clients may still run old inlined logic until recompiled. SE-0193 explicitly warns that changing an `@inlinable` body can leave binaries using the old definition, the new definition, or a mix of both depending on call sites. ([GitHub, "Cross-Module Inlining and Specialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md))
 
 The key idea:
 
@@ -53,9 +53,9 @@ For staff-level API design, the question is not “can this be faster?” The qu
 
 ### 2.1 Binary distribution changes the optimization boundary
 
-When a framework is built and shipped separately from its clients, the client compiler cannot freely optimize through the framework’s implementation. Library evolution support exists so a binary framework can be updated without recompiling clients. Swift’s library-evolution documentation says module stability lets modules built with different compiler versions work together, while library evolution lets binary frameworks make additive API changes while remaining binary compatible. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+When a framework is built and shipped separately from its clients, the client compiler cannot freely optimize through the framework’s implementation. Library evolution support exists so a binary framework can be updated without recompiling clients. Swift’s library-evolution documentation says module stability lets modules built with different compiler versions work together, while library evolution lets binary frameworks make additive API changes while remaining binary compatible. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
-For Apple-platform binary distribution, Xcode’s `BUILD_LIBRARY_FOR_DISTRIBUTION` turns on library evolution and module stability. The Swift.org guidance says this setting should be used for binary frameworks intended for distribution, and that enabling library evolution changes performance characteristics. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+For Apple-platform binary distribution, Xcode’s `BUILD_LIBRARY_FOR_DISTRIBUTION` turns on library evolution and module stability. The Swift.org guidance says this setting should be used for binary frameworks intended for distribution, and that enabling library evolution changes performance characteristics. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 ```swift
 // Public framework API:
@@ -76,7 +76,7 @@ Without `@inlinable`, client code calls `Score.normalized` through the framework
 
 ### 2.2 `@inlinable` exposes the body across modules
 
-`@inlinable` does **not** mean “force inline.” It means “make this body visible to clients so the optimizer may use it.” SE-0193 says the optimizer may inline, specialize, ignore the body, or continue referencing the public entry point. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md "swift-evolution/proposals/0193-cross-module-inlining-and-specialization.md at main · swiftlang/swift-evolution · GitHub"))
+`@inlinable` does **not** mean “force inline.” It means “make this body visible to clients so the optimizer may use it.” SE-0193 says the optimizer may inline, specialize, ignore the body, or continue referencing the public entry point. ([GitHub, "Cross-Module Inlining and Specialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md))
 
 Bad:
 
@@ -120,7 +120,7 @@ This keeps `clampScore` out of the source-level public API while making it avail
 
 `@usableFromInline` is the compromise attribute. It says: “This declaration is not public API for source users, but it is part of the binary interface because inlinable public code needs to reference it.”
 
-Swift.org’s library-evolution documentation describes `@usableFromInline` declarations as ABI-public but not source-public. They can be referenced from `@inlinable` code but not directly from client source. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+Swift.org’s library-evolution documentation describes `@usableFromInline` declarations as ABI-public but not source-public. They can be referenced from `@inlinable` code but not directly from client source. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 ```swift
 public struct Score {
@@ -264,7 +264,7 @@ Cache keys, hashing, persistence formats, crypto choices, server protocol behavi
 
 ### Q1. Why is `@inlinable` not just a free performance win?
 
-Because `@inlinable` exposes the function body across module boundaries. That may allow client-side optimization, but it also turns implementation into part of the module interface. Clients may inline or specialize old versions of the body, so future changes can produce mixed behavior across rebuilt and non-rebuilt clients. SE-0193 explicitly warns that changes to `@inlinable` bodies should be considered carefully and are best suited to “obviously correct” algorithms whose future changes are optimizations rather than semantic changes. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md "swift-evolution/proposals/0193-cross-module-inlining-and-specialization.md at main · swiftlang/swift-evolution · GitHub"))
+Because `@inlinable` exposes the function body across module boundaries. That may allow client-side optimization, but it also turns implementation into part of the module interface. Clients may inline or specialize old versions of the body, so future changes can produce mixed behavior across rebuilt and non-rebuilt clients. SE-0193 explicitly warns that changes to `@inlinable` bodies should be considered carefully and are best suited to “obviously correct” algorithms whose future changes are optimizations rather than semantic changes. ([GitHub, "Cross-Module Inlining and Specialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md))
 
 Interview version:
 
@@ -649,7 +649,7 @@ A: Swift reports that the private helper cannot be referenced from an `@inlinabl
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — E8 rubric, questions, and exercise.
-- SE-0193: Cross-module inlining and specialization — defines `@inlinable`, `@usableFromInline`, inlinable-context restrictions, and resilience caveats. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md "swift-evolution/proposals/0193-cross-module-inlining-and-specialization.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift.org: Library Evolution in Swift — binary frameworks, module stability, library evolution, `BUILD_LIBRARY_FOR_DISTRIBUTION`, and ABI-public declarations. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
-- Swift.org: ABI Stability and More — distinction between ABI stability, module stability, and library evolution. ([Swift.org](https://swift.org/blog/abi-stability-and-more/ "ABI Stability and More | Swift.org"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E8 rubric, questions, and exercise.
+- GitHub. "Cross-Module Inlining and Specialization." Swift Evolution SE-0193. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md
+- Swift.org. "Library Evolution in Swift." Swift.org Blog. https://swift.org/blog/library-evolution/
+- Swift.org. "ABI Stability and More." Swift.org Blog. https://swift.org/blog/abi-stability-and-more/

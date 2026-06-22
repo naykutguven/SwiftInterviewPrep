@@ -35,7 +35,7 @@ This follows the attached section-answer structure: rubric snapshot, mental mode
 
 An `import` is not just “make names available in this file.” In a library or SDK, an import can become part of the module’s public contract if public declarations mention types from that imported module.
 
-Swift 6 introduced access-level modifiers on imports through SE-0409. The feature lets you say whether an imported dependency is visible to all clients, only the package, only the module, or only the source file. SE-0409 says this is meant to enforce which declarations can reference an imported module, hide implementation details, and manage dependency creep. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md "swift-evolution/proposals/0409-access-level-on-imports.md at main · swiftlang/swift-evolution · GitHub"))
+Swift 6 introduced access-level modifiers on imports through SE-0409. The feature lets you say whether an imported dependency is visible to all clients, only the package, only the module, or only the source file. SE-0409 says this is meant to enforce which declarations can reference an imported module, hide implementation details, and manage dependency creep. ([GitHub, "Access-level Modifiers on Import Declarations"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md))
 
 The key idea:
 
@@ -73,9 +73,9 @@ internal struct AlamofireImageService: ImageService {
 
 Now Alamofire remains an implementation choice. Your clients see your domain API, not your transport implementation.
 
-Swift guarantees that declarations imported through a lower-visibility import cannot appear in more-visible declaration signatures. For example, an `internal import` cannot be used in a `public` method return type. SE-0409 extends normal access-control checking so imported declarations have an upper-bound visibility inside the file. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md "swift-evolution/proposals/0409-access-level-on-imports.md at main · swiftlang/swift-evolution · GitHub"))
+Swift guarantees that declarations imported through a lower-visibility import cannot appear in more-visible declaration signatures. For example, an `internal import` cannot be used in a `public` method return type. SE-0409 extends normal access-control checking so imported declarations have an upper-bound visibility inside the file. ([GitHub, "Access-level Modifiers on Import Declarations"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md))
 
-Swift does **not** guarantee that import visibility magically removes all runtime or linker dependency concerns. This is source/API visibility control, not a complete dependency-vendoring or binary-packaging model. SE-0409 explicitly describes ABI impact as a compile-time type-checking change. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md "swift-evolution/proposals/0409-access-level-on-imports.md at main · swiftlang/swift-evolution · GitHub"))
+Swift does **not** guarantee that import visibility magically removes all runtime or linker dependency concerns. This is source/API visibility control, not a complete dependency-vendoring or binary-packaging model. SE-0409 explicitly describes ABI impact as a compile-time type-checking change. ([GitHub, "Access-level Modifiers on Import Declarations"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md))
 
 ---
 
@@ -93,7 +93,7 @@ fileprivate import FilePrivateDependency
 private import PrivateDependency
 ```
 
-SE-0409 lists `public`, `package`, `internal`, `fileprivate`, and `private` as valid import access levels; `open` is rejected on import declarations. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md "swift-evolution/proposals/0409-access-level-on-imports.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0409 lists `public`, `package`, `internal`, `fileprivate`, and `private` as valid import access levels; `open` is rejected on import declarations. ([GitHub, "Access-level Modifiers on Import Declarations"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md))
 
 The visibility means:
 
@@ -138,7 +138,7 @@ public struct SDKClient {
 
 ### Mechanic 2: Unannotated imports are still public by default in Swift 6.x
 
-In current Swift 6 language modes, plain `import Foo` preserves the older behavior and is treated as public by default. SE-0409 says this is for source compatibility; a future language mode is expected to make unannotated imports internal by default. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md "swift-evolution/proposals/0409-access-level-on-imports.md at main · swiftlang/swift-evolution · GitHub"))
+In current Swift 6 language modes, plain `import Foo` preserves the older behavior and is treated as public by default. SE-0409 says this is for source compatibility; a future language mode is expected to make unannotated imports internal by default. ([GitHub, "Access-level Modifiers on Import Declarations"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md))
 
 So this:
 
@@ -172,7 +172,7 @@ Before SE-0409, many Swift codebases used:
 @_implementationOnly import SomeDependency
 ```
 
-That underscored attribute is now deprecated in favor of access-level imports. Swift’s compiler diagnostic documentation says `@_implementationOnly` became deprecated when SE-0409 introduced support for access levels on import declarations. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/implementation-only-deprecated/?utm_source=chatgpt.com "Deprecated implementation-only imports ..."))
+That underscored attribute is now deprecated in favor of access-level imports. Swift’s compiler diagnostic documentation says `@_implementationOnly` became deprecated when SE-0409 introduced support for access levels on import declarations. ([Swift.org, "Deprecated implementation-only imports"](https://docs.swift.org/compiler/documentation/diagnostics/implementation-only-deprecated/))
 
 Modern replacement:
 
@@ -192,7 +192,7 @@ private import SomeDependency
 
 `public import Foo` means declarations from `Foo` may be referenced in your public API.
 
-It does **not** mean your clients can use `Foo` as if they had imported it directly in every context. That stronger “umbrella module” behavior historically comes from underscored re-export patterns such as `@_exported import`. SE-0409 says `@_exported` is a step above `public import` and is orthogonal to access-level restrictions. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md "swift-evolution/proposals/0409-access-level-on-imports.md at main · swiftlang/swift-evolution · GitHub"))
+It does **not** mean your clients can use `Foo` as if they had imported it directly in every context. That stronger “umbrella module” behavior historically comes from underscored re-export patterns such as `@_exported import`. SE-0409 says `@_exported` is a step above `public import` and is orthogonal to access-level restrictions. ([GitHub, "Access-level Modifiers on Import Declarations"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md))
 
 Use `@_exported` very cautiously. It makes dependency creep worse unless you are intentionally building an umbrella module or preserving source compatibility after moving declarations between modules.
 
@@ -339,7 +339,7 @@ Expose dependencies only when they are intentionally part of your public abstrac
 
 Because imported types can appear in your public signatures, and public signatures define what clients can depend on. Once a dependency’s types appear in your public API, that dependency becomes part of your source-compatibility contract.
 
-SE-0409 frames this as an API-design problem: library authors often intend some dependencies to be client-visible and others to remain implementation details; without import-level enforcement, it is easy to accidentally expose an implementation dependency in a public declaration. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md "swift-evolution/proposals/0409-access-level-on-imports.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0409 frames this as an API-design problem: library authors often intend some dependencies to be client-visible and others to remain implementation details; without import-level enforcement, it is easy to accidentally expose an implementation dependency in a public declaration. ([GitHub, "Access-level Modifiers on Import Declarations"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md))
 
 Interview version:
 
@@ -465,7 +465,7 @@ visible to SDK.swift as internal
 cannot appear in public SDK API
 ```
 
-This mirrors SE-0409’s rule: imported declarations get an upper-bound access level based on the import, and the compiler diagnoses more-visible declarations that reference less-visible imported types. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md "swift-evolution/proposals/0409-access-level-on-imports.md at main · swiftlang/swift-evolution · GitHub"))
+This mirrors SE-0409’s rule: imported declarations get an upper-bound access level based on the import, and the compiler diagnoses more-visible declarations that reference less-visible imported types. ([GitHub, "Access-level Modifiers on Import Declarations"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md))
 
 ### Fix or redesign
 
@@ -843,6 +843,6 @@ A: A domain result type, `Data`, `AsyncSequence`, an SDK-owned DTO, or an SDK-ow
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist, E6 section.
-- Swift Evolution SE-0409: Access-level modifiers on import declarations. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md "swift-evolution/proposals/0409-access-level-on-imports.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift compiler diagnostics: deprecated `@_implementationOnly import`. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/implementation-only-deprecated/?utm_source=chatgpt.com "Deprecated implementation-only imports ..."))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E6 section.
+- GitHub. "Access-level Modifiers on Import Declarations." Swift Evolution SE-0409. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md
+- Swift.org. "Deprecated implementation-only imports." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/implementation-only-deprecated/

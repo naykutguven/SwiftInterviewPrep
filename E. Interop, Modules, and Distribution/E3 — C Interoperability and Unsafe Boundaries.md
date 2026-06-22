@@ -26,7 +26,7 @@ Understand how Swift interacts with C APIs, pointers, nullability, and imported 
 
 ## 1. Core mental model
 
-Swift is safe by default. C is not. When Swift calls C, Swift can preserve some type information, but it cannot magically infer all of C’s hidden contracts: who owns memory, whether a pointer can be null, how many elements a pointer references, whether the pointer escapes, whether a buffer must be freed by a specific function, or whether an integer return code represents an error. Apple’s current guidance frames raw C/C++ pointers as hard to call safely because incorrect use can cause buffer overflows and use-after-free bugs; Swift imports such pointers as unsafe types deliberately. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2025/311/ "Safely mix C, C++, and Swift - WWDC25 - Videos - Apple Developer"))
+Swift is safe by default. C is not. When Swift calls C, Swift can preserve some type information, but it cannot magically infer all of C’s hidden contracts: who owns memory, whether a pointer can be null, how many elements a pointer references, whether the pointer escapes, whether a buffer must be freed by a specific function, or whether an integer return code represents an error. Apple’s current guidance frames raw C/C++ pointers as hard to call safely because incorrect use can cause buffer overflows and use-after-free bugs; Swift imports such pointers as unsafe types deliberately. ([Apple Developer, "Safely mix C, C++, and Swift"](https://developer.apple.com/videos/play/wwdc2025/311/))
 
 The key idea:
 
@@ -51,7 +51,7 @@ The staff-level point: do not let C-shaped APIs spread through an app. One unsaf
 
 ### 2.1 C pointer imports
 
-C pointer types map to Swift unsafe pointer types. In Swift’s importer documentation, `const T *` maps to `UnsafePointer<T>`, mutable `T *` maps to `UnsafeMutablePointer<T>`, `void *` maps to raw pointers, and incomplete/opaque C types can be represented as `OpaquePointer`. ([GitHub](https://github.com/swiftlang/swift/blob/master/docs/HowSwiftImportsCAPIs.md "swift/docs/HowSwiftImportsCAPIs.md at main · swiftlang/swift · GitHub"))
+C pointer types map to Swift unsafe pointer types. In Swift’s importer documentation, `const T *` maps to `UnsafePointer<T>`, mutable `T *` maps to `UnsafeMutablePointer<T>`, `void *` maps to raw pointers, and incomplete/opaque C types can be represented as `OpaquePointer`. ([GitHub, "How Swift Imports C APIs"](https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md))
 
 ```c
 // C
@@ -86,7 +86,7 @@ func addSecondToFirst(
 
 ### 2.2 Nullability annotations shape the Swift API
 
-C pointers can be null, but C itself historically does not encode that in the type system. Swift does. `_Nonnull` imports as a non-optional pointer, `_Nullable` imports as an optional pointer, and unspecified nullability imports as an implicitly unwrapped optional. ([GitHub](https://github.com/swiftlang/swift/blob/master/docs/HowSwiftImportsCAPIs.md "swift/docs/HowSwiftImportsCAPIs.md at main · swiftlang/swift · GitHub"))
+C pointers can be null, but C itself historically does not encode that in the type system. Swift does. `_Nonnull` imports as a non-optional pointer, `_Nullable` imports as an optional pointer, and unspecified nullability imports as an implicitly unwrapped optional. ([GitHub, "How Swift Imports C APIs"](https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md))
 
 Bad C header:
 
@@ -152,7 +152,7 @@ data.withUnsafeBytes { rawBuffer in
 print(saved!.pointee)
 ```
 
-Apple’s unsafe-pointer guidance emphasizes that generated pointer values are temporary and invalidated when the function returns; closure-based unsafe APIs make that lifetime explicit. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2020/10648/?time=536 "Unsafe Swift - WWDC20 - Videos - Apple Developer"))
+Apple’s unsafe-pointer guidance emphasizes that generated pointer values are temporary and invalidated when the function returns; closure-based unsafe APIs make that lifetime explicit. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
 
 ### 2.4 Output pointers become Swift return values
 
@@ -226,11 +226,11 @@ public final class Decoder {
 }
 ```
 
-This turns “remember to call cleanup” into normal Swift object lifetime. It is not magic: you still need to know whether the pointer is owned by the caller, borrowed, retained, or returned autoreleased-like. Apple’s unsafe-pointer material stresses that pointers do not manage memory for you; you must know whether the C function takes ownership, stores the pointer, or merely uses it for the duration of the call. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2020/10648/?time=536 "Unsafe Swift - WWDC20 - Videos - Apple Developer"))
+This turns “remember to call cleanup” into normal Swift object lifetime. It is not magic: you still need to know whether the pointer is owned by the caller, borrowed, retained, or returned autoreleased-like. Apple’s unsafe-pointer material stresses that pointers do not manage memory for you; you must know whether the C function takes ownership, stores the pointer, or merely uses it for the duration of the call. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
 
 ### 2.6 C macros and constants
 
-Swift imports simple constant-like C macros as global constants, but C macros are generally not imported as executable Swift macros. The Swift repository documentation says C macros are generally not imported, while constant-defining macros are imported as readonly variables; Apple’s C macro documentation similarly describes simple `#define` constants as imported constants. ([GitHub](https://github.com/swiftlang/swift/blob/master/docs/HowSwiftImportsCAPIs.md "swift/docs/HowSwiftImportsCAPIs.md at main · swiftlang/swift · GitHub"))
+Swift imports simple constant-like C macros as global constants, but C macros are generally not imported as executable Swift macros. The Swift repository documentation says C macros are generally not imported, while constant-defining macros are imported as readonly variables; Apple’s C macro documentation similarly describes simple `#define` constants as imported constants. ([GitHub, "How Swift Imports C APIs"](https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md))
 
 C:
 
@@ -264,7 +264,7 @@ Avoid letting `SCREAMING_C_MACRO_NAMES` leak through your Swift API.
 
 ### 2.7 Function pointers and callbacks
 
-C function pointers import as `@convention(c)` function values. They cannot capture Swift context like normal Swift closures. The Swift importer documentation notes that Swift closures have different layout because they include captured context, while C function pointers do not; C function pointers are represented as `@convention(c)`. ([GitHub](https://github.com/swiftlang/swift/blob/master/docs/HowSwiftImportsCAPIs.md "swift/docs/HowSwiftImportsCAPIs.md at main · swiftlang/swift · GitHub"))
+C function pointers import as `@convention(c)` function values. They cannot capture Swift context like normal Swift closures. The Swift importer documentation notes that Swift closures have different layout because they include captured context, while C function pointers do not; C function pointers are represented as `@convention(c)`. ([GitHub, "How Swift Imports C APIs"](https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md))
 
 C:
 
@@ -415,7 +415,7 @@ error handling
 cleanup
 ```
 
-Swift 6.2’s strict memory safety mode can help identify unsafe constructs, especially around C/C++ pointers, but it is opt-in and diagnostics are not a proof that every manual contract is correct. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2025/311/ "Safely mix C, C++, and Swift - WWDC25 - Videos - Apple Developer"))
+Swift 6.2’s strict memory safety mode can help identify unsafe constructs, especially around C/C++ pointers, but it is opt-in and diagnostics are not a proof that every manual contract is correct. ([Apple Developer, "Safely mix C, C++, and Swift"](https://developer.apple.com/videos/play/wwdc2025/311/))
 
 ---
 
@@ -446,7 +446,7 @@ Interview version:
 
 ### Q2. Why should most unsafe pointer manipulation be quarantined to a narrow layer?
 
-Because unsafe pointer code has unchecked failure modes. The compiler cannot fully protect you from dangling pointers, use-after-free, invalid binding, wrong capacity, wrong ownership, double free, or out-of-bounds access. Apple’s unsafe Swift guidance is explicit that unsafe pointers provide low-level control but trust you to use them correctly; incorrect use can lead to undefined behavior and memory corruption. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2020/10648/?time=536 "Unsafe Swift - WWDC20 - Videos - Apple Developer"))
+Because unsafe pointer code has unchecked failure modes. The compiler cannot fully protect you from dangling pointers, use-after-free, invalid binding, wrong capacity, wrong ownership, double free, or out-of-bounds access. Apple’s unsafe Swift guidance is explicit that unsafe pointers provide low-level control but trust you to use them correctly; incorrect use can lead to undefined behavior and memory corruption. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
 
 Quarantining unsafe code gives you:
 
@@ -942,7 +942,7 @@ Diagnostics:
 - Consider Swift 6.2 strict memory safety for unsafe-boundary auditing.
 ```
 
-Apple recommends keeping unsafe API usage to a minimum, choosing safer alternatives where available, using buffer pointers for memory regions, and using tools such as Address Sanitizer to catch unsafe-memory bugs. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2020/10648/?time=536 "Unsafe Swift - WWDC20 - Videos - Apple Developer"))
+Apple recommends keeping unsafe API usage to a minimum, choosing safer alternatives where available, using buffer pointers for memory regions, and using tools such as Address Sanitizer to catch unsafe-memory bugs. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
 
 ---
 
@@ -958,7 +958,7 @@ Apple recommends keeping unsafe API usage to a minimum, choosing safer alternati
 
 ### Staff-level answer
 
-> I would treat the C boundary as an architecture boundary. The imported module should be isolated behind an adapter or package target. I would fix nullability and bounds annotations in the C headers where possible, design a Swift overlay that expresses ownership and errors natively, prevent raw pointers from leaking into public API, and add tests and sanitizers around failure paths. For security-sensitive modules, I would also consider Swift 6.2 strict memory safety and C/C++ bounds-safety annotations, because the goal is not just to make the call compile; it is to make the unsafe assumptions explicit and auditable. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2025/311/ "Safely mix C, C++, and Swift - WWDC25 - Videos - Apple Developer"))
+> I would treat the C boundary as an architecture boundary. The imported module should be isolated behind an adapter or package target. I would fix nullability and bounds annotations in the C headers where possible, design a Swift overlay that expresses ownership and errors natively, prevent raw pointers from leaking into public API, and add tests and sanitizers around failure paths. For security-sensitive modules, I would also consider Swift 6.2 strict memory safety and C/C++ bounds-safety annotations, because the goal is not just to make the call compile; it is to make the unsafe assumptions explicit and auditable. ([Apple Developer, "Safely mix C, C++, and Swift"](https://developer.apple.com/videos/play/wwdc2025/311/))
 
 Staff-level questions to ask:
 
@@ -1033,9 +1033,9 @@ A: Not just making the call compile, but controlling unsafe surface area, preser
 
 ## 12. Sources
 
-- Rubric section E3: C interoperability and unsafe boundaries.
-- Swift importer behavior for C functions, pointers, nullability, opaque pointers, function pointers, structs, enums, globals, and macros. ([GitHub](https://github.com/swiftlang/swift/blob/master/docs/HowSwiftImportsCAPIs.md "swift/docs/HowSwiftImportsCAPIs.md at main · swiftlang/swift · GitHub"))
-- Apple Developer Documentation: C interoperability and imported C macros/functions. ([Apple Developer](https://developer.apple.com/documentation/swift/c-interoperability?utm_source=chatgpt.com "C Interoperability | Apple Developer Documentation"))
-- Apple WWDC20: Unsafe Swift / safely managing unsafe pointer usage and keeping unsafe operations minimal. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2020/10648/?time=536 "Unsafe Swift - WWDC20 - Videos - Apple Developer"))
-- Apple WWDC25: Safely mix C, C++, and Swift; strict memory safety, pointer bounds/lifetime annotations, and Swift 6.2 safety direction. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2025/311/ "Safely mix C, C++, and Swift - WWDC25 - Videos - Apple Developer"))
-- Swift.org: Safely Mixing Swift and C/C++, including strict safety mode, lifetime annotations, bounds annotations, and Span-related safe imports. ([Swift.org](https://swift.org/documentation/cxx-interop/safe-interop/ "Safely Mixing Swift and C/C++ | Swift.org"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E3 — C interoperability and unsafe boundaries.
+- GitHub. "How Swift Imports C APIs." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md
+- Apple Developer. "C Interoperability." Apple Developer Documentation. https://developer.apple.com/documentation/swift/c-interoperability
+- Apple Developer. "Unsafe Swift." WWDC20. https://developer.apple.com/videos/play/wwdc2020/10648/
+- Apple Developer. "Safely mix C, C++, and Swift." WWDC25. https://developer.apple.com/videos/play/wwdc2025/311/
+- Swift.org. "Safely Mixing Swift and C/C++." Swift.org Documentation. https://swift.org/documentation/cxx-interop/safe-interop/

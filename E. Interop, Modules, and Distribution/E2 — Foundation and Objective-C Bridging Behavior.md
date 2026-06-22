@@ -23,7 +23,7 @@ Bridging can:
 - expose reference semantics behind value-looking APIs,
 - hide performance costs at call boundaries.
 
-Apple’s Foundation documentation explicitly groups Foundation classes bridged to Swift standard-library value types and says bridged reference types are useful when you need reference semantics or Foundation-specific behavior. ([Apple Developer](https://developer.apple.com/documentation/foundation/classes-bridged-to-swift-standard-library-value-types?utm_source=chatgpt.com "Classes Bridged to Swift Standard Library Value Types"))
+Apple’s Foundation documentation explicitly groups Foundation classes bridged to Swift standard-library value types and says bridged reference types are useful when you need reference semantics or Foundation-specific behavior. ([Apple Developer, "Classes Bridged to Swift Standard Library Value Types"](https://developer.apple.com/documentation/foundation/classes-bridged-to-swift-standard-library-value-types))
 
 **You should be able to answer**
 
@@ -68,9 +68,9 @@ legacyAPI(items as NSArray)
 
 But that one line may allocate an `NSArray`, bridge every `String` to `NSString`, box numbers into `NSNumber`, or copy a mutable Foundation collection into Swift value storage.
 
-For `Array`, the Swift standard library documents the important performance distinction: bridging from `Array` to `NSArray` is O(1) time and space when elements are already class instances or `@objc` protocol values; otherwise it takes O(n) time and space. Bridging from `NSArray` to `Array<Int>` also performs a bridging copy into contiguous Swift storage. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift "swift/stdlib/public/core/Array.swift at main · swiftlang/swift · GitHub"))
+For `Array`, the Swift standard library documents the important performance distinction: bridging from `Array` to `NSArray` is O(1) time and space when elements are already class instances or `@objc` protocol values; otherwise it takes O(n) time and space. Bridging from `NSArray` to `Array<Int>` also performs a bridging copy into contiguous Swift storage. ([GitHub, "Array.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift))
 
-For `String`, Swift can bridge to `NSString`, and a `String` originating from Objective-C may use `NSString` storage. The standard-library source explicitly warns that arbitrary `NSString` subclasses can back Swift `String`, so Swift gives no representation or efficiency guarantee in that case; the first mutation may require copying into unique contiguous storage. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/String.swift?utm_source=chatgpt.com "swift/stdlib/public/core/String.swift at main · swiftlang/swift"))
+For `String`, Swift can bridge to `NSString`, and a `String` originating from Objective-C may use `NSString` storage. The standard-library source explicitly warns that arbitrary `NSString` subclasses can back Swift `String`, so Swift gives no representation or efficiency guarantee in that case; the first mutation may require copying into unique contiguous storage. ([GitHub, "String.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/String.swift))
 
 ---
 
@@ -114,7 +114,7 @@ Compiler error:
 error: cannot convert value of type '[String]' to specified type 'NSArray'
 ```
 
-This is intentional. Swift Evolution SE-0072 removed implicit bridging conversions to simplify the type model and make these boundary conversions explicit. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0072-eliminate-implicit-bridging-conversions.md?utm_source=chatgpt.com "Fully eliminate implicit bridging conversions from Swift"))
+This is intentional. Swift Evolution SE-0072 removed implicit bridging conversions to simplify the type model and make these boundary conversions explicit. ([GitHub, "Fully Eliminate Implicit Bridging Conversions from Swift"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0072-eliminate-implicit-bridging-conversions.md))
 
 ---
 
@@ -176,7 +176,7 @@ That is false.
 
 ### 2.3 `Array` and `NSArray` differ in element storage, mutability, and cost
 
-`Array` is a Swift value type with copy-on-write storage. `NSArray` is an immutable Foundation reference type. `NSMutableArray` is a mutable Foundation reference type. Apple’s `NSArray` documentation describes `NSArray` as static and `NSMutableArray` as dynamic, and also notes that you can use `NSArray` in Swift when you require reference semantics. ([Apple Developer](https://developer.apple.com/documentation/foundation/nsarray?language=_4 "NSArray | Apple Developer Documentation"))
+`Array` is a Swift value type with copy-on-write storage. `NSArray` is an immutable Foundation reference type. `NSMutableArray` is a mutable Foundation reference type. Apple’s `NSArray` documentation describes `NSArray` as static and `NSMutableArray` as dynamic, and also notes that you can use `NSArray` in Swift when you require reference semantics. ([Apple Developer, "NSArray"](https://developer.apple.com/documentation/foundation/nsarray))
 
 ```swift
 import Foundation
@@ -214,7 +214,7 @@ However, if the array contains reference objects, both arrays may still point to
 
 ### 2.4 Dictionaries and sets have the same boundary problem
 
-For dictionaries, Apple documents that bridging between `Dictionary` and `NSDictionary` is possible when keys and values are classes, `@objc` protocols, or types that bridge to Foundation types. ([Apple Developer](https://developer.apple.com/documentation/swift/dictionary?utm_source=chatgpt.com "Dictionary | Apple Developer Documentation"))
+For dictionaries, Apple documents that bridging between `Dictionary` and `NSDictionary` is possible when keys and values are classes, `@objc` protocols, or types that bridge to Foundation types. ([Apple Developer, "Dictionary"](https://developer.apple.com/documentation/swift/dictionary))
 
 ```swift
 import Foundation
@@ -268,7 +268,7 @@ Better mental model:
 This may allocate an Objective-C collection and bridge every element.
 ```
 
-For arrays, O(1) bridging is possible only in favorable cases, such as class or `@objc` protocol elements. If the element type itself must bridge, the operation can become O(n) time and space. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift "swift/stdlib/public/core/Array.swift at main · swiftlang/swift · GitHub"))
+For arrays, O(1) bridging is possible only in favorable cases, such as class or `@objc` protocol elements. If the element type itself must bridge, the operation can become O(n) time and space. ([GitHub, "Array.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift))
 
 Bad:
 
@@ -407,9 +407,9 @@ Or better, expose a typed Swift adapter and hide Foundation representation entir
 
 A Swift `String` crossing into Objective-C is bridged to `NSString`. A Swift `Array` crossing into Objective-C is bridged to `NSArray`, provided its elements can be represented in the Objective-C/Foundation world. The operation may be cheap, but it may also allocate, copy, or bridge each element.
 
-For `String`, the boundary can change storage representation. A Swift `String` that originates from Objective-C may be backed by `NSString` storage, and Swift does not guarantee the same representation or efficiency as a native Swift string. The first mutation may need to copy into unique contiguous storage. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/String.swift?utm_source=chatgpt.com "swift/stdlib/public/core/String.swift at main · swiftlang/swift"))
+For `String`, the boundary can change storage representation. A Swift `String` that originates from Objective-C may be backed by `NSString` storage, and Swift does not guarantee the same representation or efficiency as a native Swift string. The first mutation may need to copy into unique contiguous storage. ([GitHub, "String.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/String.swift))
 
-For `Array`, if elements are already class instances or `@objc` protocol values, bridging to `NSArray` can be O(1). If the elements need to bridge — for example, `String` to `NSString` or `Int` to `NSNumber` — the bridge can be O(n) in time and space. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift "swift/stdlib/public/core/Array.swift at main · swiftlang/swift · GitHub"))
+For `Array`, if elements are already class instances or `@objc` protocol values, bridging to `NSArray` can be O(1). If the elements need to bridge — for example, `String` to `NSString` or `Int` to `NSNumber` — the bridge can be O(n) in time and space. ([GitHub, "Array.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift))
 
 Interview version:
 
@@ -860,10 +860,10 @@ A: Prefer Swift-native types internally. Expose Foundation types only when inter
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — E2 Foundation and Objective-C bridging behavior.
-- Apple Developer Documentation — Classes Bridged to Swift Standard Library Value Types. ([Apple Developer](https://developer.apple.com/documentation/foundation/classes-bridged-to-swift-standard-library-value-types?utm_source=chatgpt.com "Classes Bridged to Swift Standard Library Value Types"))
-- Swift standard-library `Array` documentation/source — Array/NSArray bridging costs and behavior. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift "swift/stdlib/public/core/Array.swift at main · swiftlang/swift · GitHub"))
-- Swift standard-library `String` documentation/source — String/NSString bridging storage and mutation cost caveats. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/String.swift?utm_source=chatgpt.com "swift/stdlib/public/core/String.swift at main · swiftlang/swift"))
-- Apple Developer Documentation — `NSArray` / `NSMutableArray` reference and mutability semantics. ([Apple Developer](https://developer.apple.com/documentation/foundation/nsarray?language=_4 "NSArray | Apple Developer Documentation"))
-- Apple Developer Documentation — `Dictionary` / `NSDictionary` bridging constraints. ([Apple Developer](https://developer.apple.com/documentation/swift/dictionary?utm_source=chatgpt.com "Dictionary | Apple Developer Documentation"))
-- Swift Evolution SE-0072 — Fully eliminate implicit bridging conversions from Swift. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0072-eliminate-implicit-bridging-conversions.md?utm_source=chatgpt.com "Fully eliminate implicit bridging conversions from Swift"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E2 Foundation and Objective-C bridging behavior.
+- Apple Developer. "Classes Bridged to Swift Standard Library Value Types." Apple Developer Documentation. https://developer.apple.com/documentation/foundation/classes-bridged-to-swift-standard-library-value-types
+- GitHub. "Array.swift." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift
+- GitHub. "String.swift." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/stdlib/public/core/String.swift
+- Apple Developer. "NSArray." Apple Developer Documentation. https://developer.apple.com/documentation/foundation/nsarray
+- Apple Developer. "Dictionary." Apple Developer Documentation. https://developer.apple.com/documentation/swift/dictionary
+- GitHub. "Fully Eliminate Implicit Bridging Conversions from Swift." Swift Evolution SE-0072. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0072-eliminate-implicit-bridging-conversions.md

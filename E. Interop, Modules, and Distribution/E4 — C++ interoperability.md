@@ -31,9 +31,9 @@ C++ interop is powerful but still evolving. Not every C++ construct maps cleanly
 
 ## 1. Core mental model
 
-Swift C++ interoperability lets Swift call supported C++ APIs directly and lets selected Swift APIs be exposed back to C++. Swift code does not automatically go through Objective-C wrappers or C shims just to reach C++; the Swift compiler imports C++ headers through Clang modules and presents supported C++ declarations as Swift declarations. Official Swift documentation describes C++ interoperability as actively evolving and explicitly says future releases may change the design as real-world adoption produces feedback. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+Swift C++ interoperability lets Swift call supported C++ APIs directly and lets selected Swift APIs be exposed back to C++. Swift code does not automatically go through Objective-C wrappers or C shims just to reach C++; the Swift compiler imports C++ headers through Clang modules and presents supported C++ declarations as Swift declarations. Official Swift documentation describes C++ interoperability as actively evolving and explicitly says future releases may change the design as real-world adoption produces feedback. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
-The default mapping is important: Swift generally imports C++ `struct` and `class` types as Swift `struct` value types. That means passing them around in Swift may invoke C++ copy constructors, and destroying Swift values may invoke C++ destructors. C++ types with deleted copy constructors are imported as noncopyable Swift types, and C++ types with copy constructors can still be forced to import as noncopyable with `SWIFT_NONCOPYABLE`. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+The default mapping is important: Swift generally imports C++ `struct` and `class` types as Swift `struct` value types. That means passing them around in Swift may invoke C++ copy constructors, and destroying Swift values may invoke C++ destructors. C++ types with deleted copy constructors are imported as noncopyable Swift types, and C++ types with copy constructors can still be forced to import as noncopyable with `SWIFT_NONCOPYABLE`. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 The dangerous part is not “Swift calling C++.” The dangerous part is C++ APIs whose apparent type does not express ownership and lifetime strongly enough for Swift. A C++ method returning `const T&`, `T*`, an iterator, `std::span<T>`, or `std::string_view` may be returning a view into storage owned by another object. Swift’s normal value model does not automatically keep that owner alive or prevent mutation/invalidation while the view is used.
 
@@ -51,7 +51,7 @@ For app-layer Swift, especially iOS feature code, C++ interop should usually be 
 
 ### C++ types are imported as Swift value types by default
 
-Swift maps C++ structures and classes to Swift `struct` types by default. They are treated as value types, so passing them around copies them, and Swift uses C++ special members such as copy constructors and destructors to implement those operations. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+Swift maps C++ structures and classes to Swift `struct` types by default. They are treated as value types, so passing them around copies them, and Swift uses C++ special members such as copy constructors and destructors to implement those operations. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 C++:
 
@@ -80,7 +80,7 @@ let original = CxxImage()
 let copy = original
 ```
 
-This is natural for simple self-contained types, but it can be expensive for containers or large C++ objects. C++ containers become value types in Swift, and Swift may call the container copy constructor when copying or passing them by value. Official documentation explicitly recommends borrowing C++ containers when calling Swift functions to avoid unnecessary copies. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+This is natural for simple self-contained types, but it can be expensive for containers or large C++ objects. C++ containers become value types in Swift, and Swift may call the container copy constructor when copying or passing them by value. Official documentation explicitly recommends borrowing C++ containers when calling Swift functions to avoid unnecessary copies. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 Better boundary:
 
@@ -96,7 +96,7 @@ For a collection-heavy C++ API, staff-level review should immediately ask: “Ar
 
 ### Copyability maps into Swift ownership
 
-If a C++ type has a deleted copy constructor, Swift imports it as a noncopyable type. If the C++ type is technically copyable but semantically represents a unique resource, the C++ author can annotate it with `SWIFT_NONCOPYABLE`. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+If a C++ type has a deleted copy constructor, Swift imports it as a noncopyable type. If the C++ type is technically copyable but semantically represents a unique resource, the C++ author can annotate it with `SWIFT_NONCOPYABLE`. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 C++:
 
@@ -125,7 +125,7 @@ This matters because many C++ types are resource handles, RAII wrappers, locks, 
 
 ### Reference types require explicit semantic mapping
 
-Not every C++ `class` is a Swift-style value. Some C++ objects are reference-counted, immortal, shared, or manually managed. Swift supports annotations such as `SWIFT_IMMORTAL_REFERENCE`, `SWIFT_SHARED_REFERENCE`, and `SWIFT_UNSAFE_REFERENCE` to tell the importer how to treat these types. For shared reference types, C++ APIs also need ownership annotations such as `SWIFT_RETURNS_RETAINED` or `SWIFT_RETURNS_UNRETAINED` so Swift can insert correct retain/release behavior. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+Not every C++ `class` is a Swift-style value. Some C++ objects are reference-counted, immortal, shared, or manually managed. Swift supports annotations such as `SWIFT_IMMORTAL_REFERENCE`, `SWIFT_SHARED_REFERENCE`, and `SWIFT_UNSAFE_REFERENCE` to tell the importer how to treat these types. For shared reference types, C++ APIs also need ownership annotations such as `SWIFT_RETURNS_RETAINED` or `SWIFT_RETURNS_UNRETAINED` so Swift can insert correct retain/release behavior. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 C++:
 
@@ -159,7 +159,7 @@ The annotation tells Swift whether the returned pointer already has ownership or
 
 ### References and view types are treated as unsafe because lifetime is hidden
 
-Swift 6.2 introduced safe interoperability features for C/C++ pointers and specific view types such as `std::span`, and the documentation recommends enabling safe interoperability mode for stronger guarantees. Swift treats member functions returning references, pointers, or certain recursively pointer-containing structures as unsafe because they often point into storage owned by `this`. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+Swift 6.2 introduced safe interoperability features for C/C++ pointers and specific view types such as `std::span`, and the documentation recommends enabling safe interoperability mode for stronger guarantees. Swift treats member functions returning references, pointers, or certain recursively pointer-containing structures as unsafe because they often point into storage owned by `this`. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 C++:
 
@@ -191,13 +191,13 @@ extension ImageStore {
 }
 ```
 
-Official docs recommend wrapping member functions that return references or view types with Swift APIs that return a copy of the referenced object when the lifetime is dependent. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+Official docs recommend wrapping member functions that return references or view types with Swift APIs that return a copy of the referenced object when the lifetime is dependent. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 ---
 
 ### Escapability and lifetime annotations let Swift enforce borrowed lifetimes
 
-A C++ view type can be marked as non-escapable with `SWIFT_NONESCAPABLE`, and functions returning non-escapable types need lifetime annotations such as `lifetimebound` to describe which argument owns the returned view’s lifetime. Swift can then diagnose returning a borrowed view that would outlive its owner. ([Swift.org](https://swift.org/documentation/cxx-interop/safe-interop/ "Safely Mixing Swift and C/C++ | Swift.org"))
+A C++ view type can be marked as non-escapable with `SWIFT_NONESCAPABLE`, and functions returning non-escapable types need lifetime annotations such as `lifetimebound` to describe which argument owns the returned view’s lifetime. Swift can then diagnose returning a borrowed view that would outlive its owner. ([Swift.org, "Safely Mixing Swift and C/C++"](https://swift.org/documentation/cxx-interop/safe-interop/))
 
 C++:
 
@@ -282,7 +282,7 @@ The wrapper makes lifetime explicit: Swift app code receives owned data, not bor
 
 ### Trap 2: Treating C++ containers like Swift arrays
 
-C++ containers can be used through Swift collection-like APIs, but deep copies may happen in common operations. Swift documentation says Swift may make a deep copy when a C++ container is used in a `for-in` loop or with `Sequence` methods such as `filter` and `reduce`. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+C++ containers can be used through Swift collection-like APIs, but deep copies may happen in common operations. Swift documentation says Swift may make a deep copy when a C++ container is used in a `for-in` loop or with `Sequence` methods such as `filter` and `reduce`. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 Risky:
 
@@ -336,7 +336,7 @@ The Swift app layer now gets stable Swift values.
 
 ### Trap 3: Exposing C++ iterators directly
 
-Official docs recommend using protocols like `CxxRandomAccessCollection`, `CxxConvertibleToCollection`, and `CxxDictionary` instead of relying on C++ iterator APIs, and they warn that member functions returning C++ iterators are marked unsafe in Swift. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+Official docs recommend using protocols like `CxxRandomAccessCollection`, `CxxConvertibleToCollection`, and `CxxDictionary` instead of relying on C++ iterator APIs, and they warn that member functions returning C++ iterators are marked unsafe in Swift. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 Bad:
 
@@ -375,7 +375,7 @@ The best wrapper depends on whether the caller needs owned values, borrowed shor
 
 ### Trap 4: Assuming C++ `std::optional` and `std::string` bridge automatically
 
-`std::string` imports as a Swift structure and can be explicitly converted to and from Swift `String`, but Swift does not automatically convert it to `String`. `std::optional<T>` also imports as a structure and does not automatically become Swift `Optional<T>`; you use `Optional(fromCxx:)`. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+`std::string` imports as a Swift structure and can be explicitly converted to and from Swift `String`, but Swift does not automatically convert it to `String`. `std::optional<T>` also imports as a structure and does not automatically become Swift `Optional<T>`; you use `Optional(fromCxx:)`. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 Bad:
 
@@ -399,7 +399,7 @@ This is good: explicit conversion forces you to decide where the language bounda
 
 ### Q1. How does Swift generally import C++ value types, and why does that matter?
 
-Swift imports C++ `struct` and `class` types as Swift `struct` value types by default. Copies in Swift call the C++ copy constructor, and destruction calls the C++ destructor. If the C++ copy constructor is deleted, Swift imports the type as noncopyable; if the type is copyable but should not be copied in Swift, C++ can use `SWIFT_NONCOPYABLE`. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+Swift imports C++ `struct` and `class` types as Swift `struct` value types by default. Copies in Swift call the C++ copy constructor, and destruction calls the C++ destructor. If the C++ copy constructor is deleted, Swift imports the type as noncopyable; if the type is copyable but should not be copied in Swift, C++ can use `SWIFT_NONCOPYABLE`. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 This matters because C++ “value type” does not always mean “cheap Swift value.” A `std::vector`, `std::map`, image buffer, AST node, media frame, or ML tensor can be expensive to copy. It also matters because C++ types may have hidden lifetime relationships: a copied container is independent, but iterators or references into it are not.
 
@@ -411,9 +411,9 @@ Interview version:
 
 ### Q2. Why are C++ APIs that return references, views, or borrowed storage risky in Swift, and what do lifetime or escapability annotations buy you?
 
-They are risky because the returned value may point into storage owned by another object, but the type alone does not prove that the owner remains alive. A C++ `const T&`, `T*`, iterator, `std::span<T>`, `std::string_view`, or custom view may become dangling if the owner is destroyed, moved, copied, or mutated. Swift therefore treats member functions returning references, pointers, or recursively pointer-containing structures as unsafe in important cases. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+They are risky because the returned value may point into storage owned by another object, but the type alone does not prove that the owner remains alive. A C++ `const T&`, `T*`, iterator, `std::span<T>`, `std::string_view`, or custom view may become dangling if the owner is destroyed, moved, copied, or mutated. Swift therefore treats member functions returning references, pointers, or recursively pointer-containing structures as unsafe in important cases. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
-Lifetime and escapability annotations let Swift understand that a returned view depends on an argument or receiver. `SWIFT_NONESCAPABLE` tells Swift a type cannot safely escape independently; lifetime annotations such as `lifetimebound` tell Swift which input owns the lifetime. With this information, Swift can reject code where a borrowed result escapes local storage that is about to die. ([Swift.org](https://swift.org/documentation/cxx-interop/safe-interop/ "Safely Mixing Swift and C/C++ | Swift.org"))
+Lifetime and escapability annotations let Swift understand that a returned view depends on an argument or receiver. `SWIFT_NONESCAPABLE` tells Swift a type cannot safely escape independently; lifetime annotations such as `lifetimebound` tell Swift which input owns the lifetime. With this information, Swift can reject code where a borrowed result escapes local storage that is about to die. ([Swift.org, "Safely Mixing Swift and C/C++"](https://swift.org/documentation/cxx-interop/safe-interop/))
 
 Interview version:
 
@@ -436,7 +436,7 @@ Risky APIs include:
 - APIs that leak C++ standard-library or third-party C++ types into public Swift SDK surfaces.
 ```
 
-Official status docs also list concrete support constraints: Swift C++ interop requires Swift 5.9 or above, r-value reference functions/constructors are not yet available in Swift, and many function templates with dependent types, universal references, non-type template parameters, or variadic templates are unavailable. ([Swift.org](https://swift.org/documentation/cxx-interop/status/ "Supported Features and Constraints of C++ Interoperability | Swift.org"))
+Official status docs also list concrete support constraints: Swift C++ interop requires Swift 5.9 or above, r-value reference functions/constructors are not yet available in Swift, and many function templates with dependent types, universal references, non-type template parameters, or variadic templates are unavailable. ([Swift.org, "Supported Features and Constraints of C++ Interoperability"](https://swift.org/documentation/cxx-interop/status/))
 
 Interview version:
 
@@ -547,7 +547,7 @@ The wrapper copies the Track into an independent Swift-visible value.
 The borrowed C++ reference does not escape the wrapper boundary.
 ```
 
-This is the same design pattern official docs recommend for dependent reference-returning APIs: call the unsafe imported method privately and return a copy. ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
+This is the same design pattern official docs recommend for dependent reference-returning APIs: call the unsafe imported method privately and return a copy. ([Swift.org, "Mixing Swift and C++"](https://swift.org/documentation/cxx-interop/))
 
 ---
 
@@ -846,7 +846,7 @@ SearchUI            -> SwiftUI/UIKit app code, no C++ import
 SearchTesting       -> mocks/fakes using SearchDomain only
 ```
 
-Do not enable C++ interoperability everywhere. Swift Package Manager notes that enabling C++ interoperability on a package target forces dependent targets to enable it too, and enabling it for an existing package is a breaking change. ([Swift.org](https://swift.org/documentation/cxx-interop/project-build-setup/ "Setting Up Mixed-Language Swift and C++ Projects | Swift.org"))
+Do not enable C++ interoperability everywhere. Swift Package Manager notes that enabling C++ interoperability on a package target forces dependent targets to enable it too, and enabling it for an existing package is a breaking change. ([Swift.org, "Setting Up Mixed-Language Swift and C++ Projects"](https://swift.org/documentation/cxx-interop/project-build-setup/))
 
 ---
 
@@ -986,10 +986,10 @@ A: Do not expose C++ idioms broadly. Centralize interop, annotate or quarantine 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — E4 C++ interoperability and staff-level weighting.
-- Swift.org — “Mixing Swift and C++.” ([Swift.org](https://swift.org/documentation/cxx-interop/ "Mixing Swift and C++ | Swift.org"))
-- Swift.org — “Safely Mixing Swift and C/C++.” ([Swift.org](https://swift.org/documentation/cxx-interop/safe-interop/ "Safely Mixing Swift and C/C++ | Swift.org"))
-- Swift.org — “Supported Features and Constraints of C++ Interoperability.” ([Swift.org](https://swift.org/documentation/cxx-interop/status/ "Supported Features and Constraints of C++ Interoperability | Swift.org"))
-- Swift.org — “Setting Up Mixed-Language Swift and C++ Projects.” ([Swift.org](https://swift.org/documentation/cxx-interop/project-build-setup/ "Setting Up Mixed-Language Swift and C++ Projects | Swift.org"))
-- Swift Evolution vision — “Using C++ from Swift.” ([github.com](https://github.com/apple/swift-evolution/blob/main/visions/using-c%2B%2B-from-swift.md "swift-evolution/visions/using-c++-from-swift.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution vision — “Memory Safety,” C++ lifetime-safety affordances.
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E4 C++ interoperability and staff-level weighting.
+- Swift.org. "Mixing Swift and C++." Swift.org Documentation. https://swift.org/documentation/cxx-interop/
+- Swift.org. "Safely Mixing Swift and C/C++." Swift.org Documentation. https://swift.org/documentation/cxx-interop/safe-interop/
+- Swift.org. "Supported Features and Constraints of C++ Interoperability." Swift.org Documentation. https://swift.org/documentation/cxx-interop/status/
+- Swift.org. "Setting Up Mixed-Language Swift and C++ Projects." Swift.org Documentation. https://swift.org/documentation/cxx-interop/project-build-setup/
+- GitHub. "Using C++ from Swift." Swift Evolution Vision. https://github.com/swiftlang/swift-evolution/blob/main/visions/using-c%2B%2B-from-swift.md
+- Swift Evolution vision — "Memory Safety," C++ lifetime-safety affordances. TODO: verify source formatting
