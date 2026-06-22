@@ -48,7 +48,7 @@ inout T      = callee gets exclusive mutable access and must leave T valid
 
 `consuming` means the callee receives ownership. It is responsible for storing, forwarding, or destroying the value. For ordinary copyable types, this mostly gives the compiler and API author more control over copies and ARC traffic. For noncopyable/resource types, it becomes part of correctness: after a value is consumed, it must not be used again.
 
-The `consume` operator is caller-side ownership transfer. It explicitly ends the lifetime of a local binding and makes later use a compiler error. SE-0366 describes `consume` as ending the lifetime of a local `let`, local `var`, or function parameter, and emitting diagnostics for use after consume. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0366-move-function.md "raw.githubusercontent.com"))
+The `consume` operator is caller-side ownership transfer. It explicitly ends the lifetime of a local binding and makes later use a compiler error. SE-0366 describes `consume` as ending the lifetime of a local `let`, local `var`, or function parameter, and emitting diagnostics for use after consume. ([GitHub, "consume Operator to End the Lifetime of a Variable Binding"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0366-move-function.md))
 
 The key idea:
 
@@ -76,7 +76,7 @@ func demo() {
 }
 ```
 
-For copyable types, Swift often defaults ordinary function parameters to borrowing-like behavior when that is efficient. SE-0377 says most functions default to borrowing, while initializers and setters are more likely to consume because they often store or forward values. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0377-parameter-ownership-modifiers.md "raw.githubusercontent.com"))
+For copyable types, Swift often defaults ordinary function parameters to borrowing-like behavior when that is efficient. SE-0377 says most functions default to borrowing, while initializers and setters are more likely to consume because they often store or forward values. ([GitHub, "borrowing and consuming Parameter Ownership Modifiers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md))
 
 The important part is not syntax. It is the contract:
 
@@ -112,9 +112,9 @@ Exact output:
 [1, 2, 3, 0]
 ```
 
-SE-0377 defines the two conventions this way: a callee can borrow a parameter, where the caller guarantees the object stays alive during the call, or consume it, where the callee becomes responsible for releasing, destroying, or forwarding ownership. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0377-parameter-ownership-modifiers.md "raw.githubusercontent.com"))
+SE-0377 defines the two conventions this way: a callee can borrow a parameter, where the caller guarantees the object stays alive during the call, or consume it, where the callee becomes responsible for releasing, destroying, or forwarding ownership. ([GitHub, "borrowing and consuming Parameter Ownership Modifiers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md))
 
-For value types, “retain” generalizes to an independent copy, and “release” generalizes to destruction of that copy. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0377-parameter-ownership-modifiers.md "raw.githubusercontent.com"))
+For value types, “retain” generalizes to an independent copy, and “release” generalizes to destruction of that copy. ([GitHub, "borrowing and consuming Parameter Ownership Modifiers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md))
 
 ---
 
@@ -158,7 +158,7 @@ Exact Swift 6.2.1 compiler error:
    |           `- note: used here
 ```
 
-SE-0366 states that `consume` forces ownership transfer out of the binding at that point; any later reachable use of that binding is an error. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0366-move-function.md "raw.githubusercontent.com"))
+SE-0366 states that `consume` forces ownership transfer out of the binding at that point; any later reachable use of that binding is an error. ([GitHub, "consume Operator to End the Lifetime of a Variable Binding"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0366-move-function.md))
 
 ---
 
@@ -199,13 +199,13 @@ Exact output:
 ("abc", "abc")
 ```
 
-SE-0377 says `borrowing` and `consuming` parameter bindings are not implicitly copyable inside the function body; use `copy x` when you intentionally need an independent copy. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0377-parameter-ownership-modifiers.md "raw.githubusercontent.com"))
+SE-0377 says `borrowing` and `consuming` parameter bindings are not implicitly copyable inside the function body; use `copy x` when you intentionally need an independent copy. ([GitHub, "borrowing and consuming Parameter Ownership Modifiers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md))
 
 ---
 
 ### 2.5 For noncopyable values, ownership is API correctness
 
-For noncopyable/resource types, a parameter must say whether it borrows, consumes, or mutates the value. SE-0390 states that noncopyable function parameters must explicitly declare `borrowing`, `consuming`, or `inout`, because the ownership convention is part of the API contract. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0390-noncopyable-structs-and-enums.md "raw.githubusercontent.com"))
+For noncopyable/resource types, a parameter must say whether it borrows, consumes, or mutates the value. SE-0390 states that noncopyable function parameters must explicitly declare `borrowing`, `consuming`, or `inout`, because the ownership convention is part of the API contract. ([GitHub, "Noncopyable Structs and Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md))
 
 ```swift
 struct FileToken: ~Copyable {
@@ -300,7 +300,7 @@ func render(_ model: borrowing ViewModel) {
 }
 ```
 
-`consuming` can reduce copies or ARC traffic in specific designs, but it also changes the ownership contract. For ABI-stable public APIs, SE-0377 notes that ownership convention affects the ABI-level calling convention and cannot freely change later. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0377-parameter-ownership-modifiers.md "raw.githubusercontent.com"))
+`consuming` can reduce copies or ARC traffic in specific designs, but it also changes the ownership contract. For ABI-stable public APIs, SE-0377 notes that ownership convention affects the ABI-level calling convention and cannot freely change later. ([GitHub, "borrowing and consuming Parameter Ownership Modifiers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md))
 
 Use it when the API really owns, stores, destroys, forwards, or finalizes the value.
 
@@ -420,9 +420,9 @@ Use `inout` when the caller expects the same variable to be updated. Use `consum
 
 They let APIs explicitly state whether a parameter is temporarily borrowed or ownership is transferred into the callee.
 
-For normal copyable Swift, this gives API authors control over copies, ARC traffic, and ABI-level calling conventions in performance-sensitive or library-level code. SE-0377 says the optimizer can sometimes infer better conventions, but not always, especially across public ABI boundaries, non-final class methods, and protocol requirements. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0377-parameter-ownership-modifiers.md "raw.githubusercontent.com"))
+For normal copyable Swift, this gives API authors control over copies, ARC traffic, and ABI-level calling conventions in performance-sensitive or library-level code. SE-0377 says the optimizer can sometimes infer better conventions, but not always, especially across public ABI boundaries, non-final class methods, and protocol requirements. ([GitHub, "borrowing and consuming Parameter Ownership Modifiers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md))
 
-For noncopyable/resource types, the problem is deeper: Swift must know whether an operation leaves the value usable. A `read` operation should borrow a file handle. A `close` operation should consume it. SE-0377 uses exactly this distinction: borrowing a noncopyable file handle leaves it valid; consuming it prevents further use. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0377-parameter-ownership-modifiers.md "raw.githubusercontent.com"))
+For noncopyable/resource types, the problem is deeper: Swift must know whether an operation leaves the value usable. A `read` operation should borrow a file handle. A `close` operation should consume it. SE-0377 uses exactly this distinction: borrowing a noncopyable file handle leaves it valid; consuming it prevents further use. ([GitHub, "borrowing and consuming Parameter Ownership Modifiers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md))
 
 Interview version:
 
@@ -436,7 +436,7 @@ Because ownership is often a semantic property of the domain.
 
 A file descriptor, lock token, transaction, audio buffer lease, GPU resource, or one-shot continuation-like token may have a lifecycle rule: use it while valid, then consume it exactly once. If this is represented with a copyable class or struct, correctness depends on comments, runtime flags, and discipline. If it is represented with noncopyability plus `borrowing`/`consuming`, misuse becomes a compiler error.
 
-SE-0390 explains that noncopyable values always have unique ownership and are useful for resources where normal copyable structs and enums are not a good model. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0390-noncopyable-structs-and-enums.md "raw.githubusercontent.com"))
+SE-0390 explains that noncopyable values always have unique ownership and are useful for resources where normal copyable structs and enums are not a good model. ([GitHub, "Noncopyable Structs and Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md))
 
 Interview version:
 
@@ -547,7 +547,7 @@ func duplicate(_ x: borrowing String) -> (String, String) {
 
 ### Why this fix is correct
 
-`copy x` explicitly requests independent owned values. SE-0377 says the no-implicit-copy rule is attached to `borrowing` and `consuming` bindings, and `copy x` is the way to allow copies intentionally. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0377-parameter-ownership-modifiers.md "raw.githubusercontent.com"))
+`copy x` explicitly requests independent owned values. SE-0377 says the no-implicit-copy rule is attached to `borrowing` and `consuming` bindings, and `copy x` is the way to allow copies intentionally. ([GitHub, "borrowing and consuming Parameter Ownership Modifiers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md))
 
 ### Alternative fixes and tradeoffs
 
@@ -803,7 +803,7 @@ A: `consuming` transfers ownership and invalidates the old value; `inout` gives 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist.
-- SE-0377: `borrowing` and `consuming` parameter ownership modifiers. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0377-parameter-ownership-modifiers.md "raw.githubusercontent.com"))
-- SE-0366: `consume` operator to end the lifetime of a variable binding. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0366-move-function.md "raw.githubusercontent.com"))
-- SE-0390: Noncopyable structs and enums. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0390-noncopyable-structs-and-enums.md "raw.githubusercontent.com"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>)
+- GitHub. "borrowing and consuming Parameter Ownership Modifiers." Swift Evolution SE-0377. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md
+- GitHub. "consume Operator to End the Lifetime of a Variable Binding." Swift Evolution SE-0366. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0366-move-function.md
+- GitHub. "Noncopyable Structs and Enums." Swift Evolution SE-0390. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md

@@ -37,7 +37,7 @@ Swift `String` is a collection of extended grapheme clusters, not bytes, UTF-16 
 
 ## 1. Core mental model
 
-Swift’s default `String` abstraction is user-facing text. Its element type is `Character`, and a `Character` represents one extended grapheme cluster. A grapheme cluster is one or more Unicode scalars that should usually be treated as a single human-readable character. Swift’s documentation uses examples like `é`, Hangul syllables, and flags to show that one visible character can be composed from multiple scalar values. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters/?utm_source=chatgpt.com "Strings and Characters | Documentation"))
+Swift’s default `String` abstraction is user-facing text. Its element type is `Character`, and a `Character` represents one extended grapheme cluster. A grapheme cluster is one or more Unicode scalars that should usually be treated as a single human-readable character. Swift’s documentation uses examples like `é`, Hangul syllables, and flags to show that one visible character can be composed from multiple scalar values. ([Swift.org, "Strings and Characters"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters/))
 
 Unicode is layered. At the bottom, storage is bytes. Above that are encoding code units, such as UTF-8 or UTF-16 code units. Above that are Unicode scalars, which are code points excluding surrogate code points. Above that are grapheme clusters, which are the units Swift exposes as `Character`.
 
@@ -139,7 +139,7 @@ Output:
 é
 ```
 
-`index(_:offsetBy:)` for `String` is O(n), where `n` is the absolute offset distance. Apple documents this complexity directly for `String.index(_:offsetBy:)`. ([Apple Developer](https://developer.apple.com/documentation/swift/string/index%28_%3Aoffsetby%3A%29?utm_source=chatgpt.com "index(_:offsetBy:) | Apple Developer Documentation"))
+`index(_:offsetBy:)` for `String` is O(n), where `n` is the absolute offset distance. Apple documents this complexity directly for `String.index(_:offsetBy:)`. ([Apple Developer, "index(_:offsetBy:)"](https://developer.apple.com/documentation/swift/string/index%28_%3aoffsetby%3a%29))
 
 ### 2.4 UTF-16 offsets must be converted, not reused
 
@@ -278,7 +278,7 @@ Examples:
 "👨‍👩‍👧‍👦"       -> 1 Character, multiple scalars joined by ZWJ
 ```
 
-Unicode Standard Annex #29 defines text segmentation boundaries for grapheme clusters and explains why user-perceived characters may consist of multiple code points. It also notes that grapheme clusters matter for UI interactions such as selection, cursor movement, deletion, and character counting. ([unicode.org](https://www.unicode.org/reports/tr29/ "UAX #29: Unicode Text Segmentation"))
+Unicode Standard Annex #29 defines text segmentation boundaries for grapheme clusters and explains why user-perceived characters may consist of multiple code points. It also notes that grapheme clusters matter for UI interactions such as selection, cursor movement, deletion, and character counting. ([Unicode Consortium, "UAX #29: Unicode Text Segmentation"](https://www.unicode.org/reports/tr29/))
 
 Interview version:
 
@@ -626,8 +626,8 @@ A: Repeatedly calling `index(_:offsetBy:)` from `startIndex` can turn a loop int
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, C4 String and Unicode correctness.
-- Swift Book, “Strings and Characters.” ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters/?utm_source=chatgpt.com "Strings and Characters | Documentation"))
-- Apple Developer Documentation, `String`. ([Apple Developer](https://developer.apple.com/documentation/Swift/String?utm_source=chatgpt.com "String | Apple Developer Documentation"))
-- Apple Developer Documentation, `String.index(_:offsetBy:)` complexity. ([Apple Developer](https://developer.apple.com/documentation/swift/string/index%28_%3Aoffsetby%3A%29?utm_source=chatgpt.com "index(_:offsetBy:) | Apple Developer Documentation"))
-- Unicode Standard Annex #29, Unicode Text Segmentation. ([unicode.org](https://www.unicode.org/reports/tr29/ "UAX #29: Unicode Text Segmentation"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C4 String and Unicode correctness.
+- Swift.org. "Strings and Characters." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters/
+- Apple Developer. "String." Apple Developer Documentation. https://developer.apple.com/documentation/swift/string
+- Apple Developer. "index(_:offsetBy:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/string/index%28_%3aoffsetby%3a%29
+- Unicode Consortium. "UAX #29: Unicode Text Segmentation." https://www.unicode.org/reports/tr29/

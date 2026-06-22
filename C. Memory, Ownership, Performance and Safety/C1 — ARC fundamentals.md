@@ -34,13 +34,13 @@ ARC is deterministic at normal scope/lifetime boundaries, but lifetimes can be e
 
 ## 1. Core mental model
 
-ARC, or Automatic Reference Counting, is Swift’s memory-management system for class instances. Swift inserts retains and releases around ownership operations so that an object stays alive while it has at least one strong reference and is deallocated when the last strong reference goes away. The Swift book describes ARC as Swift’s mechanism for tracking and managing memory for class instances, and the same ARC chapter covers strong cycles, `weak`, `unowned`, and closure capture lists. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/?utm_source=chatgpt.com "Automatic Reference Counting | Documentation"))
+ARC, or Automatic Reference Counting, is Swift’s memory-management system for class instances. Swift inserts retains and releases around ownership operations so that an object stays alive while it has at least one strong reference and is deallocated when the last strong reference goes away. The Swift book describes ARC as Swift’s mechanism for tracking and managing memory for class instances, and the same ARC chapter covers strong cycles, `weak`, `unowned`, and closure capture lists. ([Swift.org, "Automatic Reference Counting"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/))
 
 ARC is not garbage collection. There is no general tracing collector that later discovers unreachable cycles. ARC only counts references. If object A strongly owns object B, object B strongly owns a closure, and the closure strongly captures object A, all reference counts stay above zero forever. The graph may be unreachable from your code, but ARC still sees every object in the cycle as owned.
 
-`weak` and `unowned` are both non-owning references. They break cycles because they do not increment the referenced object’s strong reference count. The important difference is failure behavior: `weak` must be optional and becomes `nil` when the object deallocates; `unowned` is used when the referenced object is expected to outlive the reference, and accessing it after deallocation is a runtime failure. Swift’s documentation describes capture lists as the way to change how closures capture references, including `weak` and `unowned`. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/?utm_source=chatgpt.com "Automatic Reference Counting | Documentation"))
+`weak` and `unowned` are both non-owning references. They break cycles because they do not increment the referenced object’s strong reference count. The important difference is failure behavior: `weak` must be optional and becomes `nil` when the object deallocates; `unowned` is used when the referenced object is expected to outlive the reference, and accessing it after deallocation is a runtime failure. Swift’s documentation describes capture lists as the way to change how closures capture references, including `weak` and `unowned`. ([Swift.org, "Automatic Reference Counting"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/))
 
-Closures matter because closures are reference types and can capture objects strongly. If a class instance stores a closure property, and that closure refers to the instance, the instance can own the closure while the closure owns the instance. Swift’s closure documentation explicitly calls out this pattern and says capture lists are used to break those cycles. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/?utm_source=chatgpt.com "Closures - Documentation | Swift.org"))
+Closures matter because closures are reference types and can capture objects strongly. If a class instance stores a closure property, and that closure refers to the instance, the instance can own the closure while the closure owns the instance. Swift’s closure documentation explicitly calls out this pattern and says capture lists are used to break those cycles. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
 
 The key idea:
 
@@ -113,7 +113,7 @@ final class FlowCoordinator {
 }
 ```
 
-This is common for delegate relationships: the coordinator should not keep the delegate alive. The Swift book’s protocol examples also describe delegates as weak references to prevent strong reference cycles. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols | Documentation"))
+This is common for delegate relationships: the coordinator should not keep the delegate alive. The Swift book’s protocol examples also describe delegates as weak references to prevent strong reference cycles. ([Swift.org, "Protocols"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/))
 
 A `weak` reference answers:
 
@@ -201,7 +201,7 @@ Foundation/Objective-C bridging creates autoreleased objects.
 A framework stores your object as a delegate, target, callback, or observer.
 ```
 
-Apple’s autorelease-pool documentation says autorelease pools hold objects until the pool drains; with ARC, Swift uses `@autoreleasepool` blocks rather than manual `NSAutoreleasePool` management. ([Apple Developer](https://developer.apple.com/documentation/foundation/nsautoreleasepool?utm_source=chatgpt.com "NSAutoreleasePool | Apple Developer Documentation")) Apple’s Timer and RunLoop docs also matter here: a run loop retains a timer, invalidation removes it, and a timer can repeatedly reschedule until invalidated. ([Apple Developer](https://developer.apple.com/documentation/foundation/timer?language=objc&utm_source=chatgpt.com "NSTimer | Apple Developer Documentation"))
+Apple’s autorelease-pool documentation says autorelease pools hold objects until the pool drains; with ARC, Swift uses `@autoreleasepool` blocks rather than manual `NSAutoreleasePool` management. ([Apple Developer, "NSAutoreleasePool"](https://developer.apple.com/documentation/foundation/nsautoreleasepool)) Apple’s Timer and RunLoop docs also matter here: a run loop retains a timer, invalidation removes it, and a timer can repeatedly reschedule until invalidated. ([Apple Developer, "Timer"](https://developer.apple.com/documentation/foundation/timer))
 
 ---
 
@@ -613,7 +613,7 @@ Timer ─strong─> closure
 closure ─strong─> FeedViewController
 ```
 
-Even if the view controller disappears, the timer can keep firing because it is scheduled on the run loop. Apple’s documentation notes that a run loop retains a timer and that invalidation removes the timer from the run loop. ([Apple Developer](https://developer.apple.com/documentation/foundation/runloop/add%28_%3Aformode%3A%29-392ag?utm_source=chatgpt.com "add(_:forMode:) | Apple Developer Documentation"))
+Even if the view controller disappears, the timer can keep firing because it is scheduled on the run loop. Apple’s documentation notes that a run loop retains a timer and that invalidation removes the timer from the run loop. ([Apple Developer, "add(_:forMode:)"](https://developer.apple.com/documentation/foundation/runloop/add%28_%3aformode%3a%29-392ag))
 
 ### Improved version
 
@@ -868,9 +868,9 @@ A: Usually `[weak self]`, combined with explicit cancellation or invalidation at
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist, C1 ARC fundamentals.
-- The Swift Programming Language — Automatic Reference Counting. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/?utm_source=chatgpt.com "Automatic Reference Counting | Documentation"))
-- The Swift Programming Language — Closures and capture lists. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/?utm_source=chatgpt.com "Closures - Documentation | Swift.org")
-- The Swift Programming Language — declarations for `weak` and `unowned`. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
-- Apple Developer Documentation — autorelease pools / `@autoreleasepool`. ([Apple Developer](https://developer.apple.com/documentation/foundation/nsautoreleasepool?utm_source=chatgpt.com "NSAutoreleasePool | Apple Developer Documentation"))
-- Apple Developer Documentation — `Timer`, `RunLoop`, and invalidation. ([Apple Developer](https://developer.apple.com/documentation/foundation/timer?language=objc&utm_source=chatgpt.com "NSTimer | Apple Developer Documentation"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C1 ARC fundamentals.
+- Swift.org. "Automatic Reference Counting." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/
+- Swift.org. "Closures." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/
+- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/
+- Apple Developer. "NSAutoreleasePool." Apple Developer Documentation. https://developer.apple.com/documentation/foundation/nsautoreleasepool
+- Apple Developer. "Timer." Apple Developer Documentation. https://developer.apple.com/documentation/foundation/timer

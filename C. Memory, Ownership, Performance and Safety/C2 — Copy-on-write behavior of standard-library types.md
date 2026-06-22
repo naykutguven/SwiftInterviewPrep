@@ -39,7 +39,7 @@ An `Array` is a value. Assigning it to another variable creates another logical 
 
 When one of those array values is mutated, Swift checks whether the storage is uniquely referenced. If it is unique, Swift mutates in place. If it is shared, Swift first creates a separate buffer, then mutates that buffer. The public behavior is still value semantics: mutating `b` does not mutate `a`.
 
-Apple’s standard library documentation describes this directly: arrays are value types, mutating a shared array incurs copying, and a uniquely owned array can mutate in place. The Swift source docs also call out that standard-library arrays use CoW so passing an array argument can drop from an O(n) copy to O(1) storage sharing. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift "swift/stdlib/public/core/Array.swift at main · swiftlang/swift · GitHub"))
+Apple’s standard library documentation describes this directly: arrays are value types, mutating a shared array incurs copying, and a uniquely owned array can mutate in place. The Swift source docs also call out that standard-library arrays use CoW so passing an array argument can drop from an O(n) copy to O(1) storage sharing. ([GitHub, "Array.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/array.swift))
 
 The key idea:
 
@@ -139,7 +139,7 @@ The array has value semantics for its **collection structure**. It does not deep
 
 ### Mechanic 3: Mutating shared or bridged storage can be O(n)
 
-Array element reads are O(1). Writes are O(1) only when the array has uniquely owned native storage. The standard library documentation says writing can become O(n) when storage is shared with another array or when the array uses bridged `NSArray` storage. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift "swift/stdlib/public/core/Array.swift at main · swiftlang/swift · GitHub"))
+Array element reads are O(1). Writes are O(1) only when the array has uniquely owned native storage. The standard library documentation says writing can become O(n) when storage is shared with another array or when the array uses bridged `NSArray` storage. ([GitHub, "Array.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/array.swift))
 
 ```swift
 var original = Array(0..<1_000_000)
@@ -183,7 +183,7 @@ The better version makes ownership and mutation local. It avoids repeated value 
 
 ### Mechanic 4: `ArraySlice` is a view over larger storage
 
-`ArraySlice` is designed to avoid copying. The Swift standard-library docs say `ArraySlice` presents a view onto the storage of a larger array instead of copying slice elements into new storage. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/core/ArraySlice.swift "swift/stdlib/public/core/ArraySlice.swift at main · swiftlang/swift · GitHub"))
+`ArraySlice` is designed to avoid copying. The Swift standard-library docs say `ArraySlice` presents a view onto the storage of a larger array instead of copying slice elements into new storage. ([GitHub, "ArraySlice.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/arrayslice.swift))
 
 ```swift
 let source = Array(10...20)
@@ -268,7 +268,7 @@ struct BigBuffer {
 }
 ```
 
-`isKnownUniquelyReferenced(_:)` exists specifically to help implement CoW storage for value types that internally hold reference storage. Apple’s documentation describes it as useful for implementing copy-on-write optimization for deep storage of value types. ([Apple Developer](https://developer.apple.com/documentation/swift/isknownuniquelyreferenced%28_%3A%29-5kvtu?utm_source=chatgpt.com "isKnownUniquelyReferenced(_:)"))
+`isKnownUniquelyReferenced(_:)` exists specifically to help implement CoW storage for value types that internally hold reference storage. Apple’s documentation describes it as useful for implementing copy-on-write optimization for deep storage of value types. ([Apple Developer, "isKnownUniquelyReferenced(_:)"](https://developer.apple.com/documentation/swift/isknownuniquelyreferenced%28_%3a%29-5kvtu))
 
 ---
 
@@ -316,7 +316,7 @@ Or, if identity is intentional, model it explicitly and do not sell the API as d
 
 ### Trap 3: Storing `ArraySlice` as long-lived state
 
-`ArraySlice` is efficient for temporary views. It is risky as long-lived storage. The standard library warns that long-term storage of `ArraySlice` is discouraged because a slice holds a reference to the entire storage of the larger array, not just the visible elements, and can prolong the lifetime of otherwise inaccessible elements. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/core/ArraySlice.swift "swift/stdlib/public/core/ArraySlice.swift at main · swiftlang/swift · GitHub"))
+`ArraySlice` is efficient for temporary views. It is risky as long-lived storage. The standard library warns that long-term storage of `ArraySlice` is discouraged because a slice holds a reference to the entire storage of the larger array, not just the visible elements, and can prolong the lifetime of otherwise inaccessible elements. ([GitHub, "ArraySlice.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/arrayslice.swift))
 
 Bad:
 
@@ -804,7 +804,7 @@ A: No. It must be implemented by the type, usually with reference storage and un
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — C2 Copy-on-write behavior of standard-library types.
-- Swift standard library `Array` documentation/source comments on shared storage, unique mutation, bridging, and write complexity. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/Array.swift "swift/stdlib/public/core/Array.swift at main · swiftlang/swift · GitHub"))
-- Swift standard library `ArraySlice` documentation/source comments on slice views, retained backing storage, and slice indices. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/core/ArraySlice.swift "swift/stdlib/public/core/ArraySlice.swift at main · swiftlang/swift · GitHub"))
-- Swift optimization tips on using CoW semantics for large values and implementing custom CoW storage. ([GitHub](https://github.com/swiftlang/swift/blob/main/docs/OptimizationTips.rst "swift/docs/OptimizationTips.rst at main · swiftlang/swift · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C2 Copy-on-write behavior of standard-library types.
+- GitHub. "Array.swift." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/stdlib/public/core/array.swift
+- GitHub. "ArraySlice.swift." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/stdlib/public/core/arrayslice.swift
+- GitHub. "Optimization Tips." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/docs/optimizationtips.rst

@@ -35,11 +35,11 @@ Swift’s collection protocols are not just “containers.” They are **semanti
 
 `Sequence` is the weakest abstraction. It means values can be produced one after another. It does **not** promise indexing, finiteness, repeatable traversal, or cheap counting. A `Sequence` can be single-pass, lazy, destructive, or infinite. Use it when your algorithm only needs one forward pass.
 
-`Collection` strengthens `Sequence`. It promises a finite, multipass collection whose elements can be accessed through indices. Apple’s documentation describes a collection as multipass and index-subscriptable; unlike a plain sequence, elements can be repeatedly accessed by saving an index. ([Apple Developer](https://developer.apple.com/documentation/swift/collection?utm_source=chatgpt.com "Collection | Apple Developer Documentation"))
+`Collection` strengthens `Sequence`. It promises a finite, multipass collection whose elements can be accessed through indices. Apple’s documentation describes a collection as multipass and index-subscriptable; unlike a plain sequence, elements can be repeatedly accessed by saving an index. ([Apple Developer, "Collection"](https://developer.apple.com/documentation/swift/collection))
 
 `BidirectionalCollection` adds the ability to move backward from an index. This matters for algorithms needing reverse traversal, `last`, suffix scanning, or two-pointer movement from both ends.
 
-`RandomAccessCollection` adds the key performance contract: moving an index by an arbitrary distance and measuring distance between indices are `O(1)`. Apple’s docs explicitly distinguish random-access collections by constant-time index movement and distance measurement; `count` is also `O(1)` for random-access collections instead of requiring traversal. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/core/RandomAccessCollection.swift?utm_source=chatgpt.com "swift/stdlib/public/core/RandomAccessCollection.swift at main"))
+`RandomAccessCollection` adds the key performance contract: moving an index by an arbitrary distance and measuring distance between indices are `O(1)`. Apple’s docs explicitly distinguish random-access collections by constant-time index movement and distance measurement; `count` is also `O(1)` for random-access collections instead of requiring traversal. ([GitHub, "RandomAccessCollection.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/randomaccesscollection.swift))
 
 The key idea:
 
@@ -153,7 +153,7 @@ The slice starts at index `1`, not `0`. This is why generic APIs should return `
 
 ### `count` and offsetting are not always cheap
 
-For `Collection`, `count` can be `O(n)`. Apple’s documentation for `Collection.count` says `count` is `O(1)` only when the collection conforms to `RandomAccessCollection`; otherwise it can be `O(n)`. ([Apple Developer](https://developer.apple.com/documentation/swift/collection/count?utm_source=chatgpt.com "count | Apple Developer Documentation"))
+For `Collection`, `count` can be `O(n)`. Apple’s documentation for `Collection.count` says `count` is `O(1)` only when the collection conforms to `RandomAccessCollection`; otherwise it can be `O(n)`. ([Apple Developer, "count"](https://developer.apple.com/documentation/swift/collection/count))
 
 Bad:
 
@@ -199,7 +199,7 @@ This walks indices forward once. It works with a weaker constraint and preserves
 
 ### Mutating can invalidate indices
 
-Indices are only valid under the rules of the specific collection and mutation operation. Apple’s `Collection` documentation notes that saved indices may become invalid after mutating operations. ([Apple Developer](https://developer.apple.com/documentation/Swift/Collection?utm_source=chatgpt.com "Collection | Apple Developer Documentation")) Apple’s `Array.insert(_:at:)` documentation also warns that calling the method may invalidate existing indices for that collection. ([Apple Developer](https://developer.apple.com/documentation/swift/array/insert%28_%3Aat%3A%29-88yqz?utm_source=chatgpt.com "insert(_:at:) | Apple Developer Documentation"))
+Indices are only valid under the rules of the specific collection and mutation operation. Apple’s `Collection` documentation notes that saved indices may become invalid after mutating operations. ([Apple Developer, "Collection"](https://developer.apple.com/documentation/swift/collection)) Apple’s `Array.insert(_:at:)` documentation also warns that calling the method may invalidate existing indices for that collection. ([Apple Developer, "insert(_:at:)"](https://developer.apple.com/documentation/swift/array/insert%28_%3aat%3a%29-88yqz))
 
 Bad:
 
@@ -366,7 +366,7 @@ Interview version:
 
 ### Q2. What assumptions are safe only for `RandomAccessCollection`?
 
-You can assume constant-time distance measurement and arbitrary index offsetting. That makes algorithms like binary search, midpoint access, partitioning by index ranges, and repeated indexed jumps efficient. Apple’s standard library documentation describes random-access collections as supporting `O(1)` index movement and distance measurement. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/core/RandomAccessCollection.swift?utm_source=chatgpt.com "swift/stdlib/public/core/RandomAccessCollection.swift at main"))
+You can assume constant-time distance measurement and arbitrary index offsetting. That makes algorithms like binary search, midpoint access, partitioning by index ranges, and repeated indexed jumps efficient. Apple’s standard library documentation describes random-access collections as supporting `O(1)` index movement and distance measurement. ([GitHub, "RandomAccessCollection.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/randomaccesscollection.swift))
 
 You cannot assume:
 
@@ -769,9 +769,8 @@ A: Structural mutations can invalidate indices or make them refer to different l
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, C5 — Collection protocols, complexity, and index invalidation.
-- Apple Developer Documentation — `Collection`: multipass, indexed collection semantics. ([Apple Developer](https://developer.apple.com/documentation/swift/collection?utm_source=chatgpt.com "Collection | Apple Developer Documentation"))
-- Swift standard library documentation/source — `RandomAccessCollection`: `O(1)` distance and index movement. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/core/RandomAccessCollection.swift?utm_source=chatgpt.com "swift/stdlib/public/core/RandomAccessCollection.swift at main"))
-- Apple Developer Documentation — `Collection.count`: `O(1)` for `RandomAccessCollection`, otherwise potentially `O(n)`. ([Apple Developer](https://developer.apple.com/documentation/swift/collection/count?utm_source=chatgpt.com "count | Apple Developer Documentation"))
-- Apple Developer Documentation — collection indices may become invalid after mutation. ([Apple Developer](https://developer.apple.com/documentation/Swift/Collection?utm_source=chatgpt.com "Collection | Apple Developer Documentation"))
-- Apple Developer Documentation — `Array.insert(_:at:)` may invalidate existing indices. ([Apple Developer](https://developer.apple.com/documentation/swift/array/insert%28_%3Aat%3A%29-88yqz?utm_source=chatgpt.com "insert(_:at:) | Apple Developer Documentation"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C5 — Collection protocols, complexity, and index invalidation.
+- Apple Developer. "Collection." Apple Developer Documentation. https://developer.apple.com/documentation/swift/collection
+- GitHub. "RandomAccessCollection.swift." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/stdlib/public/core/randomaccesscollection.swift
+- Apple Developer. "count." Apple Developer Documentation. https://developer.apple.com/documentation/swift/collection/count
+- Apple Developer. "insert(_:at:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/array/insert%28_%3aat%3a%29-88yqz

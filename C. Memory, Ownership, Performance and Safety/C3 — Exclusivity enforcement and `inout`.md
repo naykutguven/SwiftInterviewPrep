@@ -18,7 +18,7 @@ Understand exclusive access rules, dynamic exclusivity traps, and the borrow-lik
 
 **Caveats**
 
-`inout` is not a stable alias, not a C pointer, and not a C++ reference. Some overlapping-access problems are caught statically; others can compile and trap dynamically at runtime. Swift 5 and later enforce exclusive access dynamically in both Debug and Release builds by default. ([Swift.org](https://swift.org/blog/swift-5-exclusivity/?utm_source=chatgpt.com "Swift 5 Exclusivity Enforcement"))
+`inout` is not a stable alias, not a C pointer, and not a C++ reference. Some overlapping-access problems are caught statically; others can compile and trap dynamically at runtime. Swift 5 and later enforce exclusive access dynamically in both Debug and Release builds by default. ([Swift.org, "Swift 5 Exclusivity Enforcement"](https://swift.org/blog/swift-5-exclusivity/))
 
 **You should be able to answer**
 
@@ -41,9 +41,9 @@ Swift’s exclusivity rule is:
 For one memory location, Swift allows either many reads or one mutation, but not both at the same time.
 ```
 
-This is stricter than basic memory safety. Some code could be “memory-safe” in the narrow sense and still violate Swift’s exclusivity model. Swift uses exclusivity to make mutation predictable, preserve value semantics, and enable compiler optimizations. The Swift compiler documentation describes exclusivity checks as important for memory safety and optimization. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/exclusivity-violation/?utm_source=chatgpt.com "Overlapping accesses, but operation requires exclusive ..."))
+This is stricter than basic memory safety. Some code could be “memory-safe” in the narrow sense and still violate Swift’s exclusivity model. Swift uses exclusivity to make mutation predictable, preserve value semantics, and enable compiler optimizations. The Swift compiler documentation describes exclusivity checks as important for memory safety and optimization. ([Swift.org, "Exclusivity Violation"](https://docs.swift.org/compiler/documentation/diagnostics/exclusivity-violation/))
 
-`inout` means: “temporarily give this function exclusive mutable access to the caller’s storage.” The function may read and write through the parameter, and when the function returns, the caller regains normal access. The Swift book describes `inout` with a copy-in/copy-out model: the argument’s value is copied into the function, modified there, and written back to the original when the function returns. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
+`inout` means: “temporarily give this function exclusive mutable access to the caller’s storage.” The function may read and write through the parameter, and when the function returns, the caller regains normal access. The Swift book describes `inout` with a copy-in/copy-out model: the argument’s value is copied into the function, modified there, and written back to the original when the function returns. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
 
 However, you should not treat `inout` as literally “copying” or literally “passing an address.” The copy-in/copy-out model defines the semantics. The compiler is free to optimize the implementation, commonly by passing direct access to storage, but your code cannot depend on address identity or aliasing behavior.
 
@@ -80,7 +80,7 @@ increment(&x)
 // Exclusive mutable access to x for the duration of increment(_:).
 ```
 
-The Swift book states that the write access for an `inout` parameter starts after non-`inout` parameters are evaluated and lasts for the whole function call. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/?utm_source=chatgpt.com "Memory Safety - Documentation | Swift.org"))
+The Swift book states that the write access for an `inout` parameter starts after non-`inout` parameters are evaluated and lasts for the whole function call. ([Swift.org, "Memory Safety"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/))
 
 That explains why this is valid:
 
@@ -118,7 +118,7 @@ Both parameters would require long-term mutable access to the same storage.
 
 ### `inout` access excludes other access to the same storage
 
-Inside a function, do not access the original variable through another name while it is passed as `inout`. The Swift book explicitly warns that accessing the original value while it is passed as an in-out argument violates memory exclusivity. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
+Inside a function, do not access the original variable through another name while it is passed as `inout`. The Swift book explicitly warns that accessing the original value while it is passed as an in-out argument violates memory exclusivity. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
 
 ```swift
 var stepSize = 1
@@ -195,7 +195,7 @@ counter.increment()
 ≈ Counter.increment(&counter)
 ```
 
-This matters when a mutating method tries to read or mutate the same storage through another path. It is not only explicit `inout` parameters that participate in exclusivity. `self` in a mutating method does too. Swift.org’s exclusivity post describes the same principle: a variable cannot be accessed through a different name while it is being modified as an `inout` argument or as `self` in a mutating method. ([Swift.org](https://swift.org/blog/swift-5-exclusivity/?utm_source=chatgpt.com "Swift 5 Exclusivity Enforcement"))
+This matters when a mutating method tries to read or mutate the same storage through another path. It is not only explicit `inout` parameters that participate in exclusivity. `self` in a mutating method does too. Swift.org’s exclusivity post describes the same principle: a variable cannot be accessed through a different name while it is being modified as an `inout` argument or as `self` in a mutating method. ([Swift.org, "Swift 5 Exclusivity Enforcement"](https://swift.org/blog/swift-5-exclusivity/))
 
 ---
 
@@ -325,7 +325,7 @@ This avoids exposing two independently aliased `inout` accesses into the same co
 
 `inout` is a scoped mutation mechanism with exclusive-access rules. It does not give you a stable alias or address that can be stored, escaped, or reasoned about like a pointer/reference.
 
-Swift defines `inout` semantically as copy-in/copy-out: a value is made available to the function, the function mutates it, and the final value is written back to the original storage. The compiler may optimize this, but source code must not depend on the optimization. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
+Swift defines `inout` semantically as copy-in/copy-out: a value is made available to the function, the function mutates it, and the final value is written back to the original storage. The compiler may optimize this, but source code must not depend on the optimization. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
 
 Interview version:
 
@@ -767,9 +767,8 @@ A: Use immutable inputs plus a return value, mutate a single aggregate, or provi
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, C3 — Exclusivity enforcement and `inout`.
-- The Swift Programming Language — Memory Safety / exclusive access. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/?utm_source=chatgpt.com "Memory Safety - Documentation | Swift.org"))
-- The Swift Programming Language — Declarations / in-out parameters. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
-- The Swift Programming Language — Memory Safety / `inout` access duration. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/?utm_source=chatgpt.com "Memory Safety - Documentation | Swift.org"))
-- Swift.org Blog — Swift 5 Exclusivity Enforcement. ([Swift.org](https://swift.org/blog/swift-5-exclusivity/?utm_source=chatgpt.com "Swift 5 Exclusivity Enforcement"))
-- Swift Evolution SE-0176 — Enforce Exclusive Access to Memory. ([github.com](https://github.com/apple/swift-evolution/blob/main/proposals/0176-enforce-exclusive-access-to-memory.md?utm_source=chatgpt.com "swift-evolution/proposals/0176-enforce-exclusive-access- ..."))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C3 — Exclusivity enforcement and `inout`.
+- Swift.org. "Memory Safety." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/
+- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/
+- Swift.org. "Swift 5 Exclusivity Enforcement." Swift.org Blog. https://swift.org/blog/swift-5-exclusivity/
+- GitHub. "Enforce Exclusive Access to Memory." Swift Evolution SE-0176. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0176-enforce-exclusive-access-to-memory.md

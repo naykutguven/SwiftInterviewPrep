@@ -43,9 +43,9 @@ Fast and contiguous but unsafe: UnsafeBufferPointer, raw pointers
 
 `Span` and `InlineArray` reduce that gap.
 
-`Span<Element>` is a **non-owning, non-escaping view** into contiguous initialized memory. It is not a container. It does not own storage. It borrows storage from something else and gives you local, bounds-checked, memory-safe access to that storage. Swift 6.2 describes `Span` as safe direct access to contiguous memory where validity is enforced while the span is in use, avoiding pointer-style use-after-free bugs. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org")) Apple’s documentation similarly describes `Span` as a non-owning, non-escaping view into memory whose lifetime is inherited from the owning container. ([Apple Developer](https://developer.apple.com/documentation/swift/span?utm_source=chatgpt.com "Span | Apple Developer Documentation"))
+`Span<Element>` is a **non-owning, non-escaping view** into contiguous initialized memory. It is not a container. It does not own storage. It borrows storage from something else and gives you local, bounds-checked, memory-safe access to that storage. Swift 6.2 describes `Span` as safe direct access to contiguous memory where validity is enforced while the span is in use, avoiding pointer-style use-after-free bugs. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/)) Apple’s documentation similarly describes `Span` as a non-owning, non-escaping view into memory whose lifetime is inherited from the owning container. ([Apple Developer, "Span"](https://developer.apple.com/documentation/swift/span))
 
-`InlineArray<N, Element>` is a **fixed-size inline storage container**. Its count is part of the type. Unlike `Array`, it does not have separate heap storage just to hold its elements, does not grow, does not shrink, and does not use copy-on-write semantics. Swift 6.2 introduced it as a fixed-size array with inline storage that can live on the stack or directly inside another type. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org")) SE-0453 defines it as a fixed-size, contiguously inline allocated array whose storage follows the natural allocation pattern of the containing value and does not introduce an implicit heap allocation just for the elements. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md "swift-evolution/proposals/0453-vector.md at main · swiftlang/swift-evolution · GitHub"))
+`InlineArray<N, Element>` is a **fixed-size inline storage container**. Its count is part of the type. Unlike `Array`, it does not have separate heap storage just to hold its elements, does not grow, does not shrink, and does not use copy-on-write semantics. Swift 6.2 introduced it as a fixed-size array with inline storage that can live on the stack or directly inside another type. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/)) SE-0453 defines it as a fixed-size, contiguously inline allocated array whose storage follows the natural allocation pattern of the containing value and does not introduce an implicit heap allocation just for the elements. ([GitHub, "InlineArray, a Fixed-Size Array"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md))
 
 The relationship:
 
@@ -58,7 +58,7 @@ Use `InlineArray` when the **size is a semantic fact**. Use `Span` when the **ca
 
 Swift guarantees more than C pointers here, but not magic. `Span` improves temporal safety, spatial safety, definite initialization, and type safety, but it is not owned storage and cannot safely escape. `InlineArray` removes dynamic array growth and separate element storage allocation, but it is not a drop-in `Array` replacement and should not be used casually.
 
-For iOS app work with an iOS 18.0 minimum deployment target, availability is a real constraint. Apple documentation search snippets list `InlineArray` members as iOS 26.0+, so these APIs generally need availability-gated use or fallbacks in iOS 18-compatible app code. ([Apple Developer](https://developer.apple.com/documentation/swift/inlinearray/index%28after%3A%29?utm_source=chatgpt.com "index(after:) | Apple Developer Documentation"))
+For iOS app work with an iOS 18.0 minimum deployment target, availability is a real constraint. Apple documentation search snippets list `InlineArray` members as iOS 26.0+, so these APIs generally need availability-gated use or fallbacks in iOS 18-compatible app code. ([Apple Developer, "index(after:)"](https://developer.apple.com/documentation/swift/inlinearray/index%28after%3a%29))
 
 ---
 
@@ -91,11 +91,11 @@ func hasPNGSignature(_ bytes: Span<UInt8>) -> Bool {
 }
 ```
 
-This is better than accepting `UnsafeBufferPointer<UInt8>` for normal parser logic because the unsafe boundary does not spread through the codebase. SE-0447 specifically calls out that unsafe buffer pointers are unsafe because the pointer is unmanaged, subscripting is only debug-bounds-checked in client code, and the pointer can escape the closure duration. `Span` is designed to be the safe “currency type” for local processing over contiguous memory. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0447-span-access-shared-contiguous-storage.md?utm_source=chatgpt.com "swift-evolution/proposals/0447-span-access-shared-contiguous-storage.md at main · swiftlang/swift-evolution · GitHub"))
+This is better than accepting `UnsafeBufferPointer<UInt8>` for normal parser logic because the unsafe boundary does not spread through the codebase. SE-0447 specifically calls out that unsafe buffer pointers are unsafe because the pointer is unmanaged, subscripting is only debug-bounds-checked in client code, and the pointer can escape the closure duration. `Span` is designed to be the safe “currency type” for local processing over contiguous memory. ([GitHub, "Span: Safe Access to Contiguous Storage"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0447-span-access-shared-contiguous-storage.md))
 
 ### `Span` access is bounds-checked, but unchecked access exists
 
-`Span` provides count, indices, and subscript-like buffer access. SE-0447 specifies that normal subscript access has always-on bounds checking to preserve spatial safety, while `subscript(unchecked:)` exists for cases where the caller has proven index validity in a tight loop. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0447-span-access-shared-contiguous-storage.md?utm_source=chatgpt.com "swift-evolution/proposals/0447-span-access-shared-contiguous-storage.md at main · swiftlang/swift-evolution · GitHub"))
+`Span` provides count, indices, and subscript-like buffer access. SE-0447 specifies that normal subscript access has always-on bounds checking to preserve spatial safety, while `subscript(unchecked:)` exists for cases where the caller has proven index validity in a tight loop. ([GitHub, "Span: Safe Access to Contiguous Storage"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0447-span-access-shared-contiguous-storage.md))
 
 Safe default:
 
@@ -130,7 +130,7 @@ The second version is not “more senior.” It is only justified if profiling p
 
 ### `InlineArray` has size in the type
 
-`InlineArray` uses integer generic parameters. SE-0452 introduced integer generic parameters in Swift 6.2, allowing generic types to be parameterized by literal integer values. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0452-integer-generic-parameters.md "swift-evolution/proposals/0452-integer-generic-parameters.md at main · swiftlang/swift-evolution · GitHub")) SE-0453 then uses that capability for `InlineArray<let count: Int, Element>`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md "swift-evolution/proposals/0453-vector.md at main · swiftlang/swift-evolution · GitHub"))
+`InlineArray` uses integer generic parameters. SE-0452 introduced integer generic parameters in Swift 6.2, allowing generic types to be parameterized by literal integer values. ([GitHub, "Integer Generic Parameters"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0452-integer-generic-parameters.md)) SE-0453 then uses that capability for `InlineArray<let count: Int, Element>`. ([GitHub, "InlineArray, a Fixed-Size Array"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md))
 
 Modern Swift 6.2 also has type sugar:
 
@@ -159,7 +159,7 @@ Output:
 10
 ```
 
-`[4 of UInt8]` is sugar for `InlineArray<4, UInt8>`. SE-0483 introduced this type sugar and states that `[5 of Int]` is equivalent to `InlineArray<5, Int>`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0483-inline-array-sugar.md "swift-evolution/proposals/0483-inline-array-sugar.md at main · swiftlang/swift-evolution · GitHub"))
+`[4 of UInt8]` is sugar for `InlineArray<4, UInt8>`. SE-0483 introduced this type sugar and states that `[5 of Int]` is equivalent to `InlineArray<5, Int>`. ([GitHub, "InlineArray Type Sugar"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0483-inline-array-sugar.md))
 
 ### `InlineArray` is not `Array`
 
@@ -192,7 +192,7 @@ Output:
 5
 ```
 
-SE-0453 explicitly says `InlineArray` cannot append or remove elements and requires every element to be initialized. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md "swift-evolution/proposals/0453-vector.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0453 explicitly says `InlineArray` cannot append or remove elements and requires every element to be initialized. ([GitHub, "InlineArray, a Fixed-Size Array"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md))
 
 ### `InlineArray` does not currently conform to `Sequence` or `Collection`
 
@@ -207,7 +207,7 @@ func printBytes(_ bytes: [4 of UInt8]) {
 }
 ```
 
-SE-0453 says `InlineArray` intentionally does not conform to `Sequence` or `Collection` because there is no copy-on-write behavior and generic collection APIs could accidentally introduce implicit eager copies. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md "swift-evolution/proposals/0453-vector.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0453 says `InlineArray` intentionally does not conform to `Sequence` or `Collection` because there is no copy-on-write behavior and generic collection APIs could accidentally introduce implicit eager copies. ([GitHub, "InlineArray, a Fixed-Size Array"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md))
 
 ---
 
@@ -285,7 +285,7 @@ Use `InlineArray` only when “exactly N” is a domain rule or memory-layout ru
 
 ### Trap 3: Assuming inline means always stack
 
-`InlineArray` means the elements are stored inline with the containing value. If the containing value lives on the stack, the inline storage is usually stack storage. If the containing value is a class instance, the storage is inline inside the heap-allocated object. SE-0453 explicitly defines “inline” as the natural allocation pattern of the context, not “always stack.” ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md "swift-evolution/proposals/0453-vector.md at main · swiftlang/swift-evolution · GitHub"))
+`InlineArray` means the elements are stored inline with the containing value. If the containing value lives on the stack, the inline storage is usually stack storage. If the containing value is a class instance, the storage is inline inside the heap-allocated object. SE-0453 explicitly defines “inline” as the natural allocation pattern of the context, not “always stack.” ([GitHub, "InlineArray, a Fixed-Size Array"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md))
 
 ```swift
 @available(iOS 26.0, macOS 26.0, *)
@@ -350,7 +350,7 @@ extension Header {
 
 `Span` solves the problem of passing temporary contiguous memory through an API without losing Swift’s memory-safety model.
 
-Raw pointers are fast, but they make the programmer manually prove lifetime, bounds, initialization, type binding, and non-escaping behavior. `Span` gives you a borrowed, non-owning view into initialized contiguous storage with compiler-enforced lifetime constraints and bounds-checked access. SE-0447 describes `Span` as preserving temporal safety, spatial safety, definite initialization, and type safety while enabling pointer-like local processing over contiguous memory. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0447-span-access-shared-contiguous-storage.md?utm_source=chatgpt.com "swift-evolution/proposals/0447-span-access-shared-contiguous-storage.md at main · swiftlang/swift-evolution · GitHub"))
+Raw pointers are fast, but they make the programmer manually prove lifetime, bounds, initialization, type binding, and non-escaping behavior. `Span` gives you a borrowed, non-owning view into initialized contiguous storage with compiler-enforced lifetime constraints and bounds-checked access. SE-0447 describes `Span` as preserving temporal safety, spatial safety, definite initialization, and type safety while enabling pointer-like local processing over contiguous memory. ([GitHub, "Span: Safe Access to Contiguous Storage"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0447-span-access-shared-contiguous-storage.md))
 
 Interview version:
 
@@ -705,10 +705,10 @@ A: It couples clients to Swift version, standard-library availability, platform 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist.
-- Swift.org Blog — Swift 6.2 Released. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
-- SE-0447 — `Span`: Safe Access to Contiguous Storage. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0447-span-access-shared-contiguous-storage.md?utm_source=chatgpt.com "swift-evolution/proposals/0447-span-access-shared-contiguous-storage.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0452 — Integer Generic Parameters. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0452-integer-generic-parameters.md "swift-evolution/proposals/0452-integer-generic-parameters.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0453 — `InlineArray`, a fixed-size array. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md "swift-evolution/proposals/0453-vector.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0483 — `InlineArray` Type Sugar. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0483-inline-array-sugar.md "swift-evolution/proposals/0483-inline-array-sugar.md at main · swiftlang/swift-evolution · GitHub"))
-- Apple Developer Documentation — `Span` and `InlineArray` API references. ([Apple Developer](https://developer.apple.com/documentation/swift/span?utm_source=chatgpt.com "Span | Apple Developer Documentation"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>)
+- Swift.org. "Swift 6.2 Released." Swift.org Blog. https://swift.org/blog/swift-6.2-released/
+- GitHub. "Span: Safe Access to Contiguous Storage." Swift Evolution SE-0447. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0447-span-access-shared-contiguous-storage.md
+- GitHub. "Integer Generic Parameters." Swift Evolution SE-0452. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0452-integer-generic-parameters.md
+- GitHub. "InlineArray, a Fixed-Size Array." Swift Evolution SE-0453. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0453-vector.md
+- GitHub. "InlineArray Type Sugar." Swift Evolution SE-0483. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0483-inline-array-sugar.md
+- Apple Developer. "Span." Apple Developer Documentation. https://developer.apple.com/documentation/swift/span

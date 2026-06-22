@@ -41,7 +41,7 @@ A **generic** function keeps the concrete type as a type parameter:
 func render<R: Renderer>(_ renderer: R)
 ```
 
-The source code says only `R: Renderer`, but each call site still has a concrete `R`. In optimized builds, Swift can often specialize the generic function for that concrete type, inline calls, remove witness-table dispatch, and optimize layout-specific operations. Swift’s optimizer performs important transformations such as specialization, inlining, and devirtualization in optimized builds; whole-module optimization historically mattered because file/module boundaries can otherwise limit specialization. ([Swift Forums](https://forums.swift.org/t/enabling-whole-module-optimizations-by-default-for-release-builds/1764 "Enabling Whole Module Optimizations by default for Release builds - Compiler - Swift Forums"))
+The source code says only `R: Renderer`, but each call site still has a concrete `R`. In optimized builds, Swift can often specialize the generic function for that concrete type, inline calls, remove witness-table dispatch, and optimize layout-specific operations. Swift’s optimizer performs important transformations such as specialization, inlining, and devirtualization in optimized builds; whole-module optimization historically mattered because file/module boundaries can otherwise limit specialization. ([Swift Forums, "Enabling Whole Module Optimizations by Default for Release Builds"](https://forums.swift.org/t/enabling-whole-module-optimizations-by-default-for-release-builds/1764))
 
 An **existential** stores a value whose exact concrete type is erased:
 
@@ -49,9 +49,9 @@ An **existential** stores a value whose exact concrete type is erased:
 func render(_ renderer: any Renderer)
 ```
 
-Now the function receives a runtime box/container that says: “there is some value in here, and here is how to call `Renderer` requirements on it.” Swift Evolution SE-0335 explicitly calls out that existential types have performance implications: they can require dynamic memory unless the value fits in the inline buffer, and they involve pointer indirection and dynamic method dispatch. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md "swift-evolution/proposals/0335-existential-any.md at main · swiftlang/swift-evolution · GitHub"))
+Now the function receives a runtime box/container that says: “there is some value in here, and here is how to call `Renderer` requirements on it.” Swift Evolution SE-0335 explicitly calls out that existential types have performance implications: they can require dynamic memory unless the value fits in the inline buffer, and they involve pointer indirection and dynamic method dispatch. ([GitHub, "Introduce Existential any"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md))
 
-An **opaque type** using `some` sits closer to generics than existentials. It hides the concrete type from API clients, but the implementation still commits to one concrete underlying type. The Swift book describes opaque types as preserving a specific hidden type, while boxed protocol types can hold any conforming type. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/opaquetypes/?utm_source=chatgpt.com "Opaque and Boxed Protocol Types"))
+An **opaque type** using `some` sits closer to generics than existentials. It hides the concrete type from API clients, but the implementation still commits to one concrete underlying type. The Swift book describes opaque types as preserving a specific hidden type, while boxed protocol types can hold any conforming type. ([Swift.org, "Opaque and Boxed Protocol Types"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/opaquetypes/))
 
 The key idea:
 
@@ -145,7 +145,7 @@ any Scorer =
   witness table for Scorer
 ```
 
-Each call to `score` is made through the existential’s witness table unless the optimizer can prove and eliminate the abstraction. SE-0335 explicitly says existential costs include dynamic memory in some cases, heap allocation/reference counting, pointer indirection, and dynamic method dispatch. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md "swift-evolution/proposals/0335-existential-any.md at main · swiftlang/swift-evolution · GitHub"))
+Each call to `score` is made through the existential’s witness table unless the optimizer can prove and eliminate the abstraction. SE-0335 explicitly says existential costs include dynamic memory in some cases, heap allocation/reference counting, pointer indirection, and dynamic method dispatch. ([GitHub, "Introduce Existential any"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md))
 
 This does not mean “never use `any`.” It means `any` should be a deliberate type-erasure boundary.
 
@@ -206,7 +206,7 @@ func makeScorer() -> some Scorer {
 }
 ```
 
-The caller does not know the concrete return type, but the function still returns one specific underlying type. Swift’s opaque result type model requires the implementation to provide a consistent concrete type for that declaration. The proposal for opaque result types also notes that when the function body is visible to the optimizer, the compiler can access the concrete type and eliminate indirection costs. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0244-opaque-result-types.md "swift-evolution/proposals/0244-opaque-result-types.md at main · swiftlang/swift-evolution · GitHub"))
+The caller does not know the concrete return type, but the function still returns one specific underlying type. Swift’s opaque result type model requires the implementation to provide a consistent concrete type for that declaration. The proposal for opaque result types also notes that when the function body is visible to the optimizer, the compiler can access the concrete type and eliminate indirection costs. ([GitHub, "Opaque Result Types"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0244-opaque-result-types.md))
 
 Contrast:
 
@@ -315,13 +315,13 @@ Every `any P` heap-allocates.
 
 ### Trap 4: Measuring Debug builds and drawing Release conclusions
 
-Swift Debug builds intentionally preserve debuggability and perform minimal optimization. Swift’s optimization settings distinguish `-Onone`, `-Osize`, and `-O`; optimized builds can drastically change emitted code. ([GitHub](https://github.com/swiftlang/swift/blob/main/docs/OptimizationTips.rst "swift/docs/OptimizationTips.rst at main · swiftlang/swift · GitHub"))
+Swift Debug builds intentionally preserve debuggability and perform minimal optimization. Swift’s optimization settings distinguish `-Onone`, `-Osize`, and `-O`; optimized builds can drastically change emitted code. ([GitHub, "Optimization Tips"](https://github.com/swiftlang/swift/blob/main/docs/optimizationtips.rst))
 
 For C9, this matters because specialization and inlining are optimizer behavior. A generic abstraction that looks expensive in Debug may mostly disappear in Release.
 
 ### Trap 5: Hiding public-library performance problems behind `@inlinable`
 
-`@inlinable` can expose implementation bodies to clients and allow more optimization across module boundaries, but it also leaks implementation detail into the public optimization contract. Opaque result type evolution can also be constrained when combined with `@inlinable`, because the underlying concrete type can become exposed through inlining. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0244-opaque-result-types.md "swift-evolution/proposals/0244-opaque-result-types.md at main · swiftlang/swift-evolution · GitHub"))
+`@inlinable` can expose implementation bodies to clients and allow more optimization across module boundaries, but it also leaks implementation detail into the public optimization contract. Opaque result type evolution can also be constrained when combined with `@inlinable`, because the underlying concrete type can become exposed through inlining. ([GitHub, "Opaque Result Types"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0244-opaque-result-types.md))
 
 Do not treat `@inlinable` as a free speed button.
 
@@ -852,9 +852,9 @@ A: Debug builds perform minimal optimization, so specialization and inlining beh
 
 ## 12. Sources
 
-- Uploaded Swift Senior/Staff Rubric, C9 section.
-- Swift Evolution SE-0335, “Introduce existential `any`,” especially motivation and performance implications of existential types. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md "swift-evolution/proposals/0335-existential-any.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift book, “Opaque and Boxed Protocol Types,” for the distinction between opaque and boxed protocol types. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/opaquetypes/?utm_source=chatgpt.com "Opaque and Boxed Protocol Types"))
-- Swift Evolution SE-0244, “Opaque Result Types,” especially implementation strategy and optimization notes. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0244-opaque-result-types.md "swift-evolution/proposals/0244-opaque-result-types.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift compiler docs, “Writing High-Performance Swift Code,” for optimization levels and performance tradeoffs. ([GitHub](https://github.com/swiftlang/swift/blob/main/docs/OptimizationTips.rst "swift/docs/OptimizationTips.rst at main · swiftlang/swift · GitHub"))
-- Swift compiler/SIL docs and Swift development discussion on generic specialization and whole-module optimization. ([GitHub](https://github.com/swiftlang/swift/blob/main/docs/HighLevelSILOptimizations.rst "swift/docs/HighLevelSILOptimizations.rst at main · swiftlang/swift · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C9 section.
+- GitHub. "Introduce Existential any." Swift Evolution SE-0335. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md
+- Swift.org. "Opaque and Boxed Protocol Types." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/opaquetypes/
+- GitHub. "Opaque Result Types." Swift Evolution SE-0244. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0244-opaque-result-types.md
+- GitHub. "Optimization Tips." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/docs/optimizationtips.rst
+- GitHub. "High Level SIL Optimizations." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/docs/highlevelsiloptimizations.rst

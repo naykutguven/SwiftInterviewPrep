@@ -36,7 +36,7 @@ Noncopyable types change API design, generic constraints, control flow, and patt
 
 Most Swift values are **copyable**. That does not mean Swift eagerly copies memory every time; it means the language is allowed to produce another logically independent value when needed. For normal structs and enums, assignment, argument passing, tuple formation, generic wrapping, and closure capture can all rely on this copyability assumption.
 
-A **noncopyable** type is different: it represents a value with **unique ownership**. There is exactly one owner of that value at a time. Moving ownership is allowed; duplicating ownership is not. Swift Evolution SE-0390 introduced noncopyable structs and enums, also called move-only types, and describes them as values that always have unique ownership, unlike normal Swift values that can be freely copied. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0390-noncopyable-structs-and-enums.md "raw.githubusercontent.com"))
+A **noncopyable** type is different: it represents a value with **unique ownership**. There is exactly one owner of that value at a time. Moving ownership is allowed; duplicating ownership is not. Swift Evolution SE-0390 introduced noncopyable structs and enums, also called move-only types, and describes them as values that always have unique ownership, unlike normal Swift values that can be freely copied. ([GitHub, "Noncopyable Structs and Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md))
 
 You opt out of implicit copyability with `~Copyable`:
 
@@ -46,7 +46,7 @@ struct FileDescriptor: ~Copyable {
 }
 ```
 
-This is not “a protocol conformance to noncopyable.” It is a **suppression** of the default `Copyable` assumption. SE-0427 later generalized this model for generics: `Copyable` became the formal capability, most things require it by default, and `~Copyable` suppresses that default where you want generic code to accept either copyable or noncopyable values. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md "swift-evolution/proposals/0427-noncopyable-generics.md at main · swiftlang/swift-evolution · GitHub"))
+This is not “a protocol conformance to noncopyable.” It is a **suppression** of the default `Copyable` assumption. SE-0427 later generalized this model for generics: `Copyable` became the formal capability, most things require it by default, and `~Copyable` suppresses that default where you want generic code to accept either copyable or noncopyable values. ([GitHub, "Noncopyable Generics"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md))
 
 The key idea:
 
@@ -65,7 +65,7 @@ Noncopyable types are about **semantic ownership**, not just performance. Good e
 
 ### `Copyable` is the default capability
 
-Most Swift structs, enums, classes, generic parameters, protocols, existentials, and associated types are implicitly `Copyable` unless you suppress that default. SE-0427 states that every struct, enum, class, generic parameter, protocol, and associated type conforms to `Copyable` by default, and `~Copyable` suppresses the inferred default requirement. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md "swift-evolution/proposals/0427-noncopyable-generics.md at main · swiftlang/swift-evolution · GitHub"))
+Most Swift structs, enums, classes, generic parameters, protocols, existentials, and associated types are implicitly `Copyable` unless you suppress that default. SE-0427 states that every struct, enum, class, generic parameter, protocol, and associated type conforms to `Copyable` by default, and `~Copyable` suppresses the inferred default requirement. ([GitHub, "Noncopyable Generics"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md))
 
 ```swift
 struct UserID {
@@ -123,7 +123,7 @@ Swift 6.2.1 compiler output:
 
 ### Noncopyable parameters force explicit ownership
 
-For noncopyable values, the ownership convention is part of the API contract. SE-0390 describes `consume` as invalidating the value and `borrow` as shared access that does not take ownership. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0390-noncopyable-structs-and-enums.md "raw.githubusercontent.com"))
+For noncopyable values, the ownership convention is part of the API contract. SE-0390 describes `consume` as invalidating the value and `borrow` as shared access that does not take ownership. ([GitHub, "Noncopyable Structs and Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md))
 
 ```swift
 struct Token: ~Copyable {
@@ -242,7 +242,7 @@ func demo() {
 }
 ```
 
-This compiles because `T: ~Copyable` means “maybe copyable,” not “must be noncopyable.” The Swift book describes `~Copyable` as a suppressed constraint that allows both copyable and noncopyable types. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/?utm_source=chatgpt.com "Generics | Documentation - Swift Programming Language"))
+This compiles because `T: ~Copyable` means “maybe copyable,” not “must be noncopyable.” The Swift book describes `~Copyable` as a suppressed constraint that allows both copyable and noncopyable types. ([Swift.org, "Generics"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/))
 
 ---
 
@@ -292,7 +292,7 @@ Use noncopyability when the domain has **one owner**: a lock token, unique file 
 
 ### Trap 3: Forgetting that classes remain copyable references
 
-SE-0390 states that classes may contain noncopyable stored properties, but class declarations themselves cannot use `~Copyable`; class values remain copyable because references can be retained and released. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0390-noncopyable-structs-and-enums.md "raw.githubusercontent.com"))
+SE-0390 states that classes may contain noncopyable stored properties, but class declarations themselves cannot use `~Copyable`; class values remain copyable because references can be retained and released. ([GitHub, "Noncopyable Structs and Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md))
 
 ```swift
 final class SharedBox {
@@ -376,7 +376,7 @@ func acceptsBoth<T: ~Copyable>(_ value: borrowing T) {
 }
 ```
 
-For protocols, this matters because a protocol can accidentally exclude noncopyable conformers if its `Self` or associated types implicitly require `Copyable`. SE-0427 was specifically introduced to close the expressivity gap where noncopyable types could not participate in generics, protocols, or existentials. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md "swift-evolution/proposals/0427-noncopyable-generics.md at main · swiftlang/swift-evolution · GitHub"))
+For protocols, this matters because a protocol can accidentally exclude noncopyable conformers if its `Self` or associated types implicitly require `Copyable`. SE-0427 was specifically introduced to close the expressivity gap where noncopyable types could not participate in generics, protocols, or existentials. ([GitHub, "Noncopyable Generics"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md))
 
 Interview version:
 
@@ -797,8 +797,8 @@ A: For ordinary app data, DTOs, view state, and domain models where copying is s
 
 ## 12. Sources
 
-- Uploaded Swift Senior/Staff Rubric, C8 section.
-- Swift Evolution SE-0390: Noncopyable structs and enums. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-evolution/main/proposals/0390-noncopyable-structs-and-enums.md "raw.githubusercontent.com"))
-- Swift Evolution SE-0427: Noncopyable generics. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md "swift-evolution/proposals/0427-noncopyable-generics.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0432: Borrowing and consuming pattern matching for noncopyable types. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0432-noncopyable-switch.md "swift-evolution/proposals/0432-noncopyable-switch.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Book, Generics: `~Copyable` as a suppressed constraint / “maybe copyable.” ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/?utm_source=chatgpt.com "Generics | Documentation - Swift Programming Language"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C8 section.
+- GitHub. "Noncopyable Structs and Enums." Swift Evolution SE-0390. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md
+- GitHub. "Noncopyable Generics." Swift Evolution SE-0427. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md
+- GitHub. "Borrowing and Consuming Pattern Matching for Noncopyable Types." Swift Evolution SE-0432. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0432-noncopyable-switch.md
+- Swift.org. "Generics." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/

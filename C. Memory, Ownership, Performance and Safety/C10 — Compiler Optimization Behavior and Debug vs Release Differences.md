@@ -36,9 +36,9 @@ Measuring debug builds and reasoning from them is often wrong.
 
 Swift source code is not the thing that runs. Swift source is type-checked, lowered into intermediate forms, optimized, and eventually emitted as machine code. A debug build and a release build can have very different generated code, even when the source is identical.
 
-Debug builds prioritize fast compilation, debuggability, predictable stepping, symbol quality, and testability. SwiftPM debug builds use `-Onone`, `-g`, and `-enable-testing`, meaning no optimization, debug information, and testability support. ([Swift Docs](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/usingbuildconfigurations/?utm_source=chatgpt.com "Using build configurations")) This makes debug builds excellent for development, but often bad evidence for performance conclusions.
+Debug builds prioritize fast compilation, debuggability, predictable stepping, symbol quality, and testability. SwiftPM debug builds use `-Onone`, `-g`, and `-enable-testing`, meaning no optimization, debug information, and testability support. ([Swift.org, "Using build configurations"](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/usingbuildconfigurations/)) This makes debug builds excellent for development, but often bad evidence for performance conclusions.
 
-Release builds prioritize runtime performance and/or code size. Optimized builds enable transformations such as inlining, generic specialization, dead-code elimination, ARC traffic reduction, devirtualization, loop optimization, and removal of debug-only checks. The Swift compiler team’s whole-module optimization write-up gives function specialization, cross-file inlining, and redundant reference-count elimination as examples of optimizations enabled when the compiler has more visibility. ([Swift.org](https://swift.org/blog/whole-module-optimizations/?utm_source=chatgpt.com "Whole-Module Optimization in Swift 3"))
+Release builds prioritize runtime performance and/or code size. Optimized builds enable transformations such as inlining, generic specialization, dead-code elimination, ARC traffic reduction, devirtualization, loop optimization, and removal of debug-only checks. The Swift compiler team’s whole-module optimization write-up gives function specialization, cross-file inlining, and redundant reference-count elimination as examples of optimizations enabled when the compiler has more visibility. ([Swift.org, "Whole-Module Optimization in Swift 3"](https://swift.org/blog/whole-module-optimizations/))
 
 The key idea:
 
@@ -64,7 +64,7 @@ Common Swift compiler optimization modes:
 -Ounchecked Optimize aggressively and remove some safety checks. Rarely appropriate.
 ```
 
-`-Osize` is not just “slower release”; Swift’s code-size optimization mode is designed to reduce binary size and can be appropriate when size matters, though performance-sensitive code may still prefer `-O`. ([Swift.org](https://swift.org/blog/osize/?utm_source=chatgpt.com "Code Size Optimization Mode in Swift 4.1"))
+`-Osize` is not just “slower release”; Swift’s code-size optimization mode is designed to reduce binary size and can be appropriate when size matters, though performance-sensitive code may still prefer `-O`. ([Swift.org, "Code Size Optimization Mode in Swift 4.1"](https://swift.org/blog/osize/))
 
 Example:
 
@@ -115,7 +115,7 @@ func clamp(_ value: Int, lower: Int, upper: Int) -> Int {
 }
 ```
 
-For small hot functions, release optimization may inline automatically. In most app code, do not reach for `@inline(__always)` casually. If you are designing public library APIs, `@inlinable` is even more serious: it exposes the function body as part of the module interface so clients can optimize across module boundaries. The Swift Evolution proposal for cross-module inlining says the Swift compiler performs aggressive optimization within a module, including specialization and inlining, but cross-module boundaries limit what the optimizer can see unless APIs expose more implementation. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md?utm_source=chatgpt.com "Cross-module inlining and specialization - swift-evolution"))
+For small hot functions, release optimization may inline automatically. In most app code, do not reach for `@inline(__always)` casually. If you are designing public library APIs, `@inlinable` is even more serious: it exposes the function body as part of the module interface so clients can optimize across module boundaries. The Swift Evolution proposal for cross-module inlining says the Swift compiler performs aggressive optimization within a module, including specialization and inlining, but cross-module boundaries limit what the optimizer can see unless APIs expose more implementation. ([GitHub, "Cross-Module Inlining and Specialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md))
 
 Senior-level rule:
 
@@ -176,7 +176,7 @@ Why: `assert` is for debug-time internal consistency checks. In optimized releas
 
 ### SIL is useful when source-level reasoning stops being enough
 
-SIL is Swift Intermediate Language. It is useful when you need to inspect ownership, ARC, generic specialization, closure captures, dynamic dispatch, or optimizer behavior. The Swift compiler debugging guide documents commands such as `swiftc -emit-silgen`, `swiftc -emit-sil -Onone`, and `swiftc -emit-sil -O`; it also notes that `-emit-sil -O` prints SIL after the complete SIL optimization pipeline. ([GitHub](https://github.com/swiftlang/swift/blob/main/docs/DebuggingTheCompiler.md "swift/docs/DebuggingTheCompiler.md at main · swiftlang/swift · GitHub"))
+SIL is Swift Intermediate Language. It is useful when you need to inspect ownership, ARC, generic specialization, closure captures, dynamic dispatch, or optimizer behavior. The Swift compiler debugging guide documents commands such as `swiftc -emit-silgen`, `swiftc -emit-sil -Onone`, and `swiftc -emit-sil -O`; it also notes that `-emit-sil -O` prints SIL after the complete SIL optimization pipeline. ([GitHub, "Debugging the Compiler"](https://github.com/swiftlang/swift/blob/main/docs/debuggingthecompiler.md))
 
 Useful commands:
 
@@ -207,7 +207,7 @@ Did this protocol call become a direct call?
 Did the optimizer remove the branch I thought existed?
 ```
 
-Do not use SIL as your first performance tool. Start with Instruments, benchmarks, and measurements. Apple’s Instruments documentation positions Instruments as the tool for analyzing app performance, resource usage, responsiveness, and memory behavior. ([Apple Developer](https://developer.apple.com/tutorials/instruments?utm_source=chatgpt.com "Instruments Tutorials | Apple Developer Documentation"))
+Do not use SIL as your first performance tool. Start with Instruments, benchmarks, and measurements. Apple’s Instruments documentation positions Instruments as the tool for analyzing app performance, resource usage, responsiveness, and memory behavior. ([Apple Developer, "Instruments Tutorials"](https://developer.apple.com/tutorials/instruments))
 
 ---
 
@@ -421,13 +421,13 @@ Interview version:
 assert(index >= 0)
 ```
 
-`precondition` is for conditions that must be true for the program to safely continue, including in optimized shipping code. Apple’s `precondition` documentation describes it as detecting conditions that must prevent the program from proceeding even in shipping code. ([Apple Developer](https://developer.apple.com/documentation/swift/precondition%28_%3A_%3Afile%3Aline%3A%29?utm_source=chatgpt.com "precondition(_:_:file:line:)"))
+`precondition` is for conditions that must be true for the program to safely continue, including in optimized shipping code. Apple’s `precondition` documentation describes it as detecting conditions that must prevent the program from proceeding even in shipping code. ([Apple Developer, "precondition(_:_:file:line:)"](https://developer.apple.com/documentation/swift/precondition%28_%3a_%3afile%3aline%3a%29))
 
 ```swift
 precondition(index >= 0, "Index must be non-negative")
 ```
 
-`fatalError` unconditionally stops execution and returns `Never`. Apple documents `fatalError` as unconditionally printing a message and stopping execution. ([Apple Developer](https://developer.apple.com/documentation/swift/fatalerror%28_%3Afile%3Aline%3A%29?utm_source=chatgpt.com "fatalError(_:file:line:)"))
+`fatalError` unconditionally stops execution and returns `Never`. Apple documents `fatalError` as unconditionally printing a message and stopping execution. ([Apple Developer, "fatalError(_:file:line:)"](https://developer.apple.com/documentation/swift/fatalerror%28_%3afile%3aline%3a%29))
 
 ```swift
 fatalError("Subclass must override this method")
@@ -726,7 +726,7 @@ Instruments:
 - Time Profiler, Allocations, Leaks, Hangs, System Trace
 ```
 
-For memory allocation investigations, Apple documents the Allocations instrument as tracking heap and anonymous VM allocations by size and category. ([Apple Developer](https://developer.apple.com/documentation/xcode/gathering-information-about-memory-use?utm_source=chatgpt.com "Gathering information about memory use"))
+For memory allocation investigations, Apple documents the Allocations instrument as tracking heap and anonymous VM allocations by size and category. ([Apple Developer, "Gathering Information About Memory Use"](https://developer.apple.com/documentation/xcode/gathering-information-about-memory-use))
 
 ---
 
@@ -768,7 +768,7 @@ Was a closure heap-allocated?
 Did a precondition remain?
 ```
 
-The compiler debugging guide explicitly documents dumping SIL at different phases and optimization levels, including `-emit-silgen`, `-emit-sil -Onone`, and `-emit-sil -O`. ([GitHub](https://github.com/swiftlang/swift/blob/main/docs/DebuggingTheCompiler.md "swift/docs/DebuggingTheCompiler.md at main · swiftlang/swift · GitHub"))
+The compiler debugging guide explicitly documents dumping SIL at different phases and optimization levels, including `-emit-silgen`, `-emit-sil -Onone`, and `-emit-sil -O`. ([GitHub, "Debugging the Compiler"](https://github.com/swiftlang/swift/blob/main/docs/debuggingthecompiler.md))
 
 ---
 
@@ -934,16 +934,11 @@ A: Debug assertions may expose an invariant violation that release removes. Remo
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — C10 rubric expectation, caveats, questions, and exercise.
-- SwiftPM documentation: debug builds use `-Onone`, `-g`, and `-enable-testing`. ([Swift.org](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/usingbuildconfigurations/?utm_source=chatgpt.com "Using build configurations")
-- Swift.org compiler debugging guide: dumping SIL, optimized SIL, LLVM IR, and assembly. ([GitHub](https://github.com/swiftlang/swift/blob/main/docs/DebuggingTheCompiler.md "swift/docs/DebuggingTheCompiler.md at main · swiftlang/swift · GitHub"))
-    
-- Swift.org whole-module optimization article: specialization, inlining, and redundant ARC elimination. ([Swift.org](https://swift.org/blog/whole-module-optimizations/?utm_source=chatgpt.com "Whole-Module Optimization in Swift 3"))
-    
-- Swift Evolution SE-0193: cross-module inlining and specialization context. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md?utm_source=chatgpt.com "Cross-module inlining and specialization - swift-evolution"))
-    
-- Swift.org code-size optimization mode: `-Osize` behavior and tradeoffs. ([Swift.org](https://swift.org/blog/osize/?utm_source=chatgpt.com "Code Size Optimization Mode in Swift 4.1"))
-    
-- Apple Developer Documentation: `precondition` and `fatalError`. ([Apple Developer](https://developer.apple.com/documentation/swift/precondition%28_%3A_%3Afile%3Aline%3A%29?utm_source=chatgpt.com "precondition(_:_:file:line:)"))
-    
-- Apple Instruments documentation: performance/resource analysis and allocation tracking.
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C10 rubric expectation, caveats, questions, and exercise.
+- Swift.org. "Using build configurations." Swift Package Manager Documentation. https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/usingbuildconfigurations/
+- GitHub. "Debugging the Compiler." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/docs/debuggingthecompiler.md
+- Swift.org. "Whole-Module Optimization in Swift 3." Swift.org Blog. https://swift.org/blog/whole-module-optimizations/
+- GitHub. "Cross-Module Inlining and Specialization." Swift Evolution SE-0193. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md
+- Swift.org. "Code Size Optimization Mode in Swift 4.1." Swift.org Blog. https://swift.org/blog/osize/
+- Apple Developer. "precondition(_:_:file:line:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/precondition%28_%3a_%3afile%3aline%3a%29
+- Apple Instruments documentation: performance/resource analysis and allocation tracking. TODO: verify source formatting

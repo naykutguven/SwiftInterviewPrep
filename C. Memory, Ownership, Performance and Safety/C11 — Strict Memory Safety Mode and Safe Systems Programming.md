@@ -32,9 +32,9 @@ The absence of warnings is not proof that unsafe code is correct. The presence o
 
 ## 1. Core mental model
 
-Swift is memory-safe by default in normal code: it checks definite initialization, prevents use-after-free in ordinary references, performs bounds checks, and enforces exclusive access rules. But Swift also has deliberate escape hatches for systems programming: unsafe pointers, raw memory, unsafe unowned references, unchecked exclusivity, C/C++ interop, and low-level standard-library APIs. Strict memory safety mode is about making those escape hatches visible. Swift 6.2 introduced this as an opt-in feature that flags unsafe constructs so they can either be replaced with safer APIs or explicitly acknowledged in source. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/?utm_source=chatgpt.com "Memory Safety | Documentation - Swift Programming Language"))
+Swift is memory-safe by default in normal code: it checks definite initialization, prevents use-after-free in ordinary references, performs bounds checks, and enforces exclusive access rules. But Swift also has deliberate escape hatches for systems programming: unsafe pointers, raw memory, unsafe unowned references, unchecked exclusivity, C/C++ interop, and low-level standard-library APIs. Strict memory safety mode is about making those escape hatches visible. Swift 6.2 introduced this as an opt-in feature that flags unsafe constructs so they can either be replaced with safer APIs or explicitly acknowledged in source. ([Swift.org, "Memory Safety"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/))
 
-The important point: strict memory safety mode is **diagnostic/auditing infrastructure**, not a magic proof of correctness. SE-0458 explicitly says the checking does not itself make code more memory-safe; it identifies constructs that are not safe, encourages safe alternatives, and makes unsafe behavior easier to audit. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
+The important point: strict memory safety mode is **diagnostic/auditing infrastructure**, not a magic proof of correctness. SE-0458 explicitly says the checking does not itself make code more memory-safe; it identifies constructs that are not safe, encourages safe alternatives, and makes unsafe behavior easier to audit. ([GitHub, "Opt-in Strict Memory Safety Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md))
 
 The key idea:
 
@@ -44,7 +44,7 @@ Safe Swift by default
 = auditable systems programming
 ```
 
-This is similar in spirit to `try` and `await`: the keyword is not the mechanism that makes the operation safe. It marks the semantic boundary. With strict memory safety, `unsafe` marks a place where the compiler cannot prove memory safety and the programmer must uphold the contract manually. The proposal describes `unsafe` as an expression marker that acknowledges unsafe constructs without changing the type or requiring the enclosing function to become unsafe. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
+This is similar in spirit to `try` and `await`: the keyword is not the mechanism that makes the operation safe. It marks the semantic boundary. With strict memory safety, `unsafe` marks a place where the compiler cannot prove memory safety and the programmer must uphold the contract manually. The proposal describes `unsafe` as an expression marker that acknowledges unsafe constructs without changing the type or requiring the enclosing function to become unsafe. ([GitHub, "Opt-in Strict Memory Safety Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md))
 
 For senior/staff-level Swift work, this matters most at module boundaries: C APIs, C++ APIs, custom memory buffers, performance-critical parsers, audio/DSP, graphics, cryptography, compression, embedded work, and binary SDKs. App code should rarely traffic in unsafe pointers directly. A well-designed Swift module pushes unsafety into a narrow adapter layer and exposes ordinary Swift value types, `Span`, `Data`, `Array`, safe handles, or lifetime-scoped closure APIs above it.
 
@@ -54,7 +54,7 @@ For senior/staff-level Swift work, this matters most at module boundaries: C API
 
 ### 2.1 Strict memory safety is opt-in
 
-Swift 6.2’s strict memory safety checking is not the default for every project. It can be enabled for modules/packages. SwiftPM exposes this through `SwiftSetting.strictMemorySafety(_:)`, first available in PackageDescription 6.2. ([Swift Belgeleri](https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/strictmemorysafety%28_%3A%29/?utm_source=chatgpt.com "strictMemorySafety(_:)"))
+Swift 6.2’s strict memory safety checking is not the default for every project. It can be enabled for modules/packages. SwiftPM exposes this through `SwiftSetting.strictMemorySafety(_:)`, first available in PackageDescription 6.2. ([Swift.org, "strictMemorySafety(_:)"](https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/strictmemorysafety%28_%3A%29/))
 
 ```swift
 // swift-tools-version: 6.2
@@ -78,11 +78,11 @@ For stricter CI enforcement, the proposal describes enabling the compiler flag a
 swiftc -strict-memory-safety -Werror StrictMemorySafety
 ```
 
-SE-0458 states that strict memory-safety diagnostics are warnings in the `StrictMemorySafety` diagnostic group, so teams can choose whether to treat them as warnings or errors. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0458 states that strict memory-safety diagnostics are warnings in the `StrictMemorySafety` diagnostic group, so teams can choose whether to treat them as warnings or errors. ([GitHub, "Opt-in Strict Memory Safety Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md))
 
 ### 2.2 Unsafe types make declarations unsafe
 
-Types like `UnsafePointer`, `UnsafeMutablePointer`, `UnsafeRawPointer`, `UnsafeBufferPointer`, `UnsafeMutableBufferPointer`, `OpaquePointer`, and similar APIs do not carry enough information for Swift to prove lifetime, bounds, initialization, or aliasing safety. SE-0458 describes these standard-library unsafe pointer families as `@unsafe`, and a declaration whose signature includes unsafe types is implicitly unsafe. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
+Types like `UnsafePointer`, `UnsafeMutablePointer`, `UnsafeRawPointer`, `UnsafeBufferPointer`, `UnsafeMutableBufferPointer`, `OpaquePointer`, and similar APIs do not carry enough information for Swift to prove lifetime, bounds, initialization, or aliasing safety. SE-0458 describes these standard-library unsafe pointer families as `@unsafe`, and a declaration whose signature includes unsafe types is implicitly unsafe. ([GitHub, "Opt-in Strict Memory Safety Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md))
 
 ```swift
 // Implicitly unsafe because the signature contains UnsafePointer.
@@ -110,7 +110,7 @@ The danger is not the spelling of `UnsafePointer`. The danger is that the functi
 
 ### 2.3 `unsafe` acknowledges an unsafe expression
 
-Under strict memory safety, executable use of unsafe constructs must be acknowledged with `unsafe`. SE-0458 compares this marker to `try` and `await`: it marks an effect at the expression level, but it does not propagate outward like throwing or async behavior. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
+Under strict memory safety, executable use of unsafe constructs must be acknowledged with `unsafe`. SE-0458 compares this marker to `try` and `await`: it marks an effect at the expression level, but it does not propagate outward like throwing or async behavior. ([GitHub, "Opt-in Strict Memory Safety Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md))
 
 ```swift
 func checksum(_ bytes: [UInt8]) -> UInt32 {
@@ -163,7 +163,7 @@ A safe public API should usually not expose this.
 
 ### 2.5 `@safe` marks declarations with unsafe-looking signatures that encapsulate safety
 
-Some functions necessarily mention unsafe types but still manage the safety boundary themselves. The proposal uses `Array.withUnsafeBufferPointer` as the canonical kind of example: the method vends an unsafe buffer pointer to a closure while the array controls the buffer lifetime for the duration of the call. That function can be marked `@safe`, while the closure’s use of the unsafe pointer remains the caller’s responsibility. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
+Some functions necessarily mention unsafe types but still manage the safety boundary themselves. The proposal uses `Array.withUnsafeBufferPointer` as the canonical kind of example: the method vends an unsafe buffer pointer to a closure while the array controls the buffer lifetime for the duration of the call. That function can be marked `@safe`, while the closure’s use of the unsafe pointer remains the caller’s responsibility. ([GitHub, "Opt-in Strict Memory Safety Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md))
 
 ```swift
 extension Packet {
@@ -191,7 +191,7 @@ public var bytes: UnsafeRawBufferPointer {
 
 C and C++ APIs often express memory contracts informally: comments, naming, documentation, or convention. Swift cannot infer enough from a raw `const char *`, borrowed view, reference return, or pointer-length pair unless the imported API carries safety/lifetime annotations or is wrapped in Swift.
 
-Swift’s safe C++ interop documentation says strict safety mode flips the default assumption for C++ types: types not known to be safe are treated as unsafe, and diagnostics are emitted for their use without `unsafe`. It also describes lifetime and escapability annotations that let Swift enforce more safety at compile time. ([Swift.org](https://swift.org/documentation/cxx-interop/safe-interop/ "Safely Mixing Swift and C/C++ | Swift.org"))
+Swift’s safe C++ interop documentation says strict safety mode flips the default assumption for C++ types: types not known to be safe are treated as unsafe, and diagnostics are emitted for their use without `unsafe`. It also describes lifetime and escapability annotations that let Swift enforce more safety at compile time. ([Swift.org, "Safely Mixing Swift and C/C++"](https://swift.org/documentation/cxx-interop/safe-interop/))
 
 ---
 
@@ -307,7 +307,7 @@ The wrapper exposes safe operations by default and keeps the unsafe view lifetim
 
 Strict concurrency is about data-race safety, actor isolation, `Sendable`, and cross-isolation transfer. Strict memory safety is about unsafe memory constructs: raw pointers, unsafe references, unchecked exclusivity, unsafe imported APIs, unsafe conformances, and unsafe declarations.
 
-They overlap in some cases. SE-0458 lists `nonisolated(unsafe)` and `@preconcurrency` imports as unsafe in the relevant strict-concurrency context because they can undermine safety guarantees. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
+They overlap in some cases. SE-0458 lists `nonisolated(unsafe)` and `@preconcurrency` imports as unsafe in the relevant strict-concurrency context because they can undermine safety guarantees. ([GitHub, "Opt-in Strict Memory Safety Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md))
 
 ---
 
@@ -334,7 +334,7 @@ Important categories:
 - C/C++ imported APIs whose safety/lifetime contracts Swift cannot prove
 ```
 
-SE-0458 explicitly identifies unsafe language constructs such as `unowned(unsafe)`, `unsafeAddressor`, `unsafeMutableAddressor`, `@exclusivity(unchecked)`, and, in strict-concurrency contexts, `nonisolated(unsafe)` and `@preconcurrency` imports. It also identifies unsafe standard-library pointer families and unsafe C/C++ interop surfaces. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0458 explicitly identifies unsafe language constructs such as `unowned(unsafe)`, `unsafeAddressor`, `unsafeMutableAddressor`, `@exclusivity(unchecked)`, and, in strict-concurrency contexts, `nonisolated(unsafe)` and `@preconcurrency` imports. It also identifies unsafe standard-library pointer families and unsafe C/C++ interop surfaces. ([GitHub, "Opt-in Strict Memory Safety Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md))
 
 Interview version:
 
@@ -357,7 +357,7 @@ Making unsafe code explicit gives you:
 - CI enforcement through warning groups
 ```
 
-SE-0458 states that applying `unsafe`/`@unsafe` can be automated, but the remaining job is for programmers to audit those locations and ensure the unsafe behavior is correctly encapsulated. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0458 states that applying `unsafe`/`@unsafe` can be automated, but the remaining job is for programmers to audit those locations and ensure the unsafe behavior is correctly encapsulated. ([GitHub, "Opt-in Strict Memory Safety Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md))
 
 Interview version:
 
@@ -756,8 +756,8 @@ A: Strict concurrency checks data-race and isolation safety; strict memory safet
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist.
-- Swift.org: Swift 6.2 Released — safe systems programming, `Span`, `InlineArray`, and opt-in strict memory safety. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
-- SE-0458: Opt-in Strict Memory Safety Checking — `@unsafe`, `@safe`, `unsafe`, unsafe constructs, diagnostics, SwiftPM integration, and incremental adoption. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md "swift-evolution/proposals/0458-strict-memory-safety.md at main · swiftlang/swift-evolution · GitHub"))
-- SwiftPM `SwiftSetting.strictMemorySafety(_:)` documentation. ([Swift Documentation](https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/strictmemorysafety%28_%3A%29/?utm_source=chatgpt.com "strictMemorySafety(_:)"))
-- Swift.org: Safely Mixing Swift and C/C++ — strict safety mode, imported unsafe C++ types, lifetime/escapability annotations. ([Swift.org](https://swift.org/documentation/cxx-interop/safe-interop/ "Safely Mixing Swift and C/C++ | Swift.org"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>)
+- Swift.org. "Swift 6.2 Released." Swift.org Blog. https://swift.org/blog/swift-6.2-released/
+- GitHub. "Opt-in Strict Memory Safety Checking." Swift Evolution SE-0458. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md
+- Swift.org. "strictMemorySafety(_:)." PackageDescription. https://docs.swift.org/swiftpm/documentation/packagedescription/swiftsetting/strictmemorysafety%28_%3A%29/
+- Swift.org. "Safely Mixing Swift and C/C++." Swift.org Documentation. https://swift.org/documentation/cxx-interop/safe-interop/

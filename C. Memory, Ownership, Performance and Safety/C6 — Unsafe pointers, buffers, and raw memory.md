@@ -36,11 +36,11 @@ Most unsafe pointer bugs are lifetime or aliasing bugs, not syntax bugs. The cod
 
 Swift is memory-safe by default: initialized-before-use, no use-after-free in normal Swift code, bounds checks, exclusivity enforcement, and ARC-managed object lifetime. Unsafe pointer APIs are the escape hatch. They let you talk to C APIs, manually manage buffers, reinterpret bytes, and avoid some abstraction overhead, but Swift stops proving the full safety of the operation for you.
 
-The word `Unsafe` is literal. Apple’s “Unsafe Swift” session describes unsafe operations as operations whose documented assumptions are not fully verified; violating those assumptions can produce undefined behavior rather than a clean Swift trap. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2020/10648/?time=536 "Unsafe Swift - WWDC20 - Videos - Apple Developer"))
+The word `Unsafe` is literal. Apple’s “Unsafe Swift” session describes unsafe operations as operations whose documented assumptions are not fully verified; violating those assumptions can produce undefined behavior rather than a clean Swift trap. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
 
-A pointer is **not ownership**. It is an address plus a type-level view. It does not keep an `Array`, `Data`, object, or manually allocated region alive. A buffer pointer adds a count, but it is still non-owning. Apple’s `UnsafeBufferPointer` documentation describes it as a non-owning collection interface to contiguous memory. ([Apple Developer](https://developer.apple.com/documentation/swift/unsafebufferpointer?utm_source=chatgpt.com "UnsafeBufferPointer | Apple Developer Documentation"))
+A pointer is **not ownership**. It is an address plus a type-level view. It does not keep an `Array`, `Data`, object, or manually allocated region alive. A buffer pointer adds a count, but it is still non-owning. Apple’s `UnsafeBufferPointer` documentation describes it as a non-owning collection interface to contiguous memory. ([Apple Developer, "UnsafeBufferPointer"](https://developer.apple.com/documentation/swift/unsafebufferpointer))
 
-Raw memory is just bytes. Typed memory is memory that Swift is allowed to treat as containing initialized values of a specific type. Apple’s `UnsafeRawPointer` documentation says raw pointers provide no automated memory management, no type safety, and no alignment guarantees; you are responsible for the lifetime of memory accessed through them. ([Apple Developer](https://developer.apple.com/documentation/swift/unsaferawpointer?utm_source=chatgpt.com "UnsafeRawPointer | Apple Developer Documentation"))
+Raw memory is just bytes. Typed memory is memory that Swift is allowed to treat as containing initialized values of a specific type. Apple’s `UnsafeRawPointer` documentation says raw pointers provide no automated memory management, no type safety, and no alignment guarantees; you are responsible for the lifetime of memory accessed through them. ([Apple Developer, "UnsafeRawPointer"](https://developer.apple.com/documentation/swift/unsaferawpointer))
 
 The key idea:
 
@@ -48,7 +48,7 @@ The key idea:
 Unsafe pointer = temporary address view, not ownership, not lifetime, not type safety.
 ```
 
-Swift gives you temporary unsafe access through closure-scoped APIs such as `withUnsafeBufferPointer`. Those APIs are usually safer because the pointer’s lifetime is lexically scoped. Apple’s docs state that the pointer argument is valid only during the method’s execution and should not be stored or returned for later use. ([Apple Developer](https://developer.apple.com/documentation/swift/arrayslice/withunsafebufferpointer%28_%3A%29?changes=la&utm_source=chatgpt.com "withUnsafeBufferPointer(_:) | Apple Developer Documentation"))
+Swift gives you temporary unsafe access through closure-scoped APIs such as `withUnsafeBufferPointer`. Those APIs are usually safer because the pointer’s lifetime is lexically scoped. Apple’s docs state that the pointer argument is valid only during the method’s execution and should not be stored or returned for later use. ([Apple Developer, "withUnsafeBufferPointer(_:)"](https://developer.apple.com/documentation/swift/arrayslice/withunsafebufferpointer%28_%3a%29))
 
 ---
 
@@ -151,7 +151,7 @@ withUnsafePointer(to: &value) { pointer in
 
 Raw buffer access is useful for serialization, hashing, C interop, compression, crypto, image/audio processing, and inspecting byte layouts. But raw bytes are not a stable cross-platform representation for arbitrary Swift values. Endianness, padding, alignment, reference fields, and resilience can matter.
 
-Apple’s `UnsafeRawBufferPointer` documentation describes it as a view of raw bytes where each byte is viewed as a `UInt8`, independent of the type of values held in that memory. ([Apple Developer](https://developer.apple.com/documentation/swift/unsaferawbufferpointer?utm_source=chatgpt.com "UnsafeRawBufferPointer | Apple Developer Documentation"))
+Apple’s `UnsafeRawBufferPointer` documentation describes it as a view of raw bytes where each byte is viewed as a `UInt8`, independent of the type of values held in that memory. ([Apple Developer, "UnsafeRawBufferPointer"](https://developer.apple.com/documentation/swift/unsaferawbufferpointer))
 
 ---
 
@@ -181,7 +181,7 @@ Use the right one:
 |`assumingMemoryBound(to:)`|Assert memory is already bound to that type.|Undefined behavior if your assertion is false.|
 |`withMemoryRebound(to:capacity:_:)`|Temporarily view memory as a layout-compatible type.|Pointer must not escape the closure.|
 
-Swift’s migration guide for `UnsafeRawPointer` explains that raw pointer conversion was tightened so Swift can enforce type safety around unsafe pointer conversion; it explicitly points to `assumingMemoryBound`, `bindMemory`, and `withMemoryRebound` as the intended APIs. ([Swift.org](https://swift.org/migration-guide-swift3/se-0107-migrate.html "UnsafeRawPointer Migration | Swift.org"))
+Swift’s migration guide for `UnsafeRawPointer` explains that raw pointer conversion was tightened so Swift can enforce type safety around unsafe pointer conversion; it explicitly points to `assumingMemoryBound`, `bindMemory`, and `withMemoryRebound` as the intended APIs. ([Swift.org, "UnsafeRawPointer Migration"](https://swift.org/migration-guide-swift3/se-0107-migrate.html))
 
 Example: C socket APIs often require rebinding `sockaddr_in` to `sockaddr`.
 
@@ -196,7 +196,7 @@ withUnsafePointer(to: &address) { pointer in
 }
 ```
 
-The temporary pointer must not escape. Swift’s migration guide states that the closure argument for `withMemoryRebound` must not escape the closure and that memory is rebound back after the closure returns. ([Swift.org](https://swift.org/migration-guide-swift3/se-0107-migrate.html "UnsafeRawPointer Migration | Swift.org"))
+The temporary pointer must not escape. Swift’s migration guide states that the closure argument for `withMemoryRebound` must not escape the closure and that memory is rebound back after the closure returns. ([Swift.org, "UnsafeRawPointer Migration"](https://swift.org/migration-guide-swift3/se-0107-migrate.html))
 
 ---
 
@@ -428,7 +428,7 @@ data.withUnsafeBytes { rawBuffer in
 useLater(saved!) // Invalid.
 ```
 
-The closure-based API lets the owner — `Array`, `Data`, `String`, etc. — keep its storage valid only for the operation. Storing the pointer breaks that contract. Apple’s documentation for array buffer access says the pointer argument is valid only for the duration of the method’s execution. ([Apple Developer](https://developer.apple.com/documentation/swift/array/withunsafebufferpointer%28_%3A%29?utm_source=chatgpt.com "withUnsafeBufferPointer(_:)"))
+The closure-based API lets the owner — `Array`, `Data`, `String`, etc. — keep its storage valid only for the operation. Storing the pointer breaks that contract. Apple’s documentation for array buffer access says the pointer argument is valid only for the duration of the method’s execution. ([Apple Developer, "withUnsafeBufferPointer(_:)"](https://developer.apple.com/documentation/swift/array/withunsafebufferpointer%28_%3a%29))
 
 Interview version:
 
@@ -504,7 +504,7 @@ With Swift 6.2.1 and `-strict-memory-safety`, the compiler also warns that unsaf
 warning: expression uses unsafe constructs but is not marked with 'unsafe' [#StrictMemorySafety]
 ```
 
-Swift’s strict memory safety diagnostics are opt-in and are intended to surface uses of memory-unsafe constructs such as unsafe pointer operations. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/strict-memory-safety/?utm_source=chatgpt.com "Strict memory safety (StrictMemorySafety)"))
+Swift’s strict memory safety diagnostics are opt-in and are intended to surface uses of memory-unsafe constructs such as unsafe pointer operations. ([Swift.org, "Strict Memory Safety"](https://docs.swift.org/compiler/documentation/diagnostics/strict-memory-safety/))
 
 ### Why?
 
@@ -534,7 +534,7 @@ saved is now a dangling pointer
 
 The important point: `saved` does not keep `bytes` alive, does not keep the array buffer pinned, and does not preserve the temporary validity contract created by `withUnsafeBufferPointer`.
 
-Even worse, this code is deceptively likely to print `1` in simple runs because `bytes` is still in scope and the buffer may not have moved. But Swift does not guarantee that this pointer remains valid after the closure. Apple’s “Unsafe Swift” session explicitly warns that temporary pointers obtained from Swift collections are valid only for the call duration, and escaping them leads to undefined behavior. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2020/10648/?time=536 "Unsafe Swift - WWDC20 - Videos - Apple Developer"))
+Even worse, this code is deceptively likely to print `1` in simple runs because `bytes` is still in scope and the buffer may not have moved. But Swift does not guarantee that this pointer remains valid after the closure. Apple’s “Unsafe Swift” session explicitly warns that temporary pointers obtained from Swift collections are valid only for the call duration, and escaping them leads to undefined behavior. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
 
 ### Fix or redesign
 
@@ -905,11 +905,11 @@ A: Store safe owned data, such as `Array` or `Data`, and expose temporary pointe
 
 ## 12. Sources
 
-- Swift Senior/Staff rubric, C6 unsafe pointers/buffers/raw memory section.
-- Apple Developer Documentation — `UnsafeRawPointer`. ([Apple Developer](https://developer.apple.com/documentation/swift/unsaferawpointer?utm_source=chatgpt.com "UnsafeRawPointer | Apple Developer Documentation"))
-- Apple Developer Documentation — `UnsafeBufferPointer`. ([Apple Developer](https://developer.apple.com/documentation/swift/unsafebufferpointer?utm_source=chatgpt.com "UnsafeBufferPointer | Apple Developer Documentation"))
-- Apple Developer Documentation — `withUnsafeBufferPointer(_:)`. ([Apple Developer](https://developer.apple.com/documentation/swift/array/withunsafebufferpointer%28_%3A%29?utm_source=chatgpt.com "withUnsafeBufferPointer(_:)"))
-- Apple Developer Documentation — `UnsafeRawBufferPointer`. ([Apple Developer](https://developer.apple.com/documentation/swift/unsaferawbufferpointer?utm_source=chatgpt.com "UnsafeRawBufferPointer | Apple Developer Documentation"))
-- Swift.org — `UnsafeRawPointer` migration guide / SE-0107 memory binding APIs. ([Swift.org](https://swift.org/migration-guide-swift3/se-0107-migrate.html "UnsafeRawPointer Migration | Swift.org"))
-- Swift.org compiler diagnostics — Strict memory safety. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/strict-memory-safety/?utm_source=chatgpt.com "Strict memory safety (StrictMemorySafety)"))
-- Apple WWDC20 — “Unsafe Swift”. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2020/10648/?time=536 "Unsafe Swift - WWDC20 - Videos - Apple Developer"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C6 unsafe pointers/buffers/raw memory section.
+- Apple Developer. "UnsafeRawPointer." Apple Developer Documentation. https://developer.apple.com/documentation/swift/unsaferawpointer
+- Apple Developer. "UnsafeBufferPointer." Apple Developer Documentation. https://developer.apple.com/documentation/swift/unsafebufferpointer
+- Apple Developer. "withUnsafeBufferPointer(_:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/array/withunsafebufferpointer%28_%3a%29
+- Apple Developer. "UnsafeRawBufferPointer." Apple Developer Documentation. https://developer.apple.com/documentation/swift/unsaferawbufferpointer
+- Swift.org. "UnsafeRawPointer Migration." Swift 3 Migration Guide. https://swift.org/migration-guide-swift3/se-0107-migrate.html
+- Swift.org. "Strict Memory Safety." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/strict-memory-safety/
+- Apple Developer. "Unsafe Swift." WWDC20. https://developer.apple.com/videos/play/wwdc2020/10648/
