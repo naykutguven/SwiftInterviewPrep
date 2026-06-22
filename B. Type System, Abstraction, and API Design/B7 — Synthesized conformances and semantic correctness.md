@@ -38,7 +38,7 @@ Does the synthesized conformance express the semantic contract this type promise
 
 This matters because conformances are not harmless implementation details. `Equatable` changes comparison semantics. `Hashable` controls `Set` and `Dictionary` correctness. `Codable` becomes a persistence or wire-format contract. `Sendable` becomes a concurrency-safety contract. `CaseIterable` exposes a finite case list, usually in declaration order.
 
-Swift documentation and Swift Evolution describe synthesis as reducing boilerplate in cases where implementation is mechanically derivable, not as proof that the generated behavior matches business identity or long-term API compatibility. SE-0185 explicitly frames synthesized `Equatable`/`Hashable` as boilerplate reduction for memberwise implementations. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0185-synthesize-equatable-hashable.md "swift-evolution/proposals/0185-synthesize-equatable-hashable.md at main · swiftlang/swift-evolution · GitHub"))
+Swift documentation and Swift Evolution describe synthesis as reducing boilerplate in cases where implementation is mechanically derivable, not as proof that the generated behavior matches business identity or long-term API compatibility. SE-0185 explicitly frames synthesized `Equatable`/`Hashable` as boilerplate reduction for memberwise implementations. ([GitHub, "Synthesizing Equatable and Hashable Conformance"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0185-synthesize-equatable-hashable.md))
 
 The key idea:
 
@@ -53,7 +53,7 @@ Semantic correctness asks: "Is this the contract users of the type should rely o
 
 ### 2.1 `Equatable` synthesis is memberwise for structs and case/payload-based for enums
 
-For structs, synthesized `==` compares stored instance properties. Static and computed properties are not part of synthesis. For enums, equality checks that both values are the same case and that associated values are equal. SE-0185 describes these rules for structs and enums. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0185-synthesize-equatable-hashable.md "swift-evolution/proposals/0185-synthesize-equatable-hashable.md at main · swiftlang/swift-evolution · GitHub"))
+For structs, synthesized `==` compares stored instance properties. Static and computed properties are not part of synthesis. For enums, equality checks that both values are the same case and that associated values are equal. SE-0185 describes these rules for structs and enums. ([GitHub, "Synthesizing Equatable and Hashable Conformance"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0185-synthesize-equatable-hashable.md))
 
 ```swift
 struct Point: Equatable {
@@ -98,7 +98,7 @@ This is mechanically correct but may be semantically wrong. If `id == 1` means �
 
 ### 2.2 `Hashable` synthesis follows the same structural model
 
-A synthesized `Hashable` implementation hashes the same structural state used for equality. Apple’s `Hashable` documentation states that `Hashable` inherits from `Equatable` and that the compiler can synthesize requirements when a custom type declares conformance and meets the criteria. ([Apple Developer](https://developer.apple.com/documentation/Swift/Hashable?utm_source=chatgpt.com "Hashable | Apple Developer Documentation"))
+A synthesized `Hashable` implementation hashes the same structural state used for equality. Apple’s `Hashable` documentation states that `Hashable` inherits from `Equatable` and that the compiler can synthesize requirements when a custom type declares conformance and meets the criteria. ([Apple Developer, "Hashable"](https://developer.apple.com/documentation/swift/hashable))
 
 Good:
 
@@ -145,7 +145,7 @@ Now equality and hashing are based on stable identity.
 
 ### 2.3 `Codable` synthesis is convenient, but schema is a contract
 
-`Codable` synthesis works when stored properties are codable and the default property-to-key mapping matches the encoded representation. SE-0166 introduced Swift archival and serialization around `Encodable` and `Decodable`, including compiler-generated implementations when all properties are codable. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md "swift-evolution/proposals/0166-swift-archival-serialization.md at main · swiftlang/swift-evolution · GitHub"))
+`Codable` synthesis works when stored properties are codable and the default property-to-key mapping matches the encoded representation. SE-0166 introduced Swift archival and serialization around `Encodable` and `Decodable`, including compiler-generated implementations when all properties are codable. ([GitHub, "Swift Archival & Serialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md))
 
 Good for local DTOs:
 
@@ -186,7 +186,7 @@ synthesis is no longer enough. You need custom `CodingKeys` or `init(from:)`.
 
 ### 2.4 `CaseIterable` synthesis is for simple finite enums
 
-`CaseIterable` gives a type a static `allCases` collection. SE-0194 introduced it to represent finite, enumerable sets of values and proposed derived implementation for simple enums. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0194-derived-collection-of-enum-cases.md "swift-evolution/proposals/0194-derived-collection-of-enum-cases.md at main · swiftlang/swift-evolution · GitHub")) Apple’s documentation notes that synthesized `allCases` provides cases in declaration order. ([Apple Developer](https://developer.apple.com/documentation/swift/caseiterable?utm_source=chatgpt.com "CaseIterable | Apple Developer Documentation"))
+`CaseIterable` gives a type a static `allCases` collection. SE-0194 introduced it to represent finite, enumerable sets of values and proposed derived implementation for simple enums. ([GitHub, "Derived Collection of Enum Cases"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0194-derived-collection-of-enum-cases.md)) Apple’s documentation notes that synthesized `allCases` provides cases in declaration order. ([Apple Developer, "CaseIterable"](https://developer.apple.com/documentation/swift/caseiterable))
 
 ```swift
 enum FeedFilter: CaseIterable {
@@ -232,7 +232,7 @@ Use `allCases` for enumeration. Use explicit arrays for domain order.
 
 ### 2.5 `Sendable` synthesis/inference is about cross-isolation safety, not general thread safety
 
-`Sendable` marks values that can be safely transferred across concurrency domains. Swift’s concurrency documentation describes a sendable type as one that can be shared from one concurrency domain to another. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation - Swift Programming Language")) SE-0302 introduced `Sendable` and `@Sendable` to type-check value passing between structured concurrency tasks and actor messages. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md "swift-evolution/proposals/0302-concurrent-value-and-concurrent-closures.md at main · swiftlang/swift-evolution · GitHub"))
+`Sendable` marks values that can be safely transferred across concurrency domains. Swift’s concurrency documentation describes a sendable type as one that can be shared from one concurrency domain to another. ([Swift.org, "Concurrency"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/)) SE-0302 introduced `Sendable` and `@Sendable` to type-check value passing between structured concurrency tasks and actor messages. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
 
 ```swift
 struct SearchQuery: Sendable {
@@ -1034,13 +1034,13 @@ A: Use identity-based `Equatable`/`Hashable` on the entity and expose a separate
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — B7 rubric snapshot.
-- The Swift Programming Language — Protocols, synthesized protocol implementations. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols | Documentation - Swift Programming Language"))
-- Apple Developer Documentation — `Hashable`. ([Apple Developer](https://developer.apple.com/documentation/Swift/Hashable?utm_source=chatgpt.com "Hashable | Apple Developer Documentation"))
-- Apple Developer Documentation — `Sendable`. ([Apple Developer](https://developer.apple.com/documentation/Swift/Sendable?utm_source=chatgpt.com "Sendable | Apple Developer Documentation"))
-- Apple Developer Documentation — `CaseIterable`. ([Apple Developer](https://developer.apple.com/documentation/swift/caseiterable?utm_source=chatgpt.com "CaseIterable | Apple Developer Documentation"))
-- SE-0185 — Synthesizing `Equatable` and `Hashable` conformance. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0185-synthesize-equatable-hashable.md "swift-evolution/proposals/0185-synthesize-equatable-hashable.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0166 — Swift Archival & Serialization. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md "swift-evolution/proposals/0166-swift-archival-serialization.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0194 — Derived Collection of Enum Cases. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0194-derived-collection-of-enum-cases.md "swift-evolution/proposals/0194-derived-collection-of-enum-cases.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0302 — Sendable and `@Sendable` closures. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md "swift-evolution/proposals/0302-concurrent-value-and-concurrent-closures.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0470 — Isolated conformances, relevant to Swift 6.2-era protocol conformance and actor/global-actor isolation. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0470-isolated-conformances.md "swift-evolution/proposals/0470-isolated-conformances.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B7 rubric snapshot.
+- Swift.org. "Protocols." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+- Apple Developer. "Hashable." Apple Developer Documentation. https://developer.apple.com/documentation/swift/hashable
+- Apple Developer. "Sendable." Apple Developer Documentation. https://developer.apple.com/documentation/swift/sendable
+- Apple Developer. "CaseIterable." Apple Developer Documentation. https://developer.apple.com/documentation/swift/caseiterable
+- GitHub. "Synthesizing Equatable and Hashable Conformance." Swift Evolution SE-0185. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0185-synthesize-equatable-hashable.md
+- GitHub. "Swift Archival & Serialization." Swift Evolution SE-0166. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md
+- GitHub. "Derived Collection of Enum Cases." Swift Evolution SE-0194. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0194-derived-collection-of-enum-cases.md
+- GitHub. "Sendable and @Sendable Closures." Swift Evolution SE-0302. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md
+- GitHub. "Isolated Conformances." Swift Evolution SE-0470. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0470-isolated-conformances.md

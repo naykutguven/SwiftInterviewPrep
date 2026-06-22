@@ -37,7 +37,7 @@ Library evolution is about designing APIs so a library can change internally wit
 
 The moment a declaration becomes `public`, client code can start depending on it. That dependency is not only about calling the symbol. Clients may depend on its name, signature, generic constraints, enum cases, stored-property layout, protocol requirements, actor isolation, default behavior, and sometimes even implementation body if you mark it `@inlinable`.
 
-Swift’s resilience model creates a boundary between the library and its clients. Across that boundary, the compiler avoids assuming details that the library should be allowed to change later. For example, resilient structs and enums may be manipulated indirectly across module boundaries so the library can evolve representation later. Swift.org describes this as a “resilience boundary” where client compilation must only rely on assumptions guaranteed to remain valid in future library versions. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+Swift’s resilience model creates a boundary between the library and its clients. Across that boundary, the compiler avoids assuming details that the library should be allowed to change later. For example, resilient structs and enums may be manipulated indirectly across module boundaries so the library can evolve representation later. Swift.org describes this as a “resilience boundary” where client compilation must only rely on assumptions guaranteed to remain valid in future library versions. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 The key idea:
 
@@ -133,7 +133,7 @@ public struct Token {
 
 That is the point of resilience.
 
-Swift.org notes that across a resilience boundary, property access generally goes through accessors, which allows the property’s underlying implementation to change. The major exception is stored properties of `@frozen` structs, where the compiler can directly access layout. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+Swift.org notes that across a resilience boundary, property access generally goes through accessors, which allows the property’s underlying implementation to change. The major exception is stored properties of `@frozen` structs, where the compiler can directly access layout. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 ---
 
@@ -151,7 +151,7 @@ public struct Point {
 }
 ```
 
-This promises the stored-property layout will not change in a binary-incompatible way. Adding, removing, or reordering stored properties of an `@frozen` public struct is binary-incompatible. Swift.org explicitly describes `@frozen` structs as publishing stored-property layout to clients. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+This promises the stored-property layout will not change in a binary-incompatible way. Adding, removing, or reordering stored properties of an `@frozen` public struct is binary-incompatible. Swift.org explicitly describes `@frozen` structs as publishing stored-property layout to clients. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 Bad use:
 
@@ -211,7 +211,7 @@ public enum PaymentStatus {
 
 Payments evolve. Providers add review states, fraud states, regulatory states, partial-capture states, chargeback states, and async settlement states. Freezing this enum is probably wrong.
 
-A non-frozen enum in a resilient library requires clients to handle future cases, usually with `@unknown default`. Swift.org states that a switch over a frozen enum is exhaustive when all cases are covered, while a switch over a non-frozen enum must include `default` or `@unknown default`. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+A non-frozen enum in a resilient library requires clients to handle future cases, usually with `@unknown default`. Swift.org states that a switch over a frozen enum is exhaustive when all cases are covered, while a switch over a non-frozen enum must include `default` or `@unknown default`. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 Client-side:
 
@@ -236,7 +236,7 @@ Use `@unknown default`, not plain `default`, because it preserves compiler warni
 
 For non-resilient Swift packages, enum evolution used to be especially awkward: public enums were effectively exhaustive to clients, so adding a case was source-breaking.
 
-SE-0487 introduces `@nonexhaustive` for public enums in non-resilient libraries. The proposal is marked implemented in Swift 6.2.3, and its goal is to let package authors mark public enums as extensible without requiring full library-evolution mode. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md "swift-evolution/proposals/0487-extensible-enums.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0487 introduces `@nonexhaustive` for public enums in non-resilient libraries. The proposal is marked implemented in Swift 6.2.3, and its goal is to let package authors mark public enums as extensible without requiring full library-evolution mode. ([GitHub, "Nonexhaustive Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md))
 
 Example:
 
@@ -264,7 +264,7 @@ case .failed:
 }
 ```
 
-Important nuance: inside the same module or package, exhaustive switching over an `@nonexhaustive` enum does not require `@unknown default`, because the package can be treated as a co-developed unit. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md "swift-evolution/proposals/0487-extensible-enums.md at main · swiftlang/swift-evolution · GitHub"))
+Important nuance: inside the same module or package, exhaustive switching over an `@nonexhaustive` enum does not require `@unknown default`, because the package can be treated as a co-developed unit. ([GitHub, "Nonexhaustive Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md))
 
 ---
 
@@ -279,7 +279,7 @@ public func clamped(_ value: Int, to range: ClosedRange<Int>) -> Int {
 }
 ```
 
-This is not just a performance annotation. It is a promise that the current body remains valid for future versions of the library. Swift.org says `@inlinable` allows the compiler to look at the body when building client code, but it does not guarantee actual inlining. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+This is not just a performance annotation. It is a promise that the current body remains valid for future versions of the library. Swift.org says `@inlinable` allows the compiler to look at the body when building client code, but it does not guarantee actual inlining. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 The body can only reference ABI-public declarations: either `public` or `@usableFromInline`.
 
@@ -295,7 +295,7 @@ public func score(_ value: Int) -> Int {
 }
 ```
 
-`@usableFromInline` is not API-public, but it is ABI-public. Swift.org explicitly says that once published, a `@usableFromInline` declaration must not be removed or incompatibly changed. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
+`@usableFromInline` is not API-public, but it is ABI-public. Swift.org explicitly says that once published, a `@usableFromInline` declaration must not be removed or incompatibly changed. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
 
 So this is a mistake:
 
@@ -982,7 +982,7 @@ A: When the domain is highly open-ended, server-defined, or vendor-defined, and 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist.
-- Swift.org — Library Evolution in Swift. ([Swift.org](https://swift.org/blog/library-evolution/ "Library Evolution in Swift | Swift.org"))
-- Swift Evolution SE-0487 — Nonexhaustive enums. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md "swift-evolution/proposals/0487-extensible-enums.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Forums — SE-0193 accepted with `@inlinable` and `@usableFromInline`. ([forums.swift.org](https://forums.swift.org/t/se-0193-cross-module-inlining-and-specialization/7310?page=8 "SE-0193 - Cross-module inlining and specialization - Page 8 - Proposal Reviews - Swift Forums"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>)
+- Swift.org. "Library Evolution in Swift." Swift.org Blog. https://swift.org/blog/library-evolution/
+- GitHub. "Nonexhaustive Enums." Swift Evolution SE-0487. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md
+- Swift Forums. "SE-0193: Cross-Module Inlining and Specialization." https://forums.swift.org/t/se-0193-cross-module-inlining-and-specialization/7310?page=8

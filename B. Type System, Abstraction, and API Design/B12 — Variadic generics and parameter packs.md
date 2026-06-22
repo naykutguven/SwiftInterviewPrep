@@ -44,9 +44,9 @@ And Swift could accept a variable number of values of one type:
 func collect<T>(_ values: T...) -> [T]
 ```
 
-But Swift could not naturally express “accept any number of arguments, each with its own static type, and preserve those types in the result.” The common workaround was an overload wall: write one overload for one argument, another for two, another for three, and so on. SE-0393 explicitly identifies these workarounds: `Any...`, tuple-wrapping, or fixed-arity overloads with artificial limits. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0393-parameter-packs.md "swift-evolution/proposals/0393-parameter-packs.md at main · swiftlang/swift-evolution · GitHub"))
+But Swift could not naturally express “accept any number of arguments, each with its own static type, and preserve those types in the result.” The common workaround was an overload wall: write one overload for one argument, another for two, another for three, and so on. SE-0393 explicitly identifies these workarounds: `Any...`, tuple-wrapping, or fixed-arity overloads with artificial limits. ([GitHub, "Value and Type Parameter Packs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0393-parameter-packs.md))
 
-Parameter packs solve that by introducing a compile-time “list” of types and values. A **type parameter pack** is declared with `each`, and a **pack expansion** is written with `repeat`. SE-0393 defines packs as a way to abstract over a variable number of type and value parameters with distinct types. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0393-parameter-packs.md "swift-evolution/proposals/0393-parameter-packs.md at main · swiftlang/swift-evolution · GitHub"))
+Parameter packs solve that by introducing a compile-time “list” of types and values. A **type parameter pack** is declared with `each`, and a **pack expansion** is written with `repeat`. SE-0393 defines packs as a way to abstract over a variable number of type and value parameters with distinct types. ([GitHub, "Value and Type Parameter Packs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0393-parameter-packs.md))
 
 The key idea:
 
@@ -119,7 +119,7 @@ each Value = { Int, String, Bool }
 (Int, String, Bool)
 ```
 
-SE-0393’s terminology matters: a type pack is a list of scalar types; a value pack is a list of scalar values; pack expansions produce lists of types or values in places that accept such lists. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0393-parameter-packs.md "swift-evolution/proposals/0393-parameter-packs.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0393’s terminology matters: a type pack is a list of scalar types; a value pack is a list of scalar values; pack expansions produce lists of types or values in places that accept such lists. ([GitHub, "Value and Type Parameter Packs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0393-parameter-packs.md))
 
 ### `repeat` expands a pattern
 
@@ -156,7 +156,7 @@ The captured packs in the same expansion must have the same shape. You are not b
 
 ### Pack iteration in Swift 6
 
-Swift 6 added pack iteration, which lets you iterate over a value pack using `for-in repeat`. SE-0408 was implemented in Swift 6.0 and was designed to remove the awkward “repeat expression only” limitation, especially when you need `break`, `continue`, or early `return`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0408-pack-iteration.md "swift-evolution/proposals/0408-pack-iteration.md at main · swiftlang/swift-evolution · GitHub"))
+Swift 6 added pack iteration, which lets you iterate over a value pack using `for-in repeat`. SE-0408 was implemented in Swift 6.0 and was designed to remove the awkward “repeat expression only” limitation, especially when you need `break`, `continue`, or early `return`. ([GitHub, "Pack Iteration"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0408-pack-iteration.md))
 
 ```swift
 func allEqual<each Element: Equatable>(
@@ -181,11 +181,11 @@ true
 false
 ```
 
-This is the important readability improvement. Without pack iteration, short-circuiting over a pack required unnatural workarounds such as throwing out of helper functions. SE-0408 specifically uses tuple equality as a motivating example. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0408-pack-iteration.md "swift-evolution/proposals/0408-pack-iteration.md at main · swiftlang/swift-evolution · GitHub"))
+This is the important readability improvement. Without pack iteration, short-circuiting over a pack required unnatural workarounds such as throwing out of helper functions. SE-0408 specifically uses tuple equality as a motivating example. ([GitHub, "Pack Iteration"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0408-pack-iteration.md))
 
 ### Variadic generic types
 
-SE-0398 extended the pack model from generic functions to generic types. It was implemented in Swift 5.9 and lets structs, classes, actors, and type aliases abstract over packs. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0398-variadic-types.md "swift-evolution/proposals/0398-variadic-types.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0398 extended the pack model from generic functions to generic types. It was implemented in Swift 5.9 and lets structs, classes, actors, and type aliases abstract over packs. ([GitHub, "Allow Generic Types to Abstract Over Packs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0398-variadic-types.md))
 
 ```swift
 struct Route<each Input> {
@@ -225,7 +225,7 @@ Compiler error with Swift 6.2:
 error: enums cannot declare a type pack
 ```
 
-SE-0398 also notes that variadic generic types require runtime support and are not backward-deployable to older runtimes; replacing a non-variadic generic type with a variadic generic type is not binary-compatible. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0398-variadic-types.md "swift-evolution/proposals/0398-variadic-types.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0398 also notes that variadic generic types require runtime support and are not backward-deployable to older runtimes; replacing a non-variadic generic type with a variadic generic type is not binary-compatible. ([GitHub, "Allow Generic Types to Abstract Over Packs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0398-variadic-types.md))
 
 ---
 
@@ -333,7 +333,7 @@ Parameter packs are justified when preserving the individual static types matter
 
 For internal app code, packs are mostly a readability and maintainability decision. For public libraries or binary SDKs, they are also an evolution decision.
 
-SE-0398 says variadic generic types are not backward-deployable to older runtimes and replacing a non-variadic generic type with a variadic one is not binary-compatible. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0398-variadic-types.md "swift-evolution/proposals/0398-variadic-types.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0398 says variadic generic types are not backward-deployable to older runtimes and replacing a non-variadic generic type with a variadic one is not binary-compatible. ([GitHub, "Allow Generic Types to Abstract Over Packs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0398-variadic-types.md))
 
 That means a staff-level decision is not only:
 
@@ -363,7 +363,7 @@ Before packs, you had three main choices:
 3. Write fixed-arity overloads up to an arbitrary maximum.
 ```
 
-SE-0393 calls out exactly this problem and uses tuple comparison overloads as an example: without variadic generics, the standard library needed overloads for tuple comparison up to fixed arities; with packs, that shape can be represented as one generic declaration. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0393-parameter-packs.md "swift-evolution/proposals/0393-parameter-packs.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0393 calls out exactly this problem and uses tuple comparison overloads as an example: without variadic generics, the standard library needed overloads for tuple comparison up to fixed arities; with packs, that shape can be represented as one generic declaration. ([GitHub, "Value and Type Parameter Packs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0393-parameter-packs.md))
 
 Interview version:
 
@@ -804,8 +804,8 @@ A: They affect API evolution, diagnostics, runtime support, and binary compatibi
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist, B12 and tiering.
-- Swift Evolution SE-0393: Value and Type Parameter Packs. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0393-parameter-packs.md "swift-evolution/proposals/0393-parameter-packs.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0398: Allow Generic Types to Abstract Over Packs. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0398-variadic-types.md "swift-evolution/proposals/0398-variadic-types.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0408: Pack Iteration. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0408-pack-iteration.md "swift-evolution/proposals/0408-pack-iteration.md at main · swiftlang/swift-evolution · GitHub"))
-- Apple WWDC23: “Generalize APIs with parameter packs.” ([developer.apple.com](https://developer.apple.com/videos/play/wwdc2023/10168/ "Generalize APIs with parameter packs - WWDC23 - Videos - Apple Developer"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B12 and tiering.
+- GitHub. "Value and Type Parameter Packs." Swift Evolution SE-0393. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0393-parameter-packs.md
+- GitHub. "Allow Generic Types to Abstract Over Packs." Swift Evolution SE-0398. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0398-variadic-types.md
+- GitHub. "Pack Iteration." Swift Evolution SE-0408. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0408-pack-iteration.md
+- Apple Developer. "Generalize APIs with Parameter Packs." WWDC23. https://developer.apple.com/videos/play/wwdc2023/10168/

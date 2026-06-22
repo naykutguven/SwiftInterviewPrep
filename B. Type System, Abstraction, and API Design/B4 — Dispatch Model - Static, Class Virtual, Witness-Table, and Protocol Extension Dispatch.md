@@ -37,9 +37,9 @@ Dispatch is the mechanism Swift uses to decide **which implementation of a metho
 
 Swift strongly prefers compile-time knowledge when it can get it. A concrete `struct` method call is usually statically dispatched. The compiler knows the concrete type and can often inline or specialize the call. This is one reason value-oriented and generic Swift can be fast.
 
-Classes introduce identity and inheritance, so non-`final` class methods may need runtime dispatch. If a subclass can override a method, the compiler cannot always hard-code the exact function. Native Swift classes typically use a virtual method table model for overridable methods; Swift’s ABI notes describe non-final class method calls as runtime-resolved through a vtable. ([GitHub](https://github.com/apple/swift/blob/main/docs/ABIStabilityManifesto.md "swift/docs/ABIStabilityManifesto.md at main · swiftlang/swift · GitHub"))
+Classes introduce identity and inheritance, so non-`final` class methods may need runtime dispatch. If a subclass can override a method, the compiler cannot always hard-code the exact function. Native Swift classes typically use a virtual method table model for overridable methods; Swift’s ABI notes describe non-final class method calls as runtime-resolved through a vtable. ([GitHub, "ABI Stability Manifesto"](https://github.com/swiftlang/swift/blob/main/docs/ABIStabilityManifesto.md))
 
-Protocols introduce another dispatch mechanism: **witness-table dispatch**. A protocol requirement is a slot in a conformance table. When you call a requirement through an existential such as `any P`, Swift uses the value’s witness table to find the implementation for that concrete conforming type. Swift’s ABI notes describe witness tables as tables of function pointers implementing a protocol conformance, used when the runtime type of an existential is not statically known. ([GitHub](https://github.com/apple/swift/blob/main/docs/ABIStabilityManifesto.md "swift/docs/ABIStabilityManifesto.md at main · swiftlang/swift · GitHub"))
+Protocols introduce another dispatch mechanism: **witness-table dispatch**. A protocol requirement is a slot in a conformance table. When you call a requirement through an existential such as `any P`, Swift uses the value’s witness table to find the implementation for that concrete conforming type. Swift’s ABI notes describe witness tables as tables of function pointers implementing a protocol conformance, used when the runtime type of an existential is not statically known. ([GitHub, "ABI Stability Manifesto"](https://github.com/swiftlang/swift/blob/main/docs/ABIStabilityManifesto.md))
 
 Protocol extension methods are the trap. If a method is a **protocol requirement**, an extension can provide a default implementation, and conforming types can provide their own witness. If a method exists **only in a protocol extension** and is not declared as a requirement, it is just extension sugar. It does not get a witness-table slot. When called through a protocol-typed value, Swift calls the extension implementation based on the static type.
 
@@ -177,7 +177,7 @@ Output:
 Default render
 ```
 
-The Swift book documents that protocols define requirements and that protocol extensions can provide implementations of requirements or add additional functionality. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols - Documentation | Swift.org"))
+The Swift book documents that protocols define requirements and that protocol extensions can provide implementations of requirements or add additional functionality. ([Swift.org, "Protocols"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/))
 
 ---
 
@@ -236,7 +236,7 @@ extension Renderer {
 
 ### Objective-C dynamic dispatch: `@objc` and `dynamic`
 
-Objective-C dynamic dispatch enters when you opt Swift declarations into Objective-C runtime behavior, usually for Objective-C interop, selectors, KVO/KVC, UIKit/AppKit target-action, or method replacement patterns. Swift’s documentation says `dynamic` makes access always dynamically dispatched through the Objective-C runtime and prevents inlining/devirtualization; declarations marked `dynamic` must also be `@objc`. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
+Objective-C dynamic dispatch enters when you opt Swift declarations into Objective-C runtime behavior, usually for Objective-C interop, selectors, KVO/KVC, UIKit/AppKit target-action, or method replacement patterns. Swift’s documentation says `dynamic` makes access always dynamically dispatched through the Objective-C runtime and prevents inlining/devirtualization; declarations marked `dynamic` must also be `@objc`. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
 
 ```swift
 import Foundation
@@ -953,8 +953,8 @@ A: Requirements are customization points. Extension-only methods are convenience
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — B4 dispatch model, caveats, exercise, and code probe.
-- Swift Book — Protocols: protocols define requirements that conforming types implement. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols - Documentation | Swift.org"))
-- Swift Book — Extensions: protocol extensions can provide implementations of requirements or add functionality. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/extensions/?utm_source=chatgpt.com "Extensions - Documentation | Swift.org"))
-- Swift ABI Stability Manifesto — class method dispatch via vtables and protocol dispatch via witness tables. ([GitHub](https://github.com/apple/swift/blob/main/docs/ABIStabilityManifesto.md "swift/docs/ABIStabilityManifesto.md at main · swiftlang/swift · GitHub"))
-- Swift Book — Declarations: `dynamic` dispatch and Objective-C runtime behavior. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B4 dispatch model, caveats, exercise, and code probe.
+- Swift.org. "Protocols." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+- Swift.org. "Extensions." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/extensions/
+- GitHub. "ABI Stability Manifesto." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/docs/ABIStabilityManifesto.md
+- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/

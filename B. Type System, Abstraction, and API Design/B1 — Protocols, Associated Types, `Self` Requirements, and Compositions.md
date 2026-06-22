@@ -62,9 +62,9 @@ An existential value erases the concrete type:
 let cache: any Cache = ...
 ```
 
-This says: “I have some value whose concrete type conforms to `Cache`, but I am intentionally hiding which one.” That is useful at runtime boundaries, but it loses some static relationships. SE-0335 introduced explicit `any` syntax to make existential types visible because plain protocol names in type position made existential costs and limitations too easy to miss. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md?utm_source=chatgpt.com "swift-evolution/proposals/0335-existential-any.md at main"))
+This says: “I have some value whose concrete type conforms to `Cache`, but I am intentionally hiding which one.” That is useful at runtime boundaries, but it loses some static relationships. SE-0335 introduced explicit `any` syntax to make existential types visible because plain protocol names in type position made existential costs and limitations too easy to miss. ([GitHub, "Introduce Existential any"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md))
 
-Associated types let a protocol describe a family of types where part of the API is chosen by the conforming type. The Swift book describes an associated type as a placeholder for a type used by a protocol, where the actual type is specified when the protocol is adopted. ([Swift Dokümantasyonu](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/?utm_source=chatgpt.com "Generics | Documentation - Swift Programming Language"))
+Associated types let a protocol describe a family of types where part of the API is chosen by the conforming type. The Swift book describes an associated type as a placeholder for a type used by a protocol, where the actual type is specified when the protocol is adopted. ([Swift.org, "Generics"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/))
 
 The key idea:
 
@@ -194,7 +194,7 @@ Compiler error with Swift 6.2.1:
 error: member 'combined' cannot be used on value of type 'any Combinable'; consider using a generic constraint instead [#ExistentialMemberAccess]
 ```
 
-Why? Because `a` and `b` are both “some `Combinable`”, but the compiler cannot prove they are the same concrete type after erasure. Swift’s compiler documentation explicitly calls out member-access limitations for protocol members that reference `Self` or `Self`-rooted associated types. ([Swift Dokümantasyonu](https://docs.swift.org/compiler/documentation/diagnostics/existential-member-access-limitations/?utm_source=chatgpt.com "Using protocol members with references to `Self` or `Self`"))
+Why? Because `a` and `b` are both “some `Combinable`”, but the compiler cannot prove they are the same concrete type after erasure. Swift’s compiler documentation explicitly calls out member-access limitations for protocol members that reference `Self` or `Self`-rooted associated types. ([Swift.org, "Using Protocol Members with References to Self or Self"](https://docs.swift.org/compiler/documentation/diagnostics/existential-member-access-limitations/))
 
 Use a generic instead:
 
@@ -210,7 +210,7 @@ let result = combine(Amount(value: 1), Amount(value: 2))
 
 ### 2.4 Protocol compositions express local capability sets
 
-A protocol composition means “a type that conforms to all of these protocols.” The Swift reference describes protocol composition types as types that conform to each protocol in a specified list. ([Swift Dokümantasyonu](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/?utm_source=chatgpt.com "Types | Documentation - Swift Programming Language"))
+A protocol composition means “a type that conforms to all of these protocols.” The Swift reference describes protocol composition types as types that conform to each protocol in a specified list. ([Swift.org, "Types"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/))
 
 ```swift
 protocol ImageLoading {
@@ -400,7 +400,7 @@ A marker protocol is justified when it communicates a meaningful guarantee that 
 
 Because using a protocol as a type creates an existential value, and an existential erases the concrete conforming type. If protocol requirements depend on `Self` or associated types, some members need type information that has been erased.
 
-Modern Swift nuance: many protocols with associated types can now be written as existentials using `any P`, especially after the language work to unlock existentials. But forming the existential is not the same as being able to use every member safely. SE-0309 generalized value-level abstraction for protocols, while compiler diagnostics still restrict member access when the erased type relationship matters. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0309-unlock-existential-types-for-all-protocols.md?utm_source=chatgpt.com "0309-unlock-existential-types-for-all-protocols.md"))
+Modern Swift nuance: many protocols with associated types can now be written as existentials using `any P`, especially after the language work to unlock existentials. But forming the existential is not the same as being able to use every member safely. SE-0309 generalized value-level abstraction for protocols, while compiler diagnostics still restrict member access when the erased type relationship matters. ([GitHub, "Unlock Existential Types for All Protocols"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0309-unlock-existential-types-for-all-protocols.md))
 
 Example:
 
@@ -696,7 +696,7 @@ any Cache<String, Int>
 
 This is useful at storage/API boundaries where the concrete implementation can vary, but the key/value relationship must stay known.
 
-SE-0346 introduced lightweight same-type syntax for constraining associated types, which is the language direction behind spelling like `Collection<Element>` or custom protocols with primary associated types. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md?utm_source=chatgpt.com "0346-light-weight-same-type-syntax.md"))
+SE-0346 introduced lightweight same-type syntax for constraining associated types, which is the language direction behind spelling like `Collection<Element>` or custom protocols with primary associated types. ([GitHub, "Lightweight Same-Type Requirements for Primary Associated Types"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md))
 
 ---
 
@@ -1101,12 +1101,12 @@ A: Hiding concrete implementation types while preserving a useful public or stor
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — B1 expectations, caveats, questions, and exercise.
-- Swift.org, _The Swift Programming Language_ — Protocols. ([Swift Dokümantasyonu](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols - Documentation | Swift.org"))
-- Swift.org, _The Swift Programming Language_ — Generics / Associated Types. ([Swift Dokümantasyonu](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/?utm_source=chatgpt.com "Generics | Documentation - Swift Programming Language"))
-- Swift.org, _The Swift Programming Language_ — Protocol Composition Types. ([Swift Dokümantasyonu](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/?utm_source=chatgpt.com "Types | Documentation - Swift Programming Language"))
-- Swift compiler diagnostics — existential `any`. ([Swift Dokümantasyonu](https://docs.swift.org/compiler/documentation/diagnostics/existential-any/?utm_source=chatgpt.com "Existential any (ExistentialAny) | Documentation"))
-- Swift compiler diagnostics — existential member access limitations for `Self` and associated types. ([Swift Dokümantasyonu](https://docs.swift.org/compiler/documentation/diagnostics/existential-member-access-limitations/?utm_source=chatgpt.com "Using protocol members with references to `Self` or `Self`"))
-- Swift Evolution SE-0309 — unlock existential types for all protocols. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0309-unlock-existential-types-for-all-protocols.md?utm_source=chatgpt.com "0309-unlock-existential-types-for-all-protocols.md"))
-- Swift Evolution SE-0335 — introduce existential `any`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md?utm_source=chatgpt.com "swift-evolution/proposals/0335-existential-any.md at main"))
-- Swift Evolution SE-0346 — lightweight same-type requirements for primary associated types. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md?utm_source=chatgpt.com "0346-light-weight-same-type-syntax.md"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B1 expectations, caveats, questions, and exercise.
+- Swift.org. "Protocols." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+- Swift.org. "Generics." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/
+- Swift.org. "Types." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/
+- Swift.org. "Existential any." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/existential-any/
+- Swift.org. "Using Protocol Members with References to Self or Self." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/existential-member-access-limitations/
+- GitHub. "Unlock Existential Types for All Protocols." Swift Evolution SE-0309. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0309-unlock-existential-types-for-all-protocols.md
+- GitHub. "Introduce Existential any." Swift Evolution SE-0335. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md
+- GitHub. "Lightweight Same-Type Requirements for Primary Associated Types." Swift Evolution SE-0346. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md

@@ -42,9 +42,9 @@ func opaque() -> some P                 // implementation chooses one hidden con
 func existential() -> any P             // runtime box can hold any conforming type
 ```
 
-`some P` is **not** “return any type conforming to `P`.” It means: “this declaration returns one specific concrete type that conforms to `P`, but clients are not allowed to name that type.” The Swift Book describes this as preserving type identity: an opaque type refers to one specific type, while a boxed protocol type can refer to any conforming type. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/opaquetypes/?utm_source=chatgpt.com "Opaque and Boxed Protocol Types - Documentation"))
+`some P` is **not** “return any type conforming to `P`.” It means: “this declaration returns one specific concrete type that conforms to `P`, but clients are not allowed to name that type.” The Swift Book describes this as preserving type identity: an opaque type refers to one specific type, while a boxed protocol type can refer to any conforming type. ([Swift.org, "Opaque and Boxed Protocol Types"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/opaquetypes/))
 
-`any P` is an **existential type**. It is a runtime container whose concrete stored value can be `Remote`, `Local`, `MockImageSource`, or anything else conforming to `P`. Swift introduced explicit `any` syntax to make existential use visible, because existentials erase type information and have semantic/performance consequences. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/existential-any/?utm_source=chatgpt.com "Existential any (ExistentialAny) | Documentation"))
+`any P` is an **existential type**. It is a runtime container whose concrete stored value can be `Remote`, `Local`, `MockImageSource`, or anything else conforming to `P`. Swift introduced explicit `any` syntax to make existential use visible, because existentials erase type information and have semantic/performance consequences. ([Swift.org, "Existential any"](https://docs.swift.org/compiler/documentation/diagnostics/existential-any/))
 
 Generics and opaque types preserve more static information than existentials. With a generic `T: P`, the compiler knows the concrete `T` at the call site and can preserve relationships like “both parameters have the same type.” With `some P`, the compiler still knows the underlying type, even if clients do not. With `any P`, the compiler only knows “there is a value inside this existential box that conforms to `P`.”
 
@@ -56,7 +56,7 @@ some P           = implementation chooses one hidden concrete type; identity pre
 any P            = runtime box can hold different conforming types; identity erased
 ```
 
-Swift guarantees that an opaque return type has a single underlying concrete type for that declaration. It does **not** guarantee that `some P` can dynamically switch between multiple conforming concrete types. A function returning an opaque type must return values sharing a single underlying type. ([docs.swift.org](https://docs.swift.org/swift-book/ReferenceManual/Types.html?utm_source=chatgpt.com "Types | Documentation"))
+Swift guarantees that an opaque return type has a single underlying concrete type for that declaration. It does **not** guarantee that `some P` can dynamically switch between multiple conforming concrete types. A function returning an opaque type must return values sharing a single underlying type. ([Swift.org, "Types"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/))
 
 ---
 
@@ -156,7 +156,7 @@ func loadTwice(_ source: any ImageSource) async throws -> (Data, Data) {
 }
 ```
 
-This may be perfectly fine at an architectural boundary, but the concrete type is erased. In hot paths, generic APIs often optimize better because the compiler can specialize them. Swift compiler documentation explicitly points out that when the compiler knows the concrete type, it has more optimization opportunity than with existential abstraction. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/existential-type/?utm_source=chatgpt.com "Existential Types and Performance (ExistentialType)"))
+This may be perfectly fine at an architectural boundary, but the concrete type is erased. In hot paths, generic APIs often optimize better because the compiler can specialize them. Swift compiler documentation explicitly points out that when the compiler knows the concrete type, it has more optimization opportunity than with existential abstraction. ([Swift.org, "Existential Types and Performance"](https://docs.swift.org/compiler/documentation/diagnostics/existential-type/))
 
 ### Mechanic 4: `some` in parameter position is generic shorthand
 
@@ -407,7 +407,7 @@ Compiler error, verified with Swift 6.2.1:
 10 | }
 ```
 
-This matches Swift’s opaque result type rule: all return statements must infer one matching underlying type. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/opaque-type-inference/?utm_source=chatgpt.com "Underlying type inference for opaque result types ..."))
+This matches Swift’s opaque result type rule: all return statements must infer one matching underlying type. ([Swift.org, "Underlying Type Inference for Opaque Result Types"](https://docs.swift.org/compiler/documentation/diagnostics/opaque-type-inference/))
 
 ### Why?
 
@@ -799,11 +799,11 @@ A: Returning `any Sequence` just because the real lazy sequence type is verbose,
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — B2 rubric, questions, exercise, and code probe.
-- The Swift Programming Language — “Opaque and Boxed Protocol Types.” ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/opaquetypes/?utm_source=chatgpt.com "Opaque and Boxed Protocol Types - Documentation"))
-- The Swift Programming Language Reference — opaque types and the single-underlying-type rule. ([docs.swift.org](https://docs.swift.org/swift-book/ReferenceManual/Types.html?utm_source=chatgpt.com "Types | Documentation"))
-- Swift compiler diagnostics — opaque result type inference. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/opaque-type-inference/?utm_source=chatgpt.com "Underlying type inference for opaque result types ..."))
-- Swift compiler diagnostics — existential `any`. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/existential-any/?utm_source=chatgpt.com "Existential any (ExistentialAny) | Documentation"))
-- Swift compiler diagnostics — existential types and performance. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/existential-type/?utm_source=chatgpt.com "Existential Types and Performance (ExistentialType)"))
-- Swift Evolution SE-0244 — Opaque Result Types. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0244-opaque-result-types.md?utm_source=chatgpt.com "swift-evolution/proposals/0244-opaque-result-types.md at ..."))
-- Swift Evolution SE-0335 — Introduce existential `any`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md?utm_source=chatgpt.com "swift-evolution/proposals/0335-existential-any.md at main"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B2 rubric, questions, exercise, and code probe.
+- Swift.org. "Opaque and Boxed Protocol Types." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/opaquetypes/
+- Swift.org. "Types." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/
+- Swift.org. "Underlying Type Inference for Opaque Result Types." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/opaque-type-inference/
+- Swift.org. "Existential any." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/existential-any/
+- Swift.org. "Existential Types and Performance." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/existential-type/
+- GitHub. "Opaque Result Types." Swift Evolution SE-0244. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0244-opaque-result-types.md
+- GitHub. "Introduce Existential any." Swift Evolution SE-0335. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md

@@ -29,7 +29,7 @@ A technically correct API can still be un-Swifty, ambiguous at the call site, an
 
 ## 1. Core mental model
 
-Swift API design is about **call-site semantics**. A declaration is written once, but every consumer reads the call site repeatedly. The official guidelines make this explicit: clarity at the point of use is the most important goal, and clarity is more important than brevity. ([Swift.org](https://swift.org/documentation/api-design-guidelines/ "API Design Guidelines | Swift.org"))
+Swift API design is about **call-site semantics**. A declaration is written once, but every consumer reads the call site repeatedly. The official guidelines make this explicit: clarity at the point of use is the most important goal, and clarity is more important than brevity. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
 A Swift-native API should read like a small phrase that explains what is happening:
 
@@ -75,7 +75,7 @@ func upload(
 
 ### 2.1 Optimize for the use site
 
-The guideline is not “make declarations pretty.” It is “make calls clear in context.” The official guidelines say reading a declaration is seldom sufficient; you should examine actual use cases. ([Swift.org](https://swift.org/documentation/api-design-guidelines/ "API Design Guidelines | Swift.org"))
+The guideline is not “make declarations pretty.” It is “make calls clear in context.” The official guidelines say reading a declaration is seldom sufficient; you should examine actual use cases. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
 Bad:
 
@@ -121,7 +121,7 @@ The receiver `image` now carries part of the meaning. The method name and labels
 
 ### 2.2 Labels express parameter roles, not just types
 
-The guidelines say variables, parameters, and associated types should be named according to their roles rather than their type constraints. They also say weakly typed parameters such as `String`, `Int`, `Any`, `AnyObject`, or `NSObject` often need extra clarity. ([Swift.org](https://swift.org/documentation/api-design-guidelines/ "API Design Guidelines | Swift.org"))
+The guidelines say variables, parameters, and associated types should be named according to their roles rather than their type constraints. They also say weakly typed parameters such as `String`, `Int`, `Any`, `AnyObject`, or `NSObject` often need extra clarity. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
 Bad:
 
@@ -177,7 +177,7 @@ The senior-level move is not just renaming parameters. It is replacing primitive
 
 ### 2.3 Mutating and nonmutating APIs should be named consistently
 
-The Swift guidelines distinguish side-effecting APIs from value-returning APIs. Side-effecting methods should read as imperative verb phrases, while methods without side effects should generally read as noun phrases. For mutating/nonmutating pairs, Swift convention uses patterns like `sort()` / `sorted()` and `formUnion(_:)` / `union(_:)`. ([Swift.org](https://swift.org/documentation/api-design-guidelines/ "API Design Guidelines | Swift.org"))
+The Swift guidelines distinguish side-effecting APIs from value-returning APIs. Side-effecting methods should read as imperative verb phrases, while methods without side effects should generally read as noun phrases. For mutating/nonmutating pairs, Swift convention uses patterns like `sort()` / `sorted()` and `formUnion(_:)` / `union(_:)`. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
 Bad:
 
@@ -215,7 +215,7 @@ This matters because the name communicates ownership and side effects before the
 
 ### 2.4 Prefer methods/properties when there is a natural receiver
 
-The guidelines prefer methods and properties over free functions unless there is no obvious `self`, the function is unconstrained generic, or function syntax is established domain notation. ([Swift.org](https://swift.org/documentation/api-design-guidelines/ "API Design Guidelines | Swift.org"))
+The guidelines prefer methods and properties over free functions unless there is no obvious `self`, the function is unconstrained generic, or function syntax is established domain notation. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
 Bad:
 
@@ -929,5 +929,5 @@ A: A domain-specific value type or typed dictionary, ideally with `Sendable` and
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, B10: API design guidelines and Swift-native surface design.
-- Swift.org — API Design Guidelines: clarity at point of use, clarity over brevity, documentation comments, role-based parameter naming, fluent usage, side-effect naming, mutating/nonmutating pairs, boolean naming, protocol/type naming, methods vs free functions, and argument labels. ([Swift.org](https://swift.org/documentation/api-design-guidelines/ "API Design Guidelines | Swift.org"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B10: API design guidelines and Swift-native surface design.
+- Swift.org. "API Design Guidelines." https://swift.org/documentation/api-design-guidelines/

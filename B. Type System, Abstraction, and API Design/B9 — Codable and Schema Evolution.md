@@ -33,7 +33,7 @@ Know `Codable` synthesis, custom coding keys, lossy decoding tradeoffs, backward
 
 ## 1. Core mental model
 
-`Codable` is Swift’s protocol-based serialization model. `Encodable` means a value can write itself into an external representation. `Decodable` means a value can initialize itself from an external representation. `Codable` is just `Encodable & Decodable`. The original Swift proposal defines `encode(to:)`, `init(from:)`, `CodingKey`, `Encoder`, and `Decoder` as the abstraction layer between Swift types and external formats. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md "swift-evolution/proposals/0166-swift-archival-serialization.md at main · swiftlang/swift-evolution · GitHub"))
+`Codable` is Swift’s protocol-based serialization model. `Encodable` means a value can write itself into an external representation. `Decodable` means a value can initialize itself from an external representation. `Codable` is just `Encodable & Decodable`. The original Swift proposal defines `encode(to:)`, `init(from:)`, `CodingKey`, `Encoder`, and `Decoder` as the abstraction layer between Swift types and external formats. ([GitHub, "Swift Archival & Serialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md))
 
 The important part: `Codable` does **not** persist your Swift type. It persists a representation of your type. By default, that representation is structurally derived from property names and enum raw values.
 
@@ -46,7 +46,7 @@ Your Swift type can evolve freely only if the encoded schema remains compatible,
 or if you explicitly migrate old representations.
 ```
 
-Automatic synthesis is convenient when the Swift shape and persisted shape match. SE-0166 says synthesis works when properties are encodable/decodable and when the `CodingKeys` map one-to-one to properties. If your model no longer maps one-to-one to stored data, you own the decoding logic. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md "swift-evolution/proposals/0166-swift-archival-serialization.md at main · swiftlang/swift-evolution · GitHub"))
+Automatic synthesis is convenient when the Swift shape and persisted shape match. SE-0166 says synthesis works when properties are encodable/decodable and when the `CodingKeys` map one-to-one to properties. If your model no longer maps one-to-one to stored data, you own the decoding logic. ([GitHub, "Swift Archival & Serialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md))
 
 For persisted app settings, disk caches, user defaults, JSON files, app group storage, widgets, or synced blobs, treat the encoded keys and values as a schema. Renaming `sortOrder` to `sortMode` is not just a refactor. It changes what the decoder looks for.
 
@@ -82,7 +82,7 @@ struct User: Codable {
 }
 ```
 
-Apple’s Codable documentation also describes the special nested `CodingKeys` enum as the customization point for choosing encoded and decoded properties. ([Apple Developer](https://developer.apple.com/documentation/foundation/encoding-and-decoding-custom-types?utm_source=chatgpt.com "Encoding and Decoding Custom Types"))
+Apple’s Codable documentation also describes the special nested `CodingKeys` enum as the customization point for choosing encoded and decoded properties. ([Apple Developer, "Encoding and Decoding Custom Types"](https://developer.apple.com/documentation/foundation/encoding-and-decoding-custom-types))
 
 ### `decode` means required; `decodeIfPresent` means optional/migratable
 
@@ -124,7 +124,7 @@ enum SortMode: String, Codable {
 }
 ```
 
-This decodes `"byName"` and `"byDate"`. It fails on `"priority"`, `"manual"`, or any future value. SE-0166 explicitly supports trivial `Codable` conformance for primitive-backed `RawRepresentable` types, which is why this works. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md "swift-evolution/proposals/0166-swift-archival-serialization.md at main · swiftlang/swift-evolution · GitHub"))
+This decodes `"byName"` and `"byDate"`. It fails on `"priority"`, `"manual"`, or any future value. SE-0166 explicitly supports trivial `Codable` conformance for primitive-backed `RawRepresentable` types, which is why this works. ([GitHub, "Swift Archival & Serialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md))
 
 For remote data or persisted data that may be written by future app versions, consider a custom enum decoder:
 
@@ -810,7 +810,7 @@ A: When it hides corruption or loses important user, financial, security, or mig
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — B9 rubric entry.
-- Swift Evolution SE-0166, “Swift Archival & Serialization” — defines `Encodable`, `Decodable`, `Codable`, `CodingKey`, synthesis rules, and raw-value enum support. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md "swift-evolution/proposals/0166-swift-archival-serialization.md at main · swiftlang/swift-evolution · GitHub"))
-- Apple Developer Documentation, “Encoding and Decoding Custom Types” — documents custom `CodingKeys` for encoded/decoded properties. ([Apple Developer](https://developer.apple.com/documentation/foundation/encoding-and-decoding-custom-types?utm_source=chatgpt.com "Encoding and Decoding Custom Types"))
-- Apple Developer Documentation, `JSONDecoder` — Foundation JSON decoding support for Swift models. ([Apple Developer](https://developer.apple.com/documentation/Foundation/JSONDecoder?utm_source=chatgpt.com "JSONDecoder | Apple Developer Documentation"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B9 rubric entry.
+- GitHub. "Swift Archival & Serialization." Swift Evolution SE-0166. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0166-swift-archival-serialization.md
+- Apple Developer. "Encoding and Decoding Custom Types." Apple Developer Documentation. https://developer.apple.com/documentation/foundation/encoding-and-decoding-custom-types
+- Apple Developer. "JSONDecoder." Apple Developer Documentation. https://developer.apple.com/documentation/foundation/jsondecoder

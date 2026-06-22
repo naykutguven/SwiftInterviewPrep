@@ -35,9 +35,9 @@ Swift is a statically typed language, but it still carries enough runtime type i
 
 The danger is not that `Any`, `AnyObject`, dynamic casts, or metatypes are “bad.” The danger is using them too early in your own domain model. Once a value becomes `Any`, Swift no longer knows its useful static relationships. You move correctness from compile time to runtime.
 
-`Any` means “some value of any type.” `AnyObject` means “some instance of a class type.” `T.Type` means “the type object for a specific static type `T`.” `Any.Type` means “a metatype value for some type, but I no longer know which one statically.” Swift’s type-casting documentation explicitly says `Any` can represent an instance of any type, `AnyObject` can represent an instance of any class type, and both should be used only when their nonspecific behavior is actually needed. ([Swift Belgeleri](https://docs.swift.org/swift-book/LanguageGuide/TypeCasting.html?utm_source=chatgpt.com "Type Casting - Documentation | Swift.org"))
+`Any` means “some value of any type.” `AnyObject` means “some instance of a class type.” `T.Type` means “the type object for a specific static type `T`.” `Any.Type` means “a metatype value for some type, but I no longer know which one statically.” Swift’s type-casting documentation explicitly says `Any` can represent an instance of any type, `AnyObject` can represent an instance of any class type, and both should be used only when their nonspecific behavior is actually needed. ([Swift.org, "Type Casting"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/typecasting/))
 
-Metatypes are types-as-values. They let you pass `User.self`, `ImageLoader.self`, or `AnalyticsPlugin.self` into APIs that need to construct, register, compare, or select behavior by type. The Swift reference describes a metatype as a type that refers to the type of any class, struct, enum, or protocol. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/?utm_source=chatgpt.com "Types - Documentation | Swift.org"))
+Metatypes are types-as-values. They let you pass `User.self`, `ImageLoader.self`, or `AnalyticsPlugin.self` into APIs that need to construct, register, compare, or select behavior by type. The Swift reference describes a metatype as a type that refers to the type of any class, struct, enum, or protocol. ([Swift.org, "Types"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/))
 
 The key idea:
 
@@ -49,7 +49,7 @@ Metatypes pass the type itself as a value.
 Dynamic casts try to recover erased information at runtime.
 ```
 
-Swift guarantees that dynamic casts are type-checked at runtime and that failed optional casts return `nil`. It does **not** guarantee that a design full of casts is safe, maintainable, or performant. Reflection via `Mirror` is useful for debugging and limited introspection, but it is not a full runtime metaprogramming system. Apple describes `Mirror` as a way to describe the parts that make up a particular instance, such as stored properties, collection elements, tuple elements, or active enum cases. ([Apple Developer](https://developer.apple.com/documentation/swift/mirror?utm_source=chatgpt.com "Mirror | Apple Developer Documentation"))
+Swift guarantees that dynamic casts are type-checked at runtime and that failed optional casts return `nil`. It does **not** guarantee that a design full of casts is safe, maintainable, or performant. Reflection via `Mirror` is useful for debugging and limited introspection, but it is not a full runtime metaprogramming system. Apple describes `Mirror` as a way to describe the parts that make up a particular instance, such as stored properties, collection elements, tuple elements, or active enum cases. ([Apple Developer, "Mirror"](https://developer.apple.com/documentation/swift/mirror))
 
 ---
 
@@ -208,7 +208,7 @@ let loader: Any = RemoteImageLoader()
 // Error: value of type 'Any' has no member 'loadImage'
 ```
 
-Swift documentation notes that boxed protocol types support runtime flexibility through indirection, but the underlying type is not known at compile time; accessing APIs outside the protocol requires runtime casting. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols | Documentation - Swift Programming Language"))
+Swift documentation notes that boxed protocol types support runtime flexibility through indirection, but the underlying type is not known at compile time; accessing APIs outside the protocol requires runtime casting. ([Swift.org, "Protocols"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/))
 
 So the order of specificity is roughly:
 
@@ -844,7 +844,7 @@ Values crossing actor boundaries should be Sendable or isolated.
 Class-based plugins may carry mutable shared state.
 ```
 
-Swift’s Sendable-metatype diagnostics point out that types shared in concurrent code can need sendability constraints, including in generic contexts. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/sendable-metatypes/?utm_source=chatgpt.com "Sendable metatypes (SendableMetatypes)"))
+Swift’s Sendable-metatype diagnostics point out that types shared in concurrent code can need sendability constraints, including in generic contexts. ([Swift.org, "Sendable Metatypes"](https://docs.swift.org/compiler/documentation/diagnostics/sendable-metatypes/))
 
 Interview version:
 
@@ -1344,9 +1344,9 @@ A: Registries are often shared mutable state. They need actor isolation, locks, 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, B6 section.
-- The Swift Programming Language — Type Casting: `Any`, `AnyObject`, and dynamic casting. ([Swift Belgeleri](https://docs.swift.org/swift-book/LanguageGuide/TypeCasting.html?utm_source=chatgpt.com "Type Casting - Documentation | Swift.org"))
-- The Swift Programming Language — Types: metatype types. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/?utm_source=chatgpt.com "Types - Documentation | Swift.org"))
-- The Swift Programming Language — Protocols: boxed protocol types, indirection, and runtime casting. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols | Documentation - Swift Programming Language"))
-- Apple Developer Documentation — `Mirror`. ([Apple Developer](https://developer.apple.com/documentation/swift/mirror?utm_source=chatgpt.com "Mirror | Apple Developer Documentation"))
-- Swift compiler diagnostics — Sendable metatypes. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/sendable-metatypes/?utm_source=chatgpt.com "Sendable metatypes (SendableMetatypes)"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B6 section.
+- Swift.org. "Type Casting." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/typecasting/
+- Swift.org. "Types." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/types/
+- Swift.org. "Protocols." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+- Apple Developer. "Mirror." Apple Developer Documentation. https://developer.apple.com/documentation/swift/mirror
+- Swift.org. "Sendable Metatypes." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/sendable-metatypes/

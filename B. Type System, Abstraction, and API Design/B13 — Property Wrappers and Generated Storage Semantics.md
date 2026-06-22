@@ -57,7 +57,7 @@ The key idea:
 @Wrapper var x: T  ≈  private var _x: Wrapper<T> + computed var x: T via _x.wrappedValue
 ```
 
-This is why wrappers are powerful: they let a library author reuse storage policies such as validation, persistence, dependency lookup, binding, lazy initialization, observation, or logging without hand-writing the same getter/setter shape everywhere. SE-0258 describes property wrappers as a way for a property declaration to state which wrapper implements it; the wrapper provides storage, `wrappedValue` implements access, and `init(wrappedValue:)` initializes wrapper storage from the property’s value. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+This is why wrappers are powerful: they let a library author reuse storage policies such as validation, persistence, dependency lookup, binding, lazy initialization, observation, or logging without hand-writing the same getter/setter shape everywhere. SE-0258 describes property wrappers as a way for a property declaration to state which wrapper implements it; the wrapper provides storage, `wrappedValue` implements access, and `init(wrappedValue:)` initializes wrapper storage from the property’s value. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
 
 What Swift guarantees is the access transformation and initialization rules. What Swift does **not** guarantee is that the wrapper’s internal policy is semantically safe. A wrapper can hide locks, reference storage, global state, `UserDefaults`, unsafe pointers, non-`Sendable` services, or main-actor-only assumptions behind a harmless-looking property.
 
@@ -67,7 +67,7 @@ What Swift guarantees is the access transformation and initialization rules. Wha
 
 ### 2.1 `wrappedValue` defines the property’s apparent value
 
-Every property wrapper type must be marked with `@propertyWrapper` and must provide a non-static `wrappedValue` property. Swift compiler diagnostics document that `wrappedValue` is required, must be non-static, and must have compatible access with the wrapper type; wrapper initializers also cannot be failable. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/property-wrapper-requirements/?utm_source=chatgpt.com "Property wrapper implementation requirements ..."))
+Every property wrapper type must be marked with `@propertyWrapper` and must provide a non-static `wrappedValue` property. Swift compiler diagnostics document that `wrappedValue` is required, must be non-static, and must have compatible access with the wrapper type; wrapper initializers also cannot be failable. ([Swift.org, "Property Wrapper Implementation Requirements"](https://docs.swift.org/compiler/documentation/diagnostics/property-wrapper-requirements/))
 
 ```swift
 @propertyWrapper
@@ -146,7 +146,7 @@ Output:
 false
 ```
 
-`form.name` is the wrapped value. `form.$name` is the projection. The Swift Book notes that projected values can expose any type, including a boolean, another object, or the wrapper itself. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/properties/?utm_source=chatgpt.com "Properties - Documentation | Swift.org"))
+`form.name` is the wrapped value. `form.$name` is the projection. The Swift Book notes that projected values can expose any type, including a boolean, another object, or the wrapper itself. ([Swift.org, "Properties"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/properties/))
 
 ---
 
@@ -200,7 +200,7 @@ This becomes approximately:
 private var _value = ClampedToRange(wrappedValue: 150, 0...100)
 ```
 
-SE-0258 describes three storage-initialization routes: from the original property value through `init(wrappedValue:)`, from explicit wrapper initializer arguments, or from a no-argument `init()` when available. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0258 describes three storage-initialization routes: from the original property value through `init(wrappedValue:)`, from explicit wrapper initializer arguments, or from a no-argument `init()` when available. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
 
 ---
 
@@ -238,7 +238,7 @@ Output:
 0
 ```
 
-SE-0258 says the memberwise initializer parameter uses the original property type when the wrapped property has an initial value or when the wrapper has `init(wrappedValue:)`; otherwise, it can use the wrapper type directly. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0258 says the memberwise initializer parameter uses the original property type when the wrapped property has an initial value or when the wrapper has `init(wrappedValue:)`; otherwise, it can use the wrapper type directly. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
 
 ---
 
@@ -284,7 +284,7 @@ Output:
 10
 ```
 
-This compiles even though `settings` is a `let`, because the setter is `nonmutating` and mutates reference-backed storage. SE-0258 explicitly covers how mutating getters and nonmutating setters on wrapper types affect the synthesized property. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+This compiles even though `settings` is a `let`, because the setter is `nonmutating` and mutates reference-backed storage. SE-0258 explicitly covers how mutating getters and nonmutating setters on wrapper types affect the synthesized property. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
 
 That is useful in some cases, but dangerous if the API appears value-semantic while secretly sharing mutable reference state.
 
@@ -313,7 +313,7 @@ var value: Int {
 }
 ```
 
-SE-0258 describes wrapper composition as nesting later wrapper types inside earlier wrapper types; for example, `@DelayedMutable @Copying var path` uses backing storage like `DelayedMutable<Copying<UIBezierPath>>`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0258 describes wrapper composition as nesting later wrapper types inside earlier wrapper types; for example, `@DelayedMutable @Copying var path` uses backing storage like `DelayedMutable<Copying<UIBezierPath>>`. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
 
 Composition order matters. `@A @B` and `@B @A` are not generally equivalent.
 
@@ -1002,8 +1002,7 @@ A: When the behavior is cross-field, workflow-level, async, actor-dependent, syn
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — B13.
-- Swift Book — Properties / Property Wrappers. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/properties/?utm_source=chatgpt.com "Properties - Documentation | Swift.org"))
-- Swift compiler diagnostics — Property wrapper implementation requirements. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/property-wrapper-requirements/?utm_source=chatgpt.com "Property wrapper implementation requirements ..."))
-- Swift Evolution SE-0258 — Property Wrappers. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0258 — Memberwise initializers, projections, restrictions, and synthesis behavior. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md "swift-evolution/proposals/0258-property-wrappers.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B13.
+- Swift.org. "Properties." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/properties/
+- Swift.org. "Property Wrapper Implementation Requirements." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/property-wrapper-requirements/
+- GitHub. "Property Wrappers." Swift Evolution SE-0258. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md

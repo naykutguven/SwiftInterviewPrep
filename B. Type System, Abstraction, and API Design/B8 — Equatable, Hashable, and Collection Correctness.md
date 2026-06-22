@@ -16,7 +16,7 @@ Understand equality/hash invariants and how they affect dictionaries and sets. B
 
 **Caveats**
 
-Mutable hashed state is a correctness bug. Hash values are implementation/runtime artifacts, not stable IDs. Apple’s `Hashable` documentation says the components fed into `Hasher` must be the same essential components used by `==`, and equal instances must feed the same values in the same order. ([Apple Developer](https://developer.apple.com/documentation/Swift/Hashable?utm_source=chatgpt.com "Hashable | Apple Developer Documentation"))
+Mutable hashed state is a correctness bug. Hash values are implementation/runtime artifacts, not stable IDs. Apple’s `Hashable` documentation says the components fed into `Hasher` must be the same essential components used by `==`, and equal instances must feed the same values in the same order. ([Apple Developer, "Hashable"](https://developer.apple.com/documentation/swift/hashable))
 
 **You should be able to answer**
 
@@ -143,13 +143,13 @@ struct User: Hashable {
 }
 ```
 
-If equality says two users with the same `id` are equal, hashing must also use `id` only. Apple’s documentation states that the components used for hashing must match the components compared by `==`. ([Apple Developer](https://developer.apple.com/documentation/swift/hashable/hash%28into%3A%29?utm_source=chatgpt.com "hash(into:) | Apple Developer Documentation"))
+If equality says two users with the same `id` are equal, hashing must also use `id` only. Apple’s documentation states that the components used for hashing must match the components compared by `==`. ([Apple Developer, "hash(into:)"](https://developer.apple.com/documentation/swift/hashable/hash%28into%3a%29))
 
 ### Hash values are not stable identifiers
 
 Do not persist `hashValue`. Do not send it to a backend. Do not use it as a database key. Do not expect it to be stable across app launches.
 
-Apple documents that hash values are not guaranteed to be equal across executions and should not be saved for future execution. ([Apple Developer](https://developer.apple.com/documentation/swift/hasher/finalize%28%29?utm_source=chatgpt.com "finalize() | Apple Developer Documentation"))
+Apple documents that hash values are not guaranteed to be equal across executions and should not be saved for future execution. ([Apple Developer, "finalize()"](https://developer.apple.com/documentation/swift/hasher/finalize%28%29))
 
 Bad:
 
@@ -167,7 +167,7 @@ saveToDisk(cacheKey)
 
 ### `Set` uniqueness depends on `Hashable`
 
-A `Set` is only as correct as the `Hashable` conformance of its element type. The Swift book describes set elements as requiring `Hashable`, with equal values having equal hash values. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/collectiontypes/?utm_source=chatgpt.com "Collection Types - Documentation"))
+A `Set` is only as correct as the `Hashable` conformance of its element type. The Swift book describes set elements as requiring `Hashable`, with equal values having equal hash values. ([Swift.org, "Collection Types"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/collectiontypes/))
 
 ```swift
 struct Tag: Hashable {
@@ -877,8 +877,8 @@ A: Remove it before mutation and reinsert it after mutation, or redesign so muta
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist, B8 — Equatable, Hashable, and collection correctness.
-- Apple Developer Documentation — `Hashable`: equal instances must feed the same values to `Hasher` in the same order. ([Apple Developer](https://developer.apple.com/documentation/Swift/Hashable?utm_source=chatgpt.com "Hashable | Apple Developer Documentation"))
-- Apple Developer Documentation — `hash(into:)`: hash the same components compared by `==`. ([Apple Developer](https://developer.apple.com/documentation/swift/hashable/hash%28into%3A%29?utm_source=chatgpt.com "hash(into:) | Apple Developer Documentation"))
-- Apple Developer Documentation — `Hasher.finalize()`: hash values are not guaranteed across executions and should not be saved. ([Apple Developer](https://developer.apple.com/documentation/swift/hasher/finalize%28%29?utm_source=chatgpt.com "finalize() | Apple Developer Documentation"))
-- The Swift Programming Language — Collection Types: set elements require `Hashable`, and equal values must have equal hash values. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/collectiontypes/?utm_source=chatgpt.com "Collection Types - Documentation"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B8 — Equatable, Hashable, and collection correctness.
+- Apple Developer. "Hashable." Apple Developer Documentation. https://developer.apple.com/documentation/swift/hashable
+- Apple Developer. "hash(into:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/hashable/hash%28into%3a%29
+- Apple Developer. "finalize()." Apple Developer Documentation. https://developer.apple.com/documentation/swift/hasher/finalize%28%29
+- Swift.org. "Collection Types." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/collectiontypes/

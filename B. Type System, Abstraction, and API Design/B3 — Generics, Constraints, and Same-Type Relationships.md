@@ -60,7 +60,7 @@ The key idea:
 Generics preserve type relationships; existentials erase them.
 ```
 
-Swift’s `where` clauses let you add requirements on generic parameters and their associated types, including equality relationships between types and associated types. ([Swift Belgeleri](https://docs.swift.org/swift-book/LanguageGuide/Generics.html?utm_source=chatgpt.com "Generics - Documentation | Swift.org")) Conditional conformances extend this idea to types: a generic type can conform to a protocol only when its type arguments meet requirements, such as `Array: Equatable where Element: Equatable`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0143-conditional-conformances.md "swift-evolution/proposals/0143-conditional-conformances.md at main · swiftlang/swift-evolution · GitHub"))
+Swift’s `where` clauses let you add requirements on generic parameters and their associated types, including equality relationships between types and associated types. ([Swift.org, "Generics"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/)) Conditional conformances extend this idea to types: a generic type can conform to a protocol only when its type arguments meet requirements, such as `Array: Equatable where Element: Equatable`. ([GitHub, "Conditional Conformances"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0143-conditional-conformances.md))
 
 What Swift guarantees:
 
@@ -205,7 +205,7 @@ true
 
 Without the `where Value: Equatable` constraint, `Box<Value>` cannot honestly promise `Equatable` for every possible `Value`.
 
-This is the same model the standard library uses for many container-like types. Conditional conformances were introduced to express that a generic type conforms to a protocol only when its type arguments satisfy requirements. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0143-conditional-conformances.md "swift-evolution/proposals/0143-conditional-conformances.md at main · swiftlang/swift-evolution · GitHub"))
+This is the same model the standard library uses for many container-like types. Conditional conformances were introduced to express that a generic type conforms to a protocol only when its type arguments satisfy requirements. ([GitHub, "Conditional Conformances"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0143-conditional-conformances.md))
 
 ---
 
@@ -333,7 +333,7 @@ Use generics when they preserve meaningful flexibility or type relationships. Do
 
 ### Trap 4: Assuming generic specialization is always free
 
-Generic APIs can give the compiler stronger optimization opportunities than existential APIs, because the concrete type information can remain available and operations can avoid some existential indirection. Swift compiler documentation describes generic constraints as enabling static dispatch, inlining, stack allocation for value types, and other optimizations blocked by existential indirection in suitable cases. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/existential-type/?utm_source=chatgpt.com "Existential Types and Performance (ExistentialType)"))
+Generic APIs can give the compiler stronger optimization opportunities than existential APIs, because the concrete type information can remain available and operations can avoid some existential indirection. Swift compiler documentation describes generic constraints as enabling static dispatch, inlining, stack allocation for value types, and other optimizations blocked by existential indirection in suitable cases. ([Swift.org, "Existential Types and Performance"](https://docs.swift.org/compiler/documentation/diagnostics/existential-type/))
 
 But in production, do not treat “generic” as automatically faster. Cross-module boundaries, resilience, build settings, code size, and lack of specialization can change the actual result. Measure hot paths.
 
@@ -793,8 +793,8 @@ A: Use generics when the relationship between types matters. Use existentials wh
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — B3 rubric.
-- Swift Book — Generics. Generic code works with any type subject to requirements, and generic `where` clauses express associated-type constraints and equality relationships. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/?utm_source=chatgpt.com "Generics | Documentation - Swift Programming Language"))
-- Swift Book — Protocols. Protocols are commonly used as generic constraints, where the caller chooses the concrete type. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols | Documentation - Swift Programming Language"))
-- Swift Evolution SE-0143 — Conditional Conformances. Conditional conformances model generic types conforming to protocols only when type arguments meet requirements. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0143-conditional-conformances.md "swift-evolution/proposals/0143-conditional-conformances.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Compiler Documentation — Existential Types and Performance. Generic constraints can preserve optimization opportunities that existential indirection may block. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/existential-type/?utm_source=chatgpt.com "Existential Types and Performance (ExistentialType)"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B3 rubric.
+- Swift.org. "Generics." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/
+- Swift.org. "Protocols." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+- GitHub. "Conditional Conformances." Swift Evolution SE-0143. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0143-conditional-conformances.md
+- Swift.org. "Existential Types and Performance." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/existential-type/

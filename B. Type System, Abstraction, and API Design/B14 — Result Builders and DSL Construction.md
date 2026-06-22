@@ -31,9 +31,9 @@ Result builders can create cryptic type-checking failures and hide control-flow 
 
 ## 1. Core mental model
 
-A result builder is a compile-time transformation for a closure or function body. It lets a sequence of expressions inside a block be collected into a single result value. The feature was formalized by SE-0289 and implemented in Swift 5.4. The proposal describes result builders as a way for specially annotated functions or closures to “implicitly build up a result value from a sequence of components.” ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0289-result-builders.md "swift-evolution/proposals/0289-result-builders.md at main · swiftlang/swift-evolution · GitHub"))
+A result builder is a compile-time transformation for a closure or function body. It lets a sequence of expressions inside a block be collected into a single result value. The feature was formalized by SE-0289 and implemented in Swift 5.4. The proposal describes result builders as a way for specially annotated functions or closures to “implicitly build up a result value from a sequence of components.” ([GitHub, "Result Builders"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md))
 
-The important part: the syntax still looks like Swift. A builder does not create a new runtime language. It rewrites selected statements into calls like `buildExpression`, `buildBlock`, `buildOptional`, `buildEither`, and `buildArray`. SE-0289 explicitly frames this as a limited transformation that preserves the dynamic semantics of the original code. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0289-result-builders.md "swift-evolution/proposals/0289-result-builders.md at main · swiftlang/swift-evolution · GitHub"))
+The important part: the syntax still looks like Swift. A builder does not create a new runtime language. It rewrites selected statements into calls like `buildExpression`, `buildBlock`, `buildOptional`, `buildEither`, and `buildArray`. SE-0289 explicitly frames this as a limited transformation that preserves the dynamic semantics of the original code. ([GitHub, "Result Builders"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md))
 
 In normal Swift, a closure has one return value. A result builder lets many expression statements contribute to that return value. That is why SwiftUI can let you write:
 
@@ -44,7 +44,7 @@ VStack {
 }
 ```
 
-instead of manually constructing a tuple, array, or nested tree. Apple’s `ViewBuilder` is itself a `@resultBuilder`, and Apple describes it as a custom parameter attribute that constructs views from closures. ([Apple Developer](https://developer.apple.com/documentation/SwiftUI/ViewBuilder?changes=l_8_3_8&utm_source=chatgpt.com "ViewBuilder | Apple Developer Documentation"))
+instead of manually constructing a tuple, array, or nested tree. Apple’s `ViewBuilder` is itself a `@resultBuilder`, and Apple describes it as a custom parameter attribute that constructs views from closures. ([Apple Developer, "ViewBuilder"](https://developer.apple.com/documentation/swiftui/viewbuilder))
 
 The key idea:
 
@@ -52,7 +52,7 @@ The key idea:
 Builder block syntax -> compiler transform -> builder method calls -> one final result value
 ```
 
-Result builders are best when the domain is naturally declarative and structural: UI trees, HTML/XML trees, routes, menus, command lists, validation rules, layout descriptions, test scenarios, or query definitions. Apple’s WWDC21 DSL session describes result builders as one of the main Swift features for embedded DSLs, especially when a DSL gathers values and builds a tree or structure from them. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2021/10253/ "Write a DSL in Swift using result builders - WWDC21 - Videos - Apple Developer"))
+Result builders are best when the domain is naturally declarative and structural: UI trees, HTML/XML trees, routes, menus, command lists, validation rules, layout descriptions, test scenarios, or query definitions. Apple’s WWDC21 DSL session describes result builders as one of the main Swift features for embedded DSLs, especially when a DSL gathers values and builds a tree or structure from them. ([Apple Developer, "Write a DSL in Swift Using Result Builders"](https://developer.apple.com/videos/play/wwdc2021/10253/))
 
 They are bad when they merely hide ordinary imperative code. If the reader has to reverse-engineer what `if`, `for`, variables, side effects, and overloads mean in your builder, the DSL is probably too clever.
 
@@ -62,7 +62,7 @@ They are bad when they merely hide ordinary imperative code. If the reader has t
 
 ### 2.1 A result builder is a type with static builder methods
 
-At minimum, a result builder type needs enough methods for the syntax you want to support. The Swift language reference says a result builder must implement either `buildBlock(_:)` or both `buildPartialBlock(first:)` and `buildPartialBlock(accumulated:next:)`. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/?utm_source=chatgpt.com "Attributes | Documentation - Swift Programming Language"))
+At minimum, a result builder type needs enough methods for the syntax you want to support. The Swift language reference says a result builder must implement either `buildBlock(_:)` or both `buildPartialBlock(first:)` and `buildPartialBlock(accumulated:next:)`. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
 
 ```swift
 @resultBuilder
@@ -242,7 +242,7 @@ return_builder.swift:12:5: error: cannot use explicit 'return' statement in the 
 
 ### 2.4 Modern Swift removed older local-variable limitations
 
-Older Swift result builders had annoying restrictions around local variables. SE-0373 lifted those limitations so local declarations in result-builder-transformed functions are treated more like ordinary local declarations. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0373-vars-without-limits-in-result-builders.md?utm_source=chatgpt.com "0373-vars-without-limits-in-result-builders.md"))
+Older Swift result builders had annoying restrictions around local variables. SE-0373 lifted those limitations so local declarations in result-builder-transformed functions are treated more like ordinary local declarations. ([GitHub, "Lift All Limitations on Variables in Result Builders"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0373-vars-without-limits-in-result-builders.md))
 
 Modern Swift lets you write clearer builder bodies:
 
@@ -279,7 +279,7 @@ The compiler rewrites expression statements into builder method calls.
 Runtime control flow still behaves like Swift control flow.
 ```
 
-Apple’s WWDC explanation is explicit: result builders gather values produced by code and combine them into a single result; the feature is compile-time and works independently of OS runtime support. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2021/10253/ "Write a DSL in Swift using result builders - WWDC21 - Videos - Apple Developer"))
+Apple’s WWDC explanation is explicit: result builders gather values produced by code and combine them into a single result; the feature is compile-time and works independently of OS runtime support. ([Apple Developer, "Write a DSL in Swift Using Result Builders"](https://developer.apple.com/videos/play/wwdc2021/10253/))
 
 ---
 
@@ -367,7 +367,7 @@ private var content: some View { ... }
 private var footer: some View { ... }
 ```
 
-Result builders amplify generic type inference. Large builder bodies can produce poor diagnostics and slow type-checking. Swift 5.8 improved result-builder type-checking and diagnostics, but the design issue still exists in large DSL-heavy code. ([SwiftGG](https://swift.swiftgg.team/blog/swift-5.8-released/?utm_source=chatgpt.com "Swift 5.8 Released!"))
+Result builders amplify generic type inference. Large builder bodies can produce poor diagnostics and slow type-checking. Swift 5.8 improved result-builder type-checking and diagnostics, but the design issue still exists in large DSL-heavy code. ([SwiftGG, "Swift 5.8 Released!"](https://swift.swiftgg.team/blog/swift-5.8-released/))
 
 ---
 
@@ -888,9 +888,9 @@ A: Use them when the syntax mirrors real domain structure and the intermediate r
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — B14 rubric and exercise.
-- The Swift Programming Language — Attributes / `@resultBuilder`. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/?utm_source=chatgpt.com "Attributes | Documentation - Swift Programming Language"))
-- Swift Evolution SE-0289 — Result Builders. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0289-result-builders.md "swift-evolution/proposals/0289-result-builders.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0373 — Lift all limitations on variables in result builders. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0373-vars-without-limits-in-result-builders.md?utm_source=chatgpt.com "0373-vars-without-limits-in-result-builders.md"))
-- Apple Developer — `ViewBuilder`. ([Apple Developer](https://developer.apple.com/documentation/SwiftUI/ViewBuilder?changes=l_8_3_8&utm_source=chatgpt.com "ViewBuilder | Apple Developer Documentation"))
-- Apple WWDC21 — Write a DSL in Swift using result builders. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2021/10253/ "Write a DSL in Swift using result builders - WWDC21 - Videos - Apple Developer"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B14 rubric and exercise.
+- Swift.org. "Attributes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/
+- GitHub. "Result Builders." Swift Evolution SE-0289. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md
+- GitHub. "Lift All Limitations on Variables in Result Builders." Swift Evolution SE-0373. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0373-vars-without-limits-in-result-builders.md
+- Apple Developer. "ViewBuilder." Apple Developer Documentation. https://developer.apple.com/documentation/swiftui/viewbuilder
+- Apple Developer. "Write a DSL in Swift Using Result Builders." WWDC21. https://developer.apple.com/videos/play/wwdc2021/10253/

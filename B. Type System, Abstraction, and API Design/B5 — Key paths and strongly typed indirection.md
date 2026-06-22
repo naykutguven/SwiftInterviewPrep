@@ -31,7 +31,7 @@ Key paths are not “strings with type safety.” They preserve root type, value
 
 A key path is a typed, reusable description of how to get from a `Root` value to a `Value` property or subscript. It is not the property value itself. It is also not a string name. It is an uninvoked reference to a property path.
 
-Swift Evolution SE-0161 introduced key paths as concrete types representing uninvoked property references that can be composed and used to get or set values. The proposal specifically contrasts them with string-based `#keyPath`, which loses type information and is limited to Objective-C-compatible APIs. Key path expressions produce `KeyPath` objects rather than strings. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0161-key-paths.md "swift-evolution/proposals/0161-key-paths.md at main · swiftlang/swift-evolution · GitHub"))
+Swift Evolution SE-0161 introduced key paths as concrete types representing uninvoked property references that can be composed and used to get or set values. The proposal specifically contrasts them with string-based `#keyPath`, which loses type information and is limited to Objective-C-compatible APIs. Key path expressions produce `KeyPath` objects rather than strings. ([GitHub, "Smart KeyPaths: Better Key-Value Coding for Swift"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0161-key-paths.md))
 
 The key idea:
 
@@ -74,9 +74,9 @@ Path = \User.name
 
 That means this cannot silently drift after a refactor the way `"name"` can. If you rename `name`, the key path fails at compile time.
 
-Key paths also encode mutability. A `KeyPath<Root, Value>` is read-only. A `WritableKeyPath<Root, Value>` can read and write, but writing through it may require a mutable root. A `ReferenceWritableKeyPath<Root, Value>` can read and write through reference semantics. The standard library defines `KeyPath` as a path from a specific root type to a specific value type, `WritableKeyPath` as supporting reads and writes, and `ReferenceWritableKeyPath` as supporting reads and writes with reference semantics. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/KeyPath.swift "swift/stdlib/public/core/KeyPath.swift at main · swiftlang/swift · GitHub"))
+Key paths also encode mutability. A `KeyPath<Root, Value>` is read-only. A `WritableKeyPath<Root, Value>` can read and write, but writing through it may require a mutable root. A `ReferenceWritableKeyPath<Root, Value>` can read and write through reference semantics. The standard library defines `KeyPath` as a path from a specific root type to a specific value type, `WritableKeyPath` as supporting reads and writes, and `ReferenceWritableKeyPath` as supporting reads and writes with reference semantics. ([GitHub, "KeyPath.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/KeyPath.swift))
 
-Swift also lets key path literals act as simple property-projection functions in many contexts. SE-0249 made expressions like `\.email` usable where `(User) -> String` is expected, so `users.map(\.email)` is equivalent in meaning to `users.map { $0[keyPath: \User.email] }`. ([GitHub](https://github.com/apple/swift-evolution/blob/master/proposals/0249-key-path-literal-function-expressions.md "swift-evolution/proposals/0249-key-path-literal-function-expressions.md at main · swiftlang/swift-evolution · GitHub"))
+Swift also lets key path literals act as simple property-projection functions in many contexts. SE-0249 made expressions like `\.email` usable where `(User) -> String` is expected, so `users.map(\.email)` is equivalent in meaning to `users.map { $0[keyPath: \User.email] }`. ([GitHub, "Key Path Expressions as Functions"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0249-key-path-literal-function-expressions.md))
 
 ---
 
@@ -225,7 +225,7 @@ This is the same value/reference distinction from A1 and A2 showing up through k
 
 ### 2.4 Key paths can describe nested, optional, and subscript access
 
-SE-0161 describes key path expressions as chains of property, subscript, optional chaining, and forced-unwrapping components. It also notes that optional chaining and multiply dotted expressions are supported and behave like composed paths. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0161-key-paths.md "swift-evolution/proposals/0161-key-paths.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0161 describes key path expressions as chains of property, subscript, optional chaining, and forced-unwrapping components. It also notes that optional chaining and multiply dotted expressions are supported and behave like composed paths. ([GitHub, "Smart KeyPaths: Better Key-Value Coding for Swift"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0161-key-paths.md))
 
 ```swift
 struct Profile {
@@ -467,7 +467,7 @@ let path: ReferenceWritableKeyPath<Settings, Int> = \.volume
 settings[keyPath: path] = 8
 ```
 
-The distinction exists because mutating a value requires mutating the value itself, while mutating an object property mutates state behind a stable reference. SE-0161 explicitly separates value and reference mutation semantics because mutating a copy of a value would not be useful; value mutation needs an `inout`-style root. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0161-key-paths.md "swift-evolution/proposals/0161-key-paths.md at main · swiftlang/swift-evolution · GitHub"))
+The distinction exists because mutating a value requires mutating the value itself, while mutating an object property mutates state behind a stable reference. SE-0161 explicitly separates value and reference mutation semantics because mutating a copy of a value would not be useful; value mutation needs an `inout`-style root. ([GitHub, "Smart KeyPaths: Better Key-Value Coding for Swift"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0161-key-paths.md))
 
 Interview version:
 
@@ -884,7 +884,7 @@ A: It uses a key path literal as a `(User) -> String` projection, equivalent in 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — B5 key paths section.
-- Swift Evolution SE-0161 — Smart KeyPaths: Better Key-Value Coding for Swift. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0161-key-paths.md "swift-evolution/proposals/0161-key-paths.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0249 — Key Path Expressions as Functions. ([GitHub](https://github.com/apple/swift-evolution/blob/master/proposals/0249-key-path-literal-function-expressions.md "swift-evolution/proposals/0249-key-path-literal-function-expressions.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift standard library `KeyPath`, `WritableKeyPath`, and `ReferenceWritableKeyPath` definitions. ([GitHub](https://github.com/swiftlang/swift/blob/main/stdlib/public/core/KeyPath.swift "swift/stdlib/public/core/KeyPath.swift at main · swiftlang/swift · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B5 key paths section.
+- GitHub. "Smart KeyPaths: Better Key-Value Coding for Swift." Swift Evolution SE-0161. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0161-key-paths.md
+- GitHub. "Key Path Expressions as Functions." Swift Evolution SE-0249. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0249-key-path-literal-function-expressions.md
+- GitHub. "KeyPath.swift." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/stdlib/public/core/KeyPath.swift
