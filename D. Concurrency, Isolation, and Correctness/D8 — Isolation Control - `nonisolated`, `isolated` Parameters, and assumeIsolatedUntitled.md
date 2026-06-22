@@ -36,11 +36,11 @@ Actor isolation is Swift’s way of saying:
 
 For an `actor`, instance methods and mutable stored properties are actor-isolated by default. That means external callers must cross the actor boundary with `await`, and Swift serializes access to the actor-isolated state.
 
-`nonisolated` does the opposite: it explicitly says a declaration is **not protected by that actor/global actor isolation**. A `nonisolated` member behaves like ordinary code outside the actor. Because it can be called from anywhere synchronously, it cannot touch isolated mutable state. Swift’s own documentation describes nonisolated actor members as executing like code outside the actor, without access to isolated state. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
+`nonisolated` does the opposite: it explicitly says a declaration is **not protected by that actor/global actor isolation**. A `nonisolated` member behaves like ordinary code outside the actor. Because it can be called from anywhere synchronously, it cannot touch isolated mutable state. Swift’s own documentation describes nonisolated actor members as executing like code outside the actor, without access to isolated state. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
 
-`isolated` parameters let a free function, closure, or helper temporarily run inside a specific actor’s isolation domain. This is useful when you want to batch multiple operations on the same actor without repeated `await`s. SE-0313 introduced this as part of improved control over actor isolation, generalizing actor isolation beyond only `self`. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md "swift-evolution/proposals/0313-actor-isolation-control.md at main · swiftlang/swift-evolution · GitHub"))
+`isolated` parameters let a free function, closure, or helper temporarily run inside a specific actor’s isolation domain. This is useful when you want to batch multiple operations on the same actor without repeated `await`s. SE-0313 introduced this as part of improved control over actor isolation, generalizing actor isolation beyond only `self`. ([GitHub, "Improved Control over Actor Isolation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md))
 
-`assumeIsolated` is the escape hatch. It says: “I know this synchronous code is already running on this actor’s executor; let me access isolated state synchronously.” Apple documents it as assuming and verifying that the current synchronous execution is on the actor’s serial executor. If that assumption is false, execution stops. ([Apple Developer](https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3Afile%3Aline%3A%29?utm_source=chatgpt.com "assumeIsolated(_:file:line:) | Apple Developer Documentation"))
+`assumeIsolated` is the escape hatch. It says: “I know this synchronous code is already running on this actor’s executor; let me access isolated state synchronously.” Apple documents it as assuming and verifying that the current synchronous execution is on the actor’s serial executor. If that assumption is false, execution stops. ([Apple Developer, "assumeIsolated(_:file:line:)"](https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3afile%3aline%3a%29))
 
 The key idea:
 
@@ -139,7 +139,7 @@ final class ProfileViewModel {
 
 `ProfileViewModel` is `@MainActor`, but `normalize(_:)` does not need UI state or main-actor state. Keeping it `nonisolated` avoids forcing pure string processing onto the main actor.
 
-This matters more in Swift 6.2-era projects because default actor isolation settings can make more code implicitly main-actor isolated. SE-0449 expanded `nonisolated` as a way to cut off global actor inference in more places, implemented in Swift 6.1. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0449-nonisolated-for-global-actor-cutoff.md?utm_source=chatgpt.com "swift-evolution/proposals/0449-nonisolated-for-global-actor ..."))
+This matters more in Swift 6.2-era projects because default actor isolation settings can make more code implicitly main-actor isolated. SE-0449 expanded `nonisolated` as a way to cut off global actor inference in more places, implemented in Swift 6.1. ([GitHub, "Allow nonisolated to Prevent Global Actor Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0449-nonisolated-for-global-actor-cutoff.md))
 
 Use this carefully. Marking a helper `nonisolated` is good when the helper is genuinely pure or uses only safe immutable data. It is bad when you are trying to silence a diagnostic without fixing the underlying isolation model.
 
@@ -196,7 +196,7 @@ func applyMonthlyInterest(to ledger: isolated Ledger) {
 
 Without `isolated`, each cross-actor operation would need to be async and could introduce more suspension/interleaving points.
 
-Important limitation: a function can have only one `isolated` parameter. Swift cannot generally execute on two different actor executors at once. SE-0313 explicitly discusses this restriction. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md "swift-evolution/proposals/0313-actor-isolation-control.md at main · swiftlang/swift-evolution · GitHub"))
+Important limitation: a function can have only one `isolated` parameter. Swift cannot generally execute on two different actor executors at once. SE-0313 explicitly discusses this restriction. ([GitHub, "Improved Control over Actor Isolation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md))
 
 ---
 
@@ -480,7 +480,7 @@ nonisolated func calledFromAnywhere() {
 }
 ```
 
-The second version is dangerous because callers can invoke it from outside the actor executor. Then the assumption is false and the program traps. Apple documents `assumeIsolated` as verifying that the current synchronous function is executing on the actor’s serial executor. ([Apple Developer](https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3Afile%3Aline%3A%29?utm_source=chatgpt.com "assumeIsolated(_:file:line:) | Apple Developer Documentation"))
+The second version is dangerous because callers can invoke it from outside the actor executor. Then the assumption is false and the program traps. Apple documents `assumeIsolated` as verifying that the current synchronous function is executing on the actor’s serial executor. ([Apple Developer, "assumeIsolated(_:file:line:)"](https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3afile%3aline%3a%29))
 
 Interview version:
 
@@ -871,8 +871,8 @@ A: It may remove the isolation that was protecting mutable state, or make the AP
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, D8 — Isolation control.
-- SE-0313 — Improved control over actor isolation. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md "swift-evolution/proposals/0313-actor-isolation-control.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Book documentation snippet on `nonisolated` actor members. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
-- Apple documentation for `Actor.assumeIsolated`. ([Apple Developer](https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3Afile%3Aline%3A%29?utm_source=chatgpt.com "assumeIsolated(_:file:line:) | Apple Developer Documentation"))
-- SE-0449 — Allow `nonisolated` to prevent global actor inference. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0449-nonisolated-for-global-actor-cutoff.md?utm_source=chatgpt.com "swift-evolution/proposals/0449-nonisolated-for-global-actor ..."))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D8 — Isolation control.
+- GitHub. "Improved Control over Actor Isolation." Swift Evolution SE-0313. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md
+- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/
+- Apple Developer. "assumeIsolated(_:file:line:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3afile%3aline%3a%29
+- GitHub. "Allow nonisolated to Prevent Global Actor Inference." Swift Evolution SE-0449. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0449-nonisolated-for-global-actor-cutoff.md

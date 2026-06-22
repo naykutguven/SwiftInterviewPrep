@@ -34,9 +34,9 @@ Detached tasks lose actor context, task-local values, priority inheritance, and 
 
 `Task.detached` creates a new top-level unstructured task that intentionally does **not** inherit the surrounding concurrency context. That is the whole point of it. It says: “Start independent async work that is not part of the current actor, not part of the current task’s metadata, and not automatically governed by the current task’s lifecycle.”
 
-`Task {}` is also an **unstructured** task, not a child task. This is a common trap. It is not structured like `async let` or `withTaskGroup`. However, `Task {}` does inherit important context from where it is created: priority, task-local values, and actor isolation. Swift Evolution SE-0304 says unstructured tasks created with the `Task` initializer inherit priority, task-local values, and actor isolation from the creation context; detached tasks do not inherit priority, task-local values, or actor context. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md "swift-evolution/proposals/0304-structured-concurrency.md at main · swiftlang/swift-evolution · GitHub"))
+`Task {}` is also an **unstructured** task, not a child task. This is a common trap. It is not structured like `async let` or `withTaskGroup`. However, `Task {}` does inherit important context from where it is created: priority, task-local values, and actor isolation. Swift Evolution SE-0304 says unstructured tasks created with the `Task` initializer inherit priority, task-local values, and actor isolation from the creation context; detached tasks do not inherit priority, task-local values, or actor context. ([GitHub, "Structured Concurrency"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md))
 
-Structured child tasks are different. `async let` and task groups create child tasks whose lifetime is scoped to the parent; Swift automatically cancels and awaits unfinished child tasks when leaving the scope. Apple’s WWDC structured concurrency session describes the task tree as fundamental because it propagates cancellation, priority, and task-local variables, and prevents accidentally leaking child tasks beyond their scope. ([Apple Developer](https://developer.apple.com/wwdc21/10134 "Explore structured concurrency in Swift - WWDC21 - Videos - Apple Developer"))
+Structured child tasks are different. `async let` and task groups create child tasks whose lifetime is scoped to the parent; Swift automatically cancels and awaits unfinished child tasks when leaving the scope. Apple’s WWDC structured concurrency session describes the task tree as fundamental because it propagates cancellation, priority, and task-local variables, and prevents accidentally leaking child tasks beyond their scope. ([Apple Developer, "Explore Structured Concurrency in Swift"](https://developer.apple.com/videos/play/wwdc2021/10134/))
 
 The key idea:
 
@@ -69,7 +69,7 @@ final class ViewModel {
 }
 ```
 
-This does **not** mean the work is structured. If you discard the task handle, the task can still run to completion. SE-0304 says task handles are used to await or cancel unstructured tasks, but tasks run to completion even if there are no remaining uses of the handle. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md "swift-evolution/proposals/0304-structured-concurrency.md at main · swiftlang/swift-evolution · GitHub"))
+This does **not** mean the work is structured. If you discard the task handle, the task can still run to completion. SE-0304 says task handles are used to await or cancel unstructured tasks, but tasks run to completion even if there are no remaining uses of the handle. ([GitHub, "Structured Concurrency"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md))
 
 ### 2.2 `Task.detached {}` loses actor isolation
 
@@ -88,7 +88,7 @@ final class ViewModel {
 }
 ```
 
-The detached closure cannot synchronously mutate `title`, because `title` is isolated to `MainActor`. Global actors make annotated declarations actor-isolated; declarations isolated to a global actor can only be synchronously accessed from that same actor, and cross-actor access must be asynchronous. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md "swift-evolution/proposals/0316-global-actors.md at main · swiftlang/swift-evolution · GitHub"))
+The detached closure cannot synchronously mutate `title`, because `title` is isolated to `MainActor`. Global actors make annotated declarations actor-isolated; declarations isolated to a global actor can only be synchronously accessed from that same actor, and cross-actor access must be asynchronous. ([GitHub, "Global Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0316-global-actors.md))
 
 ### 2.3 `Task.detached` does not inherit priority or task-local values
 
@@ -284,7 +284,7 @@ Interview version:
 
 ### Q2. What does `Task {}` inherit that a detached task does not?
 
-`Task {}` inherits important context from where it is created: priority, task-local values, and actor isolation. `Task.detached {}` does not inherit those. SE-0304 explicitly distinguishes context-inheriting unstructured tasks from detached tasks. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md "swift-evolution/proposals/0304-structured-concurrency.md at main · swiftlang/swift-evolution · GitHub"))
+`Task {}` inherits important context from where it is created: priority, task-local values, and actor isolation. `Task.detached {}` does not inherit those. SE-0304 explicitly distinguishes context-inheriting unstructured tasks from detached tasks. ([GitHub, "Structured Concurrency"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md))
 
 Interview version:
 
@@ -685,7 +685,7 @@ A: Use `@MainActor` for UI state, start work with `Task {}`, store the task hand
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, D11: detached tasks, task inheritance, and isolation loss.
-- SE-0304: Structured Concurrency — task tree, unstructured tasks, context inheritance, detached tasks, task handles, cancellation. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md "swift-evolution/proposals/0304-structured-concurrency.md at main · swiftlang/swift-evolution · GitHub"))
-- Apple WWDC21: “Explore structured concurrency in Swift” — task tree, child-task lifetime, cancellation, and structured concurrency guarantees. ([Apple Developer](https://developer.apple.com/wwdc21/10134 "Explore structured concurrency in Swift - WWDC21 - Videos - Apple Developer"))
-- SE-0316: Global Actors — `MainActor`, global actor isolation, and main-thread UI state. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md "swift-evolution/proposals/0316-global-actors.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D11: detached tasks, task inheritance, and isolation loss.
+- GitHub. "Structured Concurrency." Swift Evolution SE-0304. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md
+- Apple Developer. "Explore Structured Concurrency in Swift." WWDC21. https://developer.apple.com/videos/play/wwdc2021/10134/
+- GitHub. "Global Actors." Swift Evolution SE-0316. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0316-global-actors.md

@@ -30,9 +30,9 @@ Actors serialize access to their isolated state, not the entire logical workflow
 
 ## 1. Core mental model
 
-An `actor` is a reference type whose mutable instance state is protected by **actor isolation**. Code inside the actor can synchronously read and mutate actor-isolated state. Code outside the actor must cross the actor boundary, usually with `await`. Swift’s language model guarantees that only code running in the actor’s isolation domain can directly access that actor’s local state. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
+An `actor` is a reference type whose mutable instance state is protected by **actor isolation**. Code inside the actor can synchronously read and mutate actor-isolated state. Code outside the actor must cross the actor boundary, usually with `await`. Swift’s language model guarantees that only code running in the actor’s isolation domain can directly access that actor’s local state. ([Swift.org, "Concurrency"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/))
 
-The actor is not “a magic thread.” It is closer to a protected concurrency domain. Calls from outside the actor become work that the actor executes when it can safely do so. SE-0306 describes actor calls as messages placed in the actor’s mailbox; the actor processes actor-isolated work one-at-a-time, preventing simultaneous mutation of isolated state. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+The actor is not “a magic thread.” It is closer to a protected concurrency domain. Calls from outside the actor become work that the actor executes when it can safely do so. SE-0306 describes actor calls as messages placed in the actor’s mailbox; the actor processes actor-isolated work one-at-a-time, preventing simultaneous mutation of isolated state. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
 
 The key distinction:
 
@@ -104,7 +104,7 @@ await cache.insert(data, for: url)
 let data = await cache.data(for: url)
 ```
 
-Even though `insert` and `data(for:)` are synchronous methods inside the actor, crossing the actor boundary from outside requires `await`. Swift’s compiler diagnostics explicitly enforce that actor-isolated calls from outside must be asynchronous, because synchronous access could race with actor state. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/?utm_source=chatgpt.com "Calling an actor-isolated method from a synchronous ..."))
+Even though `insert` and `data(for:)` are synchronous methods inside the actor, crossing the actor boundary from outside requires `await`. Swift’s compiler diagnostics explicitly enforce that actor-isolated calls from outside must be asynchronous, because synchronous access could race with actor state. ([Swift.org, "Calling an Actor-Isolated Method from a Synchronous Nonisolated Context"](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/))
 
 ---
 
@@ -165,7 +165,7 @@ await account.deposit(100)
 let balance = await account.currentBalance()
 ```
 
-SE-0306 describes this as placing a message in the actor’s mailbox; the actor processes actor-isolated work one-at-a-time. The proposal also notes that actor execution is not strictly FIFO like a serial `DispatchQueue`; the runtime may consider task priority. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0306 describes this as placing a message in the actor’s mailbox; the actor processes actor-isolated work one-at-a-time. The proposal also notes that actor execution is not strictly FIFO like a serial `DispatchQueue`; the runtime may consider task priority. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
 
 Production implication: do not design actor APIs that depend on exact call ordering unless you encode that ordering explicitly in the actor’s state machine.
 
@@ -290,7 +290,7 @@ This turns refresh into a **single-flight operation**: one refresh task is share
 
 Not exactly.
 
-A serial queue is usually FIFO. Swift actors process isolated work one-at-a-time, but actor scheduling is not specified as strict FIFO; the runtime can account for priorities. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+A serial queue is usually FIFO. Swift actors process isolated work one-at-a-time, but actor scheduling is not specified as strict FIFO; the runtime can account for priorities. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
 
 Do not depend on this:
 
@@ -354,7 +354,7 @@ actor ProfileStore {
 }
 ```
 
-This leaks mutable state out of the actor. In Swift 6 strict concurrency, non-`Sendable` mutable reference types crossing isolation boundaries are exactly the kind of design the compiler tries to reject or warn about. SE-0306 states that cross-actor references necessarily traffic in values shared across concurrently executing code, which is why `Sendable` matters. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+This leaks mutable state out of the actor. In Swift 6 strict concurrency, non-`Sendable` mutable reference types crossing isolation boundaries are exactly the kind of design the compiler tries to reject or warn about. SE-0306 states that cross-actor references necessarily traffic in values shared across concurrently executing code, which is why `Sendable` matters. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
 
 Better:
 
@@ -1013,7 +1013,7 @@ Q: What is actor isolation?
 A: Actor isolation is Swift’s rule that actor-isolated instance state can be directly accessed only by code running in that actor’s isolation domain.
 
 Q: Are actors value types or reference types?  
-A: Actors are reference types, but unlike ordinary classes, they protect mutable instance state through actor isolation. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+A: Actors are reference types, but unlike ordinary classes, they protect mutable instance state through actor isolation. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
 
 Q: Why does calling an actor method from outside usually require `await`?  
 A: Because the call crosses the actor boundary and may need to wait until the actor can run that operation safely.
@@ -1056,7 +1056,7 @@ A: For tiny synchronous critical sections where async boundaries are unnecessary
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — D4 Actors and actor isolation.
-- The Swift Programming Language — Concurrency / actor isolation. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
-- Swift compiler diagnostics — actor-isolated calls from synchronous nonisolated contexts. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/?utm_source=chatgpt.com "Calling an actor-isolated method from a synchronous ..."))
-- Swift Evolution SE-0306 — Actors, actor isolation, cross-actor references, actor mailbox, and `Sendable` interaction. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D4 Actors and actor isolation.
+- Swift.org. "Concurrency." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/
+- Swift.org. "Calling an Actor-Isolated Method from a Synchronous Nonisolated Context." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/
+- GitHub. "Actors." Swift Evolution SE-0306. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md

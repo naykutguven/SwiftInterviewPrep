@@ -32,7 +32,7 @@ You should be able to do:
 
 ## 1. Core mental model
 
-Swift 6 made data-race safety explicit, but many app codebases are not architected as “everything can run anywhere.” UI-heavy iOS/macOS code often already assumes a single UI isolation domain: the main actor. Swift 6.2’s approachable concurrency features let you tell the compiler that assumption once at the module/target level instead of sprinkling `@MainActor` everywhere. Swift.org describes this as lowering the barrier to concurrent programming by reducing boilerplate while preserving data-race safety. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+Swift 6 made data-race safety explicit, but many app codebases are not architected as “everything can run anywhere.” UI-heavy iOS/macOS code often already assumes a single UI isolation domain: the main actor. Swift 6.2’s approachable concurrency features let you tell the compiler that assumption once at the module/target level instead of sprinkling `@MainActor` everywhere. Swift.org describes this as lowering the barrier to concurrent programming by reducing boilerplate while preserving data-race safety. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
 The key idea:
 
@@ -41,9 +41,9 @@ Old default: unannotated code is nonisolated.
 Swift 6.2 option: unannotated code in this module is MainActor-isolated.
 ```
 
-This does **not** mean Swift is globally `@MainActor` by default. Default actor isolation is controlled per module/target. SE-0466 defines a `-default-isolation` compiler flag and a SwiftPM setting; if unspecified, the module default remains `nonisolated`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md "swift-evolution/proposals/0466-control-default-actor-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+This does **not** mean Swift is globally `@MainActor` by default. Default actor isolation is controlled per module/target. SE-0466 defines a `-default-isolation` compiler flag and a SwiftPM setting; if unspecified, the module default remains `nonisolated`. ([GitHub, "Control Default Actor Isolation Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md))
 
-The second major change is about `async` execution. Historically, a `nonisolated async` function switched off the caller’s actor to the generic executor. With Swift 6.2’s upcoming-feature behavior, a nonisolated async function can instead run in the caller’s execution context, so calling it from the main actor does not automatically mean it leaves the main actor. SE-0461 calls this `nonisolated(nonsending)` behavior, and says `@concurrent` is the explicit spelling for the old “switch off actor” behavior. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md "swift-evolution/proposals/0461-async-function-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+The second major change is about `async` execution. Historically, a `nonisolated async` function switched off the caller’s actor to the generic executor. With Swift 6.2’s upcoming-feature behavior, a nonisolated async function can instead run in the caller’s execution context, so calling it from the main actor does not automatically mean it leaves the main actor. SE-0461 calls this `nonisolated(nonsending)` behavior, and says `@concurrent` is the explicit spelling for the old “switch off actor” behavior. ([GitHub, "Run Nonisolated Async Functions on the Caller's Actor by Default"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md))
 
 The staff-level point:
 
@@ -59,7 +59,7 @@ nonisolated does not necessarily mean off-main.
 
 ### 2.1 Default actor isolation is a module/target setting
 
-With default isolation set to `MainActor`, unannotated declarations in that module are inferred as `@MainActor` unless another isolation rule applies. SE-0466 says the valid compiler values are `MainActor` and `nonisolated`; no setting means `nonisolated`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md "swift-evolution/proposals/0466-control-default-actor-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+With default isolation set to `MainActor`, unannotated declarations in that module are inferred as `@MainActor` unless another isolation rule applies. SE-0466 says the valid compiler values are `MainActor` and `nonisolated`; no setting means `nonisolated`. ([GitHub, "Control Default Actor Isolation Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md))
 
 SwiftPM example:
 
@@ -114,7 +114,7 @@ final class ProfileViewModel {
 
 ### 2.2 Default isolation does not apply everywhere
 
-SE-0466 lists important exceptions: explicit actor isolation wins; actor types have their own isolation; declarations that cannot have global actor isolation are excluded; protocol/superclass/conformance inference can override the module default; nested types inside nonisolated types are also special. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md "swift-evolution/proposals/0466-control-default-actor-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0466 lists important exceptions: explicit actor isolation wins; actor types have their own isolation; declarations that cannot have global actor isolation are excluded; protocol/superclass/conformance inference can override the module default; nested types inside nonisolated types are also special. ([GitHub, "Control Default Actor Isolation Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md))
 
 Example:
 
@@ -134,7 +134,7 @@ actor ImageCache {
 
 ### 2.3 `Task {}` and `Task.detached {}` still differ
 
-Under default `MainActor` isolation, a `Task {}` created inside a main-actor-isolated context inherits that isolation. `Task.detached {}` does not. SE-0466 explicitly shows `Task {}` inheriting the enclosing context and `Task.detached {}` remaining nonisolated. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md "swift-evolution/proposals/0466-control-default-actor-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+Under default `MainActor` isolation, a `Task {}` created inside a main-actor-isolated context inherits that isolation. `Task.detached {}` does not. SE-0466 explicitly shows `Task {}` inheriting the enclosing context and `Task.detached {}` remaining nonisolated. ([GitHub, "Control Default Actor Isolation Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md))
 
 ```swift
 // Built with -default-isolation MainActor
@@ -158,7 +158,7 @@ final class SearchViewModel {
 
 ### 2.4 `nonisolated async` no longer necessarily means “runs elsewhere”
 
-With the new Swift 6.2 upcoming-feature behavior, `nonisolated async` can run on the caller’s actor. SE-0461 says `nonisolated(nonsending)` functions run on the caller’s actor and do not send arguments/results across an isolation boundary by default. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md "swift-evolution/proposals/0461-async-function-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+With the new Swift 6.2 upcoming-feature behavior, `nonisolated async` can run on the caller’s actor. SE-0461 says `nonisolated(nonsending)` functions run on the caller’s actor and do not send arguments/results across an isolation boundary by default. ([GitHub, "Run Nonisolated Async Functions on the Caller's Actor by Default"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md))
 
 ```swift
 // Built with default MainActor isolation
@@ -183,7 +183,7 @@ That is the dangerous misconception: `async` is about suspension, not automatic 
 
 ### 2.5 Use `@concurrent` when off-actor execution is intentional
 
-`@concurrent` says the function should switch off the caller’s actor and run concurrently with other tasks on that actor. SE-0461 describes it as the explicit spelling for the old/default nonisolated async behavior in Swift language modes up to Swift 6, and Swift.org presents it as the tool for introducing concurrency explicitly. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md "swift-evolution/proposals/0461-async-function-isolation.md at main · swiftlang/swift-evolution · GitHub")) ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+`@concurrent` says the function should switch off the caller’s actor and run concurrently with other tasks on that actor. SE-0461 describes it as the explicit spelling for the old/default nonisolated async behavior in Swift language modes up to Swift 6, and Swift.org presents it as the tool for introducing concurrency explicitly. ([GitHub, "Run Nonisolated Async Functions on the Caller's Actor by Default"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md)) ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
 ```swift
 struct ImageDecoder {
@@ -203,7 +203,7 @@ Use `@concurrent` for expensive CPU-bound work, parsing, image decoding, compres
 
 ### Trap 1: “Swift 6.2 makes everything MainActor by default”
 
-Wrong. Default actor isolation is opt-in per module/target. SE-0466 explicitly says existing/default behavior remains `nonisolated` unless the module opts into `MainActor`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md "swift-evolution/proposals/0466-control-default-actor-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+Wrong. Default actor isolation is opt-in per module/target. SE-0466 explicitly says existing/default behavior remains `nonisolated` unless the module opts into `MainActor`. ([GitHub, "Control Default Actor Isolation Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md))
 
 Bad mental model:
 
@@ -273,7 +273,7 @@ FeatureKit
 - Test fixtures
 ```
 
-Making the whole package default to `MainActor` is usually too broad. It turns domain and infrastructure code into UI-bound code. SE-0466 explicitly notes that `MainActor` is the wrong default for many modules, including general libraries and highly concurrent server applications. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md "swift-evolution/proposals/0466-control-default-actor-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+Making the whole package default to `MainActor` is usually too broad. It turns domain and infrastructure code into UI-bound code. SE-0466 explicitly notes that `MainActor` is the wrong default for many modules, including general libraries and highly concurrent server applications. ([GitHub, "Control Default Actor Isolation Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md))
 
 Better package split:
 
@@ -286,7 +286,7 @@ FeatureImageIO   -> nonisolated, with selected @concurrent work
 
 ### Trap 4: Using `nonisolated` as a performance escape hatch
 
-`nonisolated` removes actor isolation from a declaration. Under Swift 6.2’s new async behavior, it does not necessarily force execution onto a background executor. Use `@concurrent` when the actual requirement is off-actor concurrent execution. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md "swift-evolution/proposals/0461-async-function-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+`nonisolated` removes actor isolation from a declaration. Under Swift 6.2’s new async behavior, it does not necessarily force execution onto a background executor. Use `@concurrent` when the actual requirement is off-actor concurrent execution. ([GitHub, "Run Nonisolated Async Functions on the Caller's Actor by Default"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md))
 
 ---
 
@@ -294,9 +294,9 @@ FeatureImageIO   -> nonisolated, with selected @concurrent work
 
 ### Q1. What problem is default actor isolation to `MainActor` trying to solve, and what does it trade off?
 
-It solves annotation overload for code that is already logically single-threaded or UI-bound. Instead of requiring every view model, UI service, observable model, and UI mutation method to say `@MainActor`, the module can infer that by default. Swift.org says this option is ideal for scripts, UI code, and executable targets. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+It solves annotation overload for code that is already logically single-threaded or UI-bound. Instead of requiring every view model, UI service, observable model, and UI mutation method to say `@MainActor`, the module can infer that by default. Swift.org says this option is ideal for scripts, UI code, and executable targets. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
-The tradeoff is that it can accidentally make too much code main-actor-isolated: domain models, pure transformations, networking helpers, parsers, persistence models, test utilities, and public library APIs. This harms reuse, creates unnecessary actor hops, and can put expensive work on the main actor. It is also source-incompatible to change a module’s default isolation later. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md "swift-evolution/proposals/0466-control-default-actor-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+The tradeoff is that it can accidentally make too much code main-actor-isolated: domain models, pure transformations, networking helpers, parsers, persistence models, test utilities, and public library APIs. This harms reuse, creates unnecessary actor hops, and can put expensive work on the main actor. It is also source-incompatible to change a module’s default isolation later. ([GitHub, "Control Default Actor Isolation Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md))
 
 Interview version:
 
@@ -304,7 +304,7 @@ Interview version:
 
 ### Q2. Why does Swift 6.2’s change to `nonisolated async` behavior matter for app code?
 
-Because old intuition says “a `nonisolated async` function leaves the actor,” but the Swift 6.2 upcoming-feature behavior says it can run in the caller’s execution context. That makes app code safer for non-`Sendable` values because arguments are not necessarily sent across an isolation boundary, but it also means expensive async work called from the main actor may remain on the main actor. SE-0461 calls out both source-compatibility and performance implications. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md "swift-evolution/proposals/0461-async-function-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+Because old intuition says “a `nonisolated async` function leaves the actor,” but the Swift 6.2 upcoming-feature behavior says it can run in the caller’s execution context. That makes app code safer for non-`Sendable` values because arguments are not necessarily sent across an isolation boundary, but it also means expensive async work called from the main actor may remain on the main actor. SE-0461 calls out both source-compatibility and performance implications. ([GitHub, "Run Nonisolated Async Functions on the Caller's Actor by Default"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md))
 
 Interview version:
 
@@ -312,7 +312,7 @@ Interview version:
 
 ### Q3. When would you reach for `@concurrent`?
 
-Use `@concurrent` when the function’s semantic contract is: “this work should run concurrently off the caller’s actor.” Common cases are image decoding, JSON parsing, compression, media processing, cryptography, expensive normalization, and other CPU-bound work that would make the main actor unresponsive. Swift.org’s own example uses `@concurrent` to fetch/decode image data while keeping the main actor free. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+Use `@concurrent` when the function’s semantic contract is: “this work should run concurrently off the caller’s actor.” Common cases are image decoding, JSON parsing, compression, media processing, cryptography, expensive normalization, and other CPU-bound work that would make the main actor unresponsive. Swift.org’s own example uses `@concurrent` to fetch/decode image data while keeping the main actor free. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
 Interview version:
 
@@ -779,7 +779,7 @@ A: Split targets by responsibility, audit public APIs, identify CPU-heavy async 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, D14 — Swift 6.2 approachable concurrency and new defaults.
-- Swift.org — “Swift 6.2 Released,” Approachable Concurrency section. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
-- SE-0466 — Control default actor isolation inference. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md "swift-evolution/proposals/0466-control-default-actor-isolation.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0461 — Run nonisolated async functions on the caller’s actor by default. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md "swift-evolution/proposals/0461-async-function-isolation.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D14 — Swift 6.2 approachable concurrency and new defaults.
+- Swift.org. "Swift 6.2 Released." Swift.org Blog. https://swift.org/blog/swift-6.2-released/
+- GitHub. "Control Default Actor Isolation Inference." Swift Evolution SE-0466. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md
+- GitHub. "Run Nonisolated Async Functions on the Caller's Actor by Default." Swift Evolution SE-0461. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md

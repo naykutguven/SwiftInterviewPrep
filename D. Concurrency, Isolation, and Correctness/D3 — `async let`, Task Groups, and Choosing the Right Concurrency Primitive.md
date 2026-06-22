@@ -38,9 +38,9 @@ Swift gives you several structured concurrency primitives, but they are not inte
 
 The simplest case is sequential `await`: start operation A, wait for it, then use its result to decide or perform operation B. This is correct when B depends on A, when ordering matters, or when parallelism would waste resources.
 
-`async let` creates a fixed number of child tasks whose results are needed later in the same lexical scope. The child task starts when the `async let` declaration is reached, and reading the value later is an `await` suspension point. SE-0317 describes `async let` as local constants whose initializer expression runs in a separate concurrently executing child task; the child starts as soon as the declaration is encountered. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md "swift-evolution/proposals/0317-async-let.md at main · swiftlang/swift-evolution · GitHub"))
+`async let` creates a fixed number of child tasks whose results are needed later in the same lexical scope. The child task starts when the `async let` declaration is reached, and reading the value later is an `await` suspension point. SE-0317 describes `async let` as local constants whose initializer expression runs in a separate concurrently executing child task; the child starts as soon as the declaration is encountered. ([GitHub, "async let"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0317-async-let.md))
 
-Task groups are for a dynamic number of child tasks, completion-order result collection, races, fan-out/fan-in, and custom cancellation behavior. SE-0317 explicitly calls out that dynamic-size parallel map and “whichever completes first” APIs require a task group rather than `async let`. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md "swift-evolution/proposals/0317-async-let.md at main · swiftlang/swift-evolution · GitHub"))
+Task groups are for a dynamic number of child tasks, completion-order result collection, races, fan-out/fan-in, and custom cancellation behavior. SE-0317 explicitly calls out that dynamic-size parallel map and “whichever completes first” APIs require a task group rather than `async let`. ([GitHub, "async let"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0317-async-let.md))
 
 The key idea:
 
@@ -51,7 +51,7 @@ task group       = dynamic fan-out / completion-order collection / custom cancel
 discarding group = dynamic fan-out where child results are irrelevant
 ```
 
-Swift’s structured concurrency guarantee matters here: child tasks do not outlive the scope that created them. Task groups and `async let` both wait for their child tasks before the scope returns. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift "swift/stdlib/public/Concurrency/TaskGroup.swift at main · swiftlang/swift · GitHub"))
+Swift’s structured concurrency guarantee matters here: child tasks do not outlive the scope that created them. Task groups and `async let` both wait for their child tasks before the scope returns. ([GitHub, "TaskGroup.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift))
 
 ---
 
@@ -100,7 +100,7 @@ func loadHomeData() async throws -> HomeData {
 - the parent needs all results before returning,
 - the child tasks are scoped to this function.
 
-You do not write `try await` on the right-hand side for single-expression async-let initializers; the `try` / `await` effects are enforced when reading the async-let value. SE-0317 documents this behavior. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md "swift-evolution/proposals/0317-async-let.md at main · swiftlang/swift-evolution · GitHub"))
+You do not write `try await` on the right-hand side for single-expression async-let initializers; the `try` / `await` effects are enforced when reading the async-let value. SE-0317 documents this behavior. ([GitHub, "async let"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0317-async-let.md))
 
 ---
 
@@ -131,7 +131,7 @@ func loadThumbnails(ids: [ImageID]) async -> [ImageID: Image] {
 }
 ```
 
-Task-group results are produced in **completion order**, not in the order tasks were added. The standard library documentation for `TaskGroup.next()` states that successive values appear in completion order. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift "swift/stdlib/public/Concurrency/TaskGroup.swift at main · swiftlang/swift · GitHub"))
+Task-group results are produced in **completion order**, not in the order tasks were added. The standard library documentation for `TaskGroup.next()` states that successive values appear in completion order. ([GitHub, "TaskGroup.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift))
 
 ---
 
@@ -159,9 +159,9 @@ func fetchAll(ids: [Int]) async throws -> [Int] {
 }
 ```
 
-Important nuance: a throwing task group is not automatically “fail fast” merely because one child throws. The error is observed when you call `try await group.next()`, iterate with `for try await`, or wait for all. If that error is propagated out of the group body, remaining child tasks are implicitly canceled. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift "swift/stdlib/public/Concurrency/TaskGroup.swift at main · swiftlang/swift · GitHub"))
+Important nuance: a throwing task group is not automatically “fail fast” merely because one child throws. The error is observed when you call `try await group.next()`, iterate with `for try await`, or wait for all. If that error is propagated out of the group body, remaining child tasks are implicitly canceled. ([GitHub, "TaskGroup.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift))
 
-The group still waits for child tasks to finish; cancellation is cooperative, not preemptive. The standard library documentation states that task groups always wait for child tasks before returning and that `cancelAll()` only signals cancellation; children must cooperate and return early. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift "swift/stdlib/public/Concurrency/TaskGroup.swift at main · swiftlang/swift · GitHub"))
+The group still waits for child tasks to finish; cancellation is cooperative, not preemptive. The standard library documentation states that task groups always wait for child tasks before returning and that `cancelAll()` only signals cancellation; children must cooperate and return early. ([GitHub, "TaskGroup.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift))
 
 ---
 
@@ -181,7 +181,7 @@ func warmCaches(keys: [CacheKey]) async {
 }
 ```
 
-Use `withThrowingDiscardingTaskGroup` when the children do not produce useful results but can fail. Apple’s documentation describes throwing discarding task groups as canceling themselves when a child throws, with the first error propagated. ([Apple Developer](https://developer.apple.com/documentation/swift/withthrowingdiscardingtaskgroup%28returning%3Aisolation%3Abody%3A%29?utm_source=chatgpt.com "withThrowingDiscardingTaskGro..."))
+Use `withThrowingDiscardingTaskGroup` when the children do not produce useful results but can fail. Apple’s documentation describes throwing discarding task groups as canceling themselves when a child throws, with the first error propagated. ([Apple Developer, "withThrowingDiscardingTaskGroup(returning:isolation:body:)"](https://developer.apple.com/documentation/swift/withthrowingdiscardingtaskgroup%28returning%3aisolation%3abody%3a%29))
 
 This is a good fit for “do N independent side-effecting jobs, wait until all complete, fail if any fail.”
 
@@ -240,7 +240,7 @@ await withTaskGroup(of: Void.self) { group in
 }
 ```
 
-It may look like it returns immediately, but it does not. Structured task groups wait for all child tasks before returning. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift "swift/stdlib/public/Concurrency/TaskGroup.swift at main · swiftlang/swift · GitHub"))
+It may look like it returns immediately, but it does not. Structured task groups wait for all child tasks before returning. ([GitHub, "TaskGroup.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift))
 
 If you truly need work to outlive the current scope, that is unstructured concurrency territory, but that should be a deliberate lifecycle decision, not a casual escape hatch.
 
@@ -314,7 +314,7 @@ let model = try await HomeModel(
 )
 ```
 
-A task group would be more verbose here, especially if the results have heterogeneous types. SE-0317 calls this exact kind of heterogeneous result initialization pattern a weakness of task groups and the motivation for `async let`. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md "swift-evolution/proposals/0317-async-let.md at main · swiftlang/swift-evolution · GitHub"))
+A task group would be more verbose here, especially if the results have heterogeneous types. SE-0317 calls this exact kind of heterogeneous result initialization pattern a weakness of task groups and the motivation for `async let`. ([GitHub, "async let"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0317-async-let.md))
 
 Interview version:
 
@@ -324,11 +324,11 @@ Interview version:
 
 ### Q2. What are the failure and cancellation semantics of a throwing task group?
 
-A throwing task group lets child tasks throw, but errors are observed through `try await group.next()`, `for try await`, or `waitForAll()`. If a child error is propagated out of the group body, the remaining child tasks are implicitly canceled. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift "swift/stdlib/public/Concurrency/TaskGroup.swift at main · swiftlang/swift · GitHub"))
+A throwing task group lets child tasks throw, but errors are observed through `try await group.next()`, `for try await`, or `waitForAll()`. If a child error is propagated out of the group body, the remaining child tasks are implicitly canceled. ([GitHub, "TaskGroup.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift))
 
-However, cancellation is cooperative. The group still waits for remaining child tasks to finish. If those tasks ignore cancellation, the parent still waits. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift "swift/stdlib/public/Concurrency/TaskGroup.swift at main · swiftlang/swift · GitHub"))
+However, cancellation is cooperative. The group still waits for remaining child tasks to finish. If those tasks ignore cancellation, the parent still waits. ([GitHub, "TaskGroup.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift))
 
-Also, `waitForAll()` captures and rethrows the first child error, but the documentation notes that this does not cancel the group automatically when the error is captured by `waitForAll()` itself. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift "swift/stdlib/public/Concurrency/TaskGroup.swift at main · swiftlang/swift · GitHub"))
+Also, `waitForAll()` captures and rethrows the first child error, but the documentation notes that this does not cancel the group automatically when the error is captured by `waitForAll()` itself. ([GitHub, "TaskGroup.swift"](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift))
 
 Interview version:
 
@@ -396,7 +396,7 @@ Compiled with Swift 6.2.1 in Swift 6 language mode:
 
 ### Why?
 
-An `async let` child must be awaited before leaving its scope. Therefore the enclosing context must support suspension. SE-0317 states that `async let` declarations can only occur where `await` is legal, such as async functions or async closures. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md "swift-evolution/proposals/0317-async-let.md at main · swiftlang/swift-evolution · GitHub"))
+An `async let` child must be awaited before leaving its scope. Therefore the enclosing context must support suspension. SE-0317 states that `async let` declarations can only occur where `await` is legal, such as async functions or async closures. ([GitHub, "async let"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0317-async-let.md))
 
 ### Fix
 
@@ -635,7 +635,7 @@ recommendations cancelled
 profileFailed
 ```
 
-Why: once the error causes the scope to exit, the sibling async-let child is canceled and awaited before the parent finishes. SE-0317 states that async-let child tasks cannot outlive their scope, are implicitly awaited by scope exit, and are canceled before awaiting when the scope exits by throwing. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md "swift-evolution/proposals/0317-async-let.md at main · swiftlang/swift-evolution · GitHub"))
+Why: once the error causes the scope to exit, the sibling async-let child is canceled and awaited before the parent finishes. SE-0317 states that async-let child tasks cannot outlive their scope, are implicitly awaited by scope exit, and are canceled before awaiting when the scope exits by throwing. ([GitHub, "async let"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0317-async-let.md))
 
 ### Alternative: partial-data policy
 
@@ -834,8 +834,8 @@ A: It can create too many concurrent child tasks, overload networking, exhaust m
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, D3 — `async let`, task groups, and choosing the right concurrency primitive.
-- SE-0317 — `async let` bindings: motivation, child-task behavior, fixed vs dynamic fan-out, implicit await/cancel behavior. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0317-async-let.md "swift-evolution/proposals/0317-async-let.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0304 — Structured concurrency: async functions, suspension points, and structured task model. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md "swift-evolution/proposals/0304-structured-concurrency.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift standard library TaskGroup documentation/source comments: child-task lifetime, waiting, cancellation, completion-order collection, and throwing group semantics. ([GitHub](https://github.com/apple/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift "swift/stdlib/public/Concurrency/TaskGroup.swift at main · swiftlang/swift · GitHub"))
-- Apple Developer Documentation — `TaskGroup`, `withThrowingTaskGroup`, and `withThrowingDiscardingTaskGroup`. ([Apple Developer](https://developer.apple.com/documentation/swift/taskgroup?utm_source=chatgpt.com "TaskGroup | Apple Developer Documentation"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D3 — `async let`, task groups, and choosing the right concurrency primitive.
+- GitHub. "async let." Swift Evolution SE-0317. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0317-async-let.md
+- GitHub. "Structured Concurrency." Swift Evolution SE-0304. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md
+- GitHub. "TaskGroup.swift." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/TaskGroup.swift
+- Apple Developer. "TaskGroup." Apple Developer Documentation. https://developer.apple.com/documentation/swift/taskgroup

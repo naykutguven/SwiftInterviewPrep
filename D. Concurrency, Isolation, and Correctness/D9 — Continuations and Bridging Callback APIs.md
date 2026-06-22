@@ -39,7 +39,7 @@ A continuation is a manually held “resume handle” for one suspended async fu
 
 When an async function reaches `withCheckedContinuation` or `withCheckedThrowingContinuation`, Swift gives your synchronous bridging closure a continuation object. Your job is to pass that continuation into the legacy callback world and resume it when the old API finishes.
 
-The continuation represents **one suspension point**, not the lifetime of a task, not a cancellable operation, and not an event channel. SE-0300 describes continuations as the mechanism that lets async Swift work with callback- or delegate-based systems by suspending the task and later resuming it from synchronous code. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0300-continuation.md "swift-evolution/proposals/0300-continuation.md at main · swiftlang/swift-evolution · GitHub"))
+The continuation represents **one suspension point**, not the lifetime of a task, not a cancellable operation, and not an event channel. SE-0300 describes continuations as the mechanism that lets async Swift work with callback- or delegate-based systems by suspending the task and later resuming it from synchronous code. ([GitHub, "Continuations for Interfacing Async Tasks with Synchronous Code"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md))
 
 The key idea:
 
@@ -49,7 +49,7 @@ async function suspends once → legacy API eventually calls back → continuati
 
 Swift guarantees that once the continuation is resumed, the suspended task can continue with a returned value or thrown error. It does **not** guarantee that the old API behaves well, calls back once, calls back at all, respects task cancellation, or uses the right abstraction for multi-event data.
 
-Apple’s `CheckedContinuation` documentation states the central rule directly: a resume method must be called exactly once on every execution path, and resuming more than once is a correctness violation. ([Apple Developer](https://developer.apple.com/documentation/swift/checkedcontinuation?utm_source=chatgpt.com "CheckedContinuation | Apple Developer Documentation"))
+Apple’s `CheckedContinuation` documentation states the central rule directly: a resume method must be called exactly once on every execution path, and resuming more than once is a correctness violation. ([Apple Developer, "CheckedContinuation"](https://developer.apple.com/documentation/swift/checkedcontinuation))
 
 ---
 
@@ -85,7 +85,7 @@ into:
 async -> Data
 ```
 
-The continuation closure itself is synchronous. It starts the legacy operation and returns. The task remains suspended until the continuation is resumed. SE-0300 specifies that the continuation operation runs immediately in the current task context, and that `resume` makes the task schedulable rather than necessarily continuing it inline. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0300-continuation.md "swift-evolution/proposals/0300-continuation.md at main · swiftlang/swift-evolution · GitHub"))
+The continuation closure itself is synchronous. It starts the legacy operation and returns. The task remains suspended until the continuation is resumed. SE-0300 specifies that the continuation operation runs immediately in the current task context, and that `resume` makes the task schedulable rather than necessarily continuing it inline. ([GitHub, "Continuations for Interfacing Async Tasks with Synchronous Code"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md))
 
 ---
 
@@ -138,7 +138,7 @@ continuation.resume(returning: 1)
 continuation.resume(returning: 2) // trap
 ```
 
-SE-0300 says `CheckedContinuation` traps on multiple resumes and logs a warning if discarded without resuming, leaving the task suspended and leaking resources held by that suspended task. Those checks happen regardless of optimization level. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0300-continuation.md "swift-evolution/proposals/0300-continuation.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0300 says `CheckedContinuation` traps on multiple resumes and logs a warning if discarded without resuming, leaving the task suspended and leaking resources held by that suspended task. Those checks happen regardless of optimization level. ([GitHub, "Continuations for Interfacing Async Tasks with Synchronous Code"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md))
 
 This means:
 
@@ -169,7 +169,7 @@ func fetchImage(url: URL, client: LegacyClient) async throws -> UIImage {
 }
 ```
 
-This sketch shows the intent, but in production you also need thread-safe state handling if cancellation and callback can race. SE-0300 explicitly treats a continuation as a single suspension-point mechanism, not a task handle that controls the whole task lifetime. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0300-continuation.md "swift-evolution/proposals/0300-continuation.md at main · swiftlang/swift-evolution · GitHub"))
+This sketch shows the intent, but in production you also need thread-safe state handling if cancellation and callback can race. SE-0300 explicitly treats a continuation as a single suspension-point mechanism, not a task handle that controls the whole task lifetime. ([GitHub, "Continuations for Interfacing Async Tasks with Synchronous Code"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md))
 
 ---
 
@@ -813,8 +813,8 @@ A: Treat the adapter as a small state machine with explicit ownership, cancellat
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist, D9 — Continuations section.
-- Apple Developer Documentation — `CheckedContinuation`: exactly-once resume rule. ([Apple Developer](https://developer.apple.com/documentation/swift/checkedcontinuation?utm_source=chatgpt.com "CheckedContinuation | Apple Developer Documentation"))
-- Apple Developer Documentation — `withCheckedThrowingContinuation(isolation:function:_:)`. ([Apple Developer](https://developer.apple.com/documentation/swift/withcheckedthrowingcontinuation%28isolation%3Afunction%3A_%3A%29?utm_source=chatgpt.com "withCheckedThrowingContinuati..."))
-- Apple Developer Documentation — `CheckedContinuation.resume(returning:)`: repeated resume traps. ([Apple Developer](https://developer.apple.com/documentation/swift/checkedcontinuation/resume%28returning%3A%29?utm_source=chatgpt.com "resume(returning:) | Apple Developer Documentation"))
-- Swift Evolution SE-0300 — Continuations for interfacing async tasks with synchronous code. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0300-continuation.md "swift-evolution/proposals/0300-continuation.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D9 — Continuations section.
+- Apple Developer. "CheckedContinuation." Apple Developer Documentation. https://developer.apple.com/documentation/swift/checkedcontinuation
+- Apple Developer. "withCheckedThrowingContinuation(isolation:function:_:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/withcheckedthrowingcontinuation%28isolation%3afunction%3a_%3a%29
+- Apple Developer. "resume(returning:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/checkedcontinuation/resume%28returning%3a%29
+- GitHub. "Continuations for Interfacing Async Tasks with Synchronous Code." Swift Evolution SE-0300. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md

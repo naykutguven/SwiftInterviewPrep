@@ -55,7 +55,7 @@ immutable value types
 
 The goal is not “make the warnings disappear.” The goal is to make the compiler understand why the code is safe.
 
-Swift 6 introduced an opt-in language mode that extends Swift’s safety guarantees to diagnose potential data races as compiler errors. Before Swift 6 language mode, Swift 5.10 already allowed data-race safety diagnostics as warnings via complete strict concurrency checking, which made it possible to stage the migration. ([Swift.org](https://swift.org/blog/announcing-swift-6/ "Announcing Swift 6 | Swift.org"))
+Swift 6 introduced an opt-in language mode that extends Swift’s safety guarantees to diagnose potential data races as compiler errors. Before Swift 6 language mode, Swift 5.10 already allowed data-race safety diagnostics as warnings via complete strict concurrency checking, which made it possible to stage the migration. ([Swift.org, "Announcing Swift 6"](https://swift.org/blog/announcing-swift-6/))
 
 The key idea:
 
@@ -64,7 +64,7 @@ Swift 5 complete checking = rehearse Swift 6 as warnings.
 Swift 6 language mode = enforce those rules as errors.
 ```
 
-Apple’s WWDC migration guidance is explicitly incremental: enable complete concurrency checking per target while still in Swift 5 mode, fix the warnings, then enable Swift 6 for that target, and repeat. Apple also warns against mixing this with large unrelated refactors. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2024/10169/ "Migrate your app to Swift 6 - WWDC24 - Videos - Apple Developer"))
+Apple’s WWDC migration guidance is explicitly incremental: enable complete concurrency checking per target while still in Swift 5 mode, fix the warnings, then enable Swift 6 for that target, and repeat. Apple also warns against mixing this with large unrelated refactors. ([Apple Developer, "Migrate Your App to Swift 6"](https://developer.apple.com/videos/play/wwdc2024/10169/))
 
 ---
 
@@ -176,7 +176,7 @@ actor ImageCache {
 }
 ```
 
-Apple’s WWDC example calls out global variables as a common source of shared mutable state and shows fixes like immutability, global actor isolation, or unsafe opt-out only when an external mechanism genuinely protects the state. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2024/10169/ "Migrate your app to Swift 6 - WWDC24 - Videos - Apple Developer"))
+Apple’s WWDC example calls out global variables as a common source of shared mutable state and shows fixes like immutability, global actor isolation, or unsafe opt-out only when an external mechanism genuinely protects the state. ([Apple Developer, "Migrate Your App to Swift 6"](https://developer.apple.com/videos/play/wwdc2024/10169/))
 
 ### 2.4 `Sendable` is a semantic promise
 
@@ -241,7 +241,7 @@ Unacceptable use:
 You own the code, the compiler is right, and you use @preconcurrency to avoid redesigning unsafe shared mutable state.
 ```
 
-SE-0337 defines `@preconcurrency` as part of incremental migration. The proposal says the workflow is to enable checking, solve problems, temporarily use `@preconcurrency import` for missing dependency annotations, and later remove it once the dependency has proper annotations. It also states that Swift 6 mode checks all code completely for missing `Sendable` conformances and concurrency violations, generally as errors. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0337-support-incremental-migration-to-concurrency-checking.md "swift-evolution/proposals/0337-support-incremental-migration-to-concurrency-checking.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0337 defines `@preconcurrency` as part of incremental migration. The proposal says the workflow is to enable checking, solve problems, temporarily use `@preconcurrency import` for missing dependency annotations, and later remove it once the dependency has proper annotations. It also states that Swift 6 mode checks all code completely for missing `Sendable` conformances and concurrency violations, generally as errors. ([GitHub, "Support Incremental Migration to Concurrency Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0337-support-incremental-migration-to-concurrency-checking.md))
 
 ---
 
@@ -357,7 +357,7 @@ Better migration plan:
 7. Revisit temporary opt-outs.
 ```
 
-Apple’s migration guidance recommends migrating target by target, resolving warnings first, then enabling Swift 6 mode, and avoiding combining migration with large unrelated refactoring. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2024/10169/ "Migrate your app to Swift 6 - WWDC24 - Videos - Apple Developer"))
+Apple’s migration guidance recommends migrating target by target, resolving warnings first, then enabling Swift 6 mode, and avoiding combining migration with large unrelated refactoring. ([Apple Developer, "Migrate Your App to Swift 6"](https://developer.apple.com/videos/play/wwdc2024/10169/))
 
 ---
 
@@ -371,7 +371,7 @@ Interview version:
 
 > Complete checking before Swift 6 was basically a staging tool. It let a Swift 5 target ask the compiler, “Show me the concurrency problems Swift 6 would reject,” without immediately breaking the build. That made it possible to fix warnings target by target, then switch each target to Swift 6 once it was clean.
 
-Swift.org states that Swift 6 diagnoses potential data races as compiler errors, while those checks were previously available as warnings through complete strict concurrency checking in Swift 5.10. ([Swift.org](https://swift.org/blog/announcing-swift-6/ "Announcing Swift 6 | Swift.org"))
+Swift.org states that Swift 6 diagnoses potential data races as compiler errors, while those checks were previously available as warnings through complete strict concurrency checking in Swift 5.10. ([Swift.org, "Announcing Swift 6"](https://swift.org/blog/announcing-swift-6/))
 
 ### Q2. When is `@preconcurrency` acceptable, and why is it rarely the final design?
 
@@ -389,7 +389,7 @@ Interview version:
 
 > I would use `@preconcurrency` as a temporary compatibility boundary, mainly for dependencies I do not control or for public APIs that need staged adoption. I would not use it to hide problems in code I own. The final design should usually make isolation explicit with actors, global actors, value types, `Sendable`, or a narrow synchronized wrapper.
 
-SE-0337 describes `@preconcurrency import` as a temporary escape hatch for dependencies without complete concurrency annotations, and says the compiler should warn when the attribute becomes unnecessary so it can be removed. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0337-support-incremental-migration-to-concurrency-checking.md "swift-evolution/proposals/0337-support-incremental-migration-to-concurrency-checking.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0337 describes `@preconcurrency import` as a temporary escape hatch for dependencies without complete concurrency annotations, and says the compiler should warn when the attribute becomes unnecessary so it can be removed. ([GitHub, "Support Incremental Migration to Concurrency Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0337-support-incremental-migration-to-concurrency-checking.md))
 
 ---
 
@@ -621,7 +621,7 @@ Do not start with the whole app unless the codebase is small.
 
 For Xcode projects, this is a per-target build setting. For packages, use package-level/target-level Swift settings where appropriate.
 
-Apple’s WWDC migration example uses complete checking first while staying in Swift 5 mode, resolves warnings, then enables Swift 6 mode for that target. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2024/10169/ "Migrate your app to Swift 6 - WWDC24 - Videos - Apple Developer"))
+Apple’s WWDC migration example uses complete checking first while staying in Swift 5 mode, resolves warnings, then enables Swift 6 mode for that target. ([Apple Developer, "Migrate Your App to Swift 6"](https://developer.apple.com/videos/play/wwdc2024/10169/))
 
 #### Phase 2 — Fix warnings by category, not randomly
 
@@ -770,7 +770,7 @@ only with a tracking note:
 
 Do not scatter it without ownership.
 
-SE-0337’s intended workflow is temporary: use `@preconcurrency import` for missing annotations, then remove it once updated dependencies make the import unnecessary. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0337-support-incremental-migration-to-concurrency-checking.md "swift-evolution/proposals/0337-support-incremental-migration-to-concurrency-checking.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0337’s intended workflow is temporary: use `@preconcurrency import` for missing annotations, then remove it once updated dependencies make the import unnecessary. ([GitHub, "Support Incremental Migration to Concurrency Checking"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0337-support-incremental-migration-to-concurrency-checking.md))
 
 #### Phase 6 — Enable Swift 6 per target
 
@@ -947,7 +947,7 @@ A: Build clear ownership and isolation boundaries so the compiler can enforce sa
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — D13 Swift 6 strict concurrency migration
-- Swift.org — “Announcing Swift 6” explains Swift 6’s opt-in language mode for diagnosing data races as compiler errors and notes Swift 5.10 complete checking warnings. ([Swift.org](https://swift.org/blog/announcing-swift-6/ "Announcing Swift 6 | Swift.org"))
-- Apple WWDC24 — “Migrate your app to Swift 6” demonstrates per-target migration: enable complete checking, fix warnings, then enable Swift 6 mode. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2024/10169/ "Migrate your app to Swift 6 - WWDC24 - Videos - Apple Developer"))
-- Swift Evolution SE-0337 — “Incremental migration to concurrency checking” defines the migration role of `@preconcurrency`, strict/minimal checking modes, and how `@preconcurrency import` should be temporary. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0337-support-incremental-migration-to-concurrency-checking.md "swift-evolution/proposals/0337-support-incremental-migration-to-concurrency-checking.md at main · swiftlang/swift-evolution · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D13 Swift 6 strict concurrency migration
+- Swift.org. "Announcing Swift 6." Swift.org Blog. https://swift.org/blog/announcing-swift-6/
+- Apple Developer. "Migrate Your App to Swift 6." WWDC24. https://developer.apple.com/videos/play/wwdc2024/10169/
+- GitHub. "Support Incremental Migration to Concurrency Checking." Swift Evolution SE-0337. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0337-support-incremental-migration-to-concurrency-checking.md

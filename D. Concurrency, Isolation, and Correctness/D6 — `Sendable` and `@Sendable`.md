@@ -34,11 +34,11 @@ Understand sendability rules for value types, classes, actors, closures, and gen
 
 ## 1. Core mental model
 
-Swift’s concurrency model protects against **data races** by tracking when values cross concurrency domains: tasks, actors, global actors, and `@Sendable` closures. A type is `Sendable` when values of that type can be safely transferred across such boundaries. The Swift Book describes a sendable type as one that can be shared from one concurrency domain to another. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
+Swift’s concurrency model protects against **data races** by tracking when values cross concurrency domains: tasks, actors, global actors, and `@Sendable` closures. A type is `Sendable` when values of that type can be safely transferred across such boundaries. The Swift Book describes a sendable type as one that can be shared from one concurrency domain to another. ([Swift.org, "Concurrency"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/))
 
-`Sendable` is a **marker protocol**. It does not add methods. It communicates a semantic guarantee to the compiler: “values of this type can safely cross isolation boundaries.” SE-0302 introduced `Sendable` and `@Sendable` to type-check value passing between structured concurrency constructs and actor messages. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md "swift-evolution/proposals/0302-concurrent-value-and-concurrent-closures.md at main · swiftlang/swift-evolution · GitHub"))
+`Sendable` is a **marker protocol**. It does not add methods. It communicates a semantic guarantee to the compiler: “values of this type can safely cross isolation boundaries.” SE-0302 introduced `Sendable` and `@Sendable` to type-check value passing between structured concurrency constructs and actor messages. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
 
-`@Sendable` is not a protocol conformance on a nominal type. It is an attribute on a **function type**. A `@Sendable` closure is safe to pass across concurrency domains, so Swift checks what it captures. The key rule: captured values must be safe to share. SE-0302 states that a `@Sendable` function’s captures must conform to `Sendable`, and mutable captured variables need explicit by-value capture if appropriate. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md "swift-evolution/proposals/0302-concurrent-value-and-concurrent-closures.md at main · swiftlang/swift-evolution · GitHub"))
+`@Sendable` is not a protocol conformance on a nominal type. It is an attribute on a **function type**. A `@Sendable` closure is safe to pass across concurrency domains, so Swift checks what it captures. The key rule: captured values must be safe to share. SE-0302 states that a `@Sendable` function’s captures must conform to `Sendable`, and mutable captured variables need explicit by-value capture if appropriate. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
 
 The key idea:
 
@@ -83,7 +83,7 @@ struct LoaderState: Sendable {
 }
 ```
 
-The compiler can structurally check structs and enums because it can inspect their stored data. SE-0302 specifies that structs and enums can be checked for `Sendable` conformance based on whether their members are sendable. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md "swift-evolution/proposals/0302-concurrent-value-and-concurrent-closures.md at main · swiftlang/swift-evolution · GitHub"))
+The compiler can structurally check structs and enums because it can inspect their stored data. SE-0302 specifies that structs and enums can be checked for `Sendable` conformance based on whether their members are sendable. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
 
 ---
 
@@ -124,7 +124,7 @@ final class Cache: Sendable {
 }
 ```
 
-A mutable class can still be safely shareable if it uses internal synchronization, but the compiler generally cannot prove that. That is when `@unchecked Sendable` may be justified. SE-0302 explicitly treats `@unchecked Sendable` as the escape hatch for classes whose memory safety is provided by access control and internal synchronization. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md "swift-evolution/proposals/0302-concurrent-value-and-concurrent-closures.md at main · swiftlang/swift-evolution · GitHub"))
+A mutable class can still be safely shareable if it uses internal synchronization, but the compiler generally cannot prove that. That is when `@unchecked Sendable` may be justified. SE-0302 explicitly treats `@unchecked Sendable` as the escape hatch for classes whose memory safety is provided by access control and internal synchronization. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
 
 ```swift
 import Synchronization
@@ -178,7 +178,7 @@ Task {
 }
 ```
 
-Actor references are sendable because access to actor-isolated mutable state requires actor hops. SE-0302 notes that actor types provide their own internal synchronization and implicitly conform to `Sendable`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md "swift-evolution/proposals/0302-concurrent-value-and-concurrent-closures.md at main · swiftlang/swift-evolution · GitHub"))
+Actor references are sendable because access to actor-isolated mutable state requires actor hops. SE-0302 notes that actor types provide their own internal synchronization and implicitly conform to `Sendable`. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
 
 ---
 
@@ -552,7 +552,7 @@ Main/task A owns reference ─┐
 Task/closure B captures ────┘
 ```
 
-That is exactly the kind of shared mutable state Swift 6 strict concurrency is designed to reject. Swift 6’s opt-in language mode diagnoses potential data races as compiler errors. ([Swift.org](https://swift.org/blog/announcing-swift-6/?utm_source=chatgpt.com "Announcing Swift 6"))
+That is exactly the kind of shared mutable state Swift 6 strict concurrency is designed to reject. Swift 6’s opt-in language mode diagnoses potential data races as compiler errors. ([Swift.org, "Announcing Swift 6"](https://swift.org/blog/announcing-swift-6/))
 
 ### Fix or redesign — actor isolation
 
@@ -878,7 +878,7 @@ Is @unchecked Sendable backed by a real lock or synchronization invariant?
 Is the type public, and does Sendable become part of the library contract?
 ```
 
-For Swift 6 migrations, do not treat diagnostics as noise. Swift’s migration guide notes that complete concurrency checking can surface latent issues even in Swift 5 code that does not directly use concurrency features, and Swift 6 language mode can turn some of those into errors. ([Swift.org](https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/commonproblems/?utm_source=chatgpt.com "Common Compiler Errors | Documentation"))
+For Swift 6 migrations, do not treat diagnostics as noise. Swift’s migration guide notes that complete concurrency checking can surface latent issues even in Swift 5 code that does not directly use concurrency features, and Swift 6 language mode can turn some of those into errors. ([Swift.org, "Common Compiler Errors"](https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/commonproblems/))
 
 ---
 
@@ -974,10 +974,9 @@ A: No. Add `T: Sendable` only when values actually cross concurrency domains or 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, D6 — Sendable and `@Sendable`.
-- Swift Book — Concurrency / Sendable types. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
-- SE-0302 — `Sendable` and `@Sendable` closures. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md "swift-evolution/proposals/0302-concurrent-value-and-concurrent-closures.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0302 details on class, actor, and closure sendability rules. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md "swift-evolution/proposals/0302-concurrent-value-and-concurrent-closures.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift compiler diagnostics — captures in a `@Sendable` closure. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/?utm_source=chatgpt.com "Captures in a `@Sendable` closure ..."))
-- Swift 6 migration guide — strict concurrency and data-race safety diagnostics. ([Swift.org](https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/commonproblems/?utm_source=chatgpt.com "Common Compiler Errors | Documentation"))
-- Swift 6 announcement — Swift 6 language mode diagnoses potential data races as compiler errors. ([Swift.org](https://swift.org/blog/announcing-swift-6/?utm_source=chatgpt.com "Announcing Swift 6"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D6 — Sendable and `@Sendable`.
+- Swift.org. "Concurrency." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/
+- GitHub. "Sendable and @Sendable Closures." Swift Evolution SE-0302. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md
+- Swift.org. "Captures in a @Sendable Closure." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/
+- Swift.org. "Common Compiler Errors." Swift 6 Concurrency Migration Guide. https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/commonproblems/
+- Swift.org. "Announcing Swift 6." Swift.org Blog. https://swift.org/blog/announcing-swift-6/

@@ -16,7 +16,7 @@ Understand cooperative cancellation, task-local propagation, parent-child relati
 
 **Caveat**
 
-Cancellation does **not** kill work automatically. It marks a task as cancelled; the task must observe cancellation through `Task.isCancelled`, `Task.checkCancellation()`, a cancellation-aware API, or a cancellation handler. Apple’s WWDC material states this directly: cancelling a parent cancels child tasks, but cancellation is cooperative and acting on it is your code’s responsibility. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
+Cancellation does **not** kill work automatically. It marks a task as cancelled; the task must observe cancellation through `Task.isCancelled`, `Task.checkCancellation()`, a cancellation-aware API, or a cancellation handler. Apple’s WWDC material states this directly: cancelling a parent cancels child tasks, but cancellation is cooperative and acting on it is your code’s responsibility. ([Apple Developer, "Beyond the Basics of Structured Concurrency"](https://developer.apple.com/videos/play/wwdc2023/10170/))
 
 **You should be able to answer**
 
@@ -31,7 +31,7 @@ Cancellation does **not** kill work automatically. It marks a task as cancelled;
 
 ## 1. Core mental model
 
-Swift tasks form a **task tree** when you use structured concurrency. `async let` and task groups create child tasks. Those child tasks are owned by the lexical scope that created them; they cannot outlive that scope. Apple describes structured tasks as being created by `async let` and task groups, while `Task {}` and `Task.detached {}` create unstructured tasks. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
+Swift tasks form a **task tree** when you use structured concurrency. `async let` and task groups create child tasks. Those child tasks are owned by the lexical scope that created them; they cannot outlive that scope. Apple describes structured tasks as being created by `async let` and task groups, while `Task {}` and `Task.detached {}` create unstructured tasks. ([Apple Developer, "Beyond the Basics of Structured Concurrency"](https://developer.apple.com/videos/play/wwdc2023/10170/))
 
 The task tree gives Swift three important propagation channels:
 
@@ -42,11 +42,11 @@ parent task
  └─ task-local values are visible to children
 ```
 
-Cancellation is a **signal**, not a force-stop. Swift does not preemptively terminate a task because doing so would be unsafe: the task might be holding a lock, mutating shared state, writing a file, updating a database, or halfway through establishing an invariant. Instead, Swift marks the task as cancelled and lets code stop at safe points. The Swift book describes Swift’s cancellation model as cooperative. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
+Cancellation is a **signal**, not a force-stop. Swift does not preemptively terminate a task because doing so would be unsafe: the task might be holding a lock, mutating shared state, writing a file, updating a database, or halfway through establishing an invariant. Instead, Swift marks the task as cancelled and lets code stop at safe points. The Swift book describes Swift’s cancellation model as cooperative. ([Swift.org, "Concurrency"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/))
 
-Priority is also not a hard scheduling guarantee. It is a signal to the runtime about urgency. Child tasks inherit parent priority by default, and priority can be escalated when a higher-priority task waits on lower-priority work. Apple’s WWDC23 session explains that this helps avoid priority inversion. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
+Priority is also not a hard scheduling guarantee. It is a signal to the runtime about urgency. Child tasks inherit parent priority by default, and priority can be escalated when a higher-priority task waits on lower-priority work. Apple’s WWDC23 session explains that this helps avoid priority inversion. ([Apple Developer, "Beyond the Basics of Structured Concurrency"](https://developer.apple.com/videos/play/wwdc2023/10170/))
 
-Task-local values are scoped context attached to a task hierarchy. They are useful for tracing, request IDs, logging metadata, correlation IDs, locale overrides, or feature-flag context. Apple describes task-local values as data associated with a task hierarchy, and notes that all tasks except detached tasks inherit task-local values from the current task. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
+Task-local values are scoped context attached to a task hierarchy. They are useful for tracing, request IDs, logging metadata, correlation IDs, locale overrides, or feature-flag context. Apple describes task-local values as data associated with a task hierarchy, and notes that all tasks except detached tasks inherit task-local values from the current task. ([Apple Developer, "Beyond the Basics of Structured Concurrency"](https://developer.apple.com/videos/play/wwdc2023/10170/))
 
 The key idea:
 
@@ -84,7 +84,7 @@ Important consequences:
 - Child tasks inherit task-local values.
 ```
 
-Apple’s TaskGroup documentation states that child tasks inherit the parent’s priority and task-local values, and their lifetime never exceeds the parent task’s lifetime. ([Apple Developer](https://developer.apple.com/documentation/swift/taskgroup?utm_source=chatgpt.com "TaskGroup | Apple Developer Documentation"))
+Apple’s TaskGroup documentation states that child tasks inherit the parent’s priority and task-local values, and their lifetime never exceeds the parent task’s lifetime. ([Apple Developer, "TaskGroup"](https://developer.apple.com/documentation/swift/taskgroup))
 
 ---
 
@@ -142,7 +142,7 @@ func buildSearchIndex(items: [Item]) async -> SearchIndex {
 
 ### 2.3 Cancellation handlers are for suspended work or external resources
 
-Polling is not enough when the task is suspended and no code is running. That is when `withTaskCancellationHandler` matters. Apple specifically calls out cancellation handlers for cases like an `AsyncSequence` waiting for the next value. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
+Polling is not enough when the task is suspended and no code is running. That is when `withTaskCancellationHandler` matters. Apple specifically calls out cancellation handlers for cases like an `AsyncSequence` waiting for the next value. ([Apple Developer, "Beyond the Basics of Structured Concurrency"](https://developer.apple.com/videos/play/wwdc2023/10170/))
 
 ```swift
 func nextEvent() async -> Event? {
@@ -154,7 +154,7 @@ func nextEvent() async -> Event? {
 }
 ```
 
-But be careful: the cancellation handler can run concurrently with the operation. Apple notes that if the handler and main operation share mutable state, that state must be synchronized. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
+But be careful: the cancellation handler can run concurrently with the operation. Apple notes that if the handler and main operation share mutable state, that state must be synchronized. ([Apple Developer, "Beyond the Basics of Structured Concurrency"](https://developer.apple.com/videos/play/wwdc2023/10170/))
 
 ---
 
@@ -176,7 +176,7 @@ Task(priority: .userInitiated) {
 
 The child tasks start with the parent’s priority unless you explicitly choose another priority. Priority is a runtime scheduling hint, not a correctness mechanism.
 
-Apple’s WWDC23 session explains that child tasks inherit priority by default, and if a higher-priority task awaits lower-priority child work, the child work can be escalated to avoid priority inversion. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
+Apple’s WWDC23 session explains that child tasks inherit priority by default, and if a higher-priority task awaits lower-priority child work, the child work can be escalated to avoid priority inversion. ([Apple Developer, "Beyond the Basics of Structured Concurrency"](https://developer.apple.com/videos/play/wwdc2023/10170/))
 
 ---
 
@@ -389,7 +389,7 @@ This distinction is staff-level API design territory.
 
 Cancellation is cooperative because Swift cannot safely stop arbitrary code at an arbitrary instruction. A task might be holding a lock, updating shared state, writing to disk, mutating actor-isolated state, or maintaining an invariant. Preemptively killing it could leave the program corrupted.
 
-Swift cancellation instead marks the task as cancelled. Code observes that signal at safe points using `Task.isCancelled`, `Task.checkCancellation()`, cancellation-aware APIs, or `withTaskCancellationHandler`. Apple’s documentation and WWDC material describe cancellation as cooperative: cancellation marks the task, and the code must respond. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
+Swift cancellation instead marks the task as cancelled. Code observes that signal at safe points using `Task.isCancelled`, `Task.checkCancellation()`, cancellation-aware APIs, or `withTaskCancellationHandler`. Apple’s documentation and WWDC material describe cancellation as cooperative: cancellation marks the task, and the code must respond. ([Swift.org, "Concurrency"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/))
 
 Interview version:
 
@@ -408,7 +408,7 @@ A structured child task inherits:
 - bounded lifetime under the parent scope
 ```
 
-A parent task’s cancellation propagates downward to its child tasks. Child tasks inherit the parent’s priority by default. Task-local values are visible through the task hierarchy. The child task’s lifetime is structurally bounded: the parent scope must wait for child tasks to complete before the scope exits. Apple’s TaskGroup documentation describes this lifetime and inheritance relationship. ([Apple Developer](https://developer.apple.com/documentation/swift/taskgroup?utm_source=chatgpt.com "TaskGroup | Apple Developer Documentation"))
+A parent task’s cancellation propagates downward to its child tasks. Child tasks inherit the parent’s priority by default. Task-local values are visible through the task hierarchy. The child task’s lifetime is structurally bounded: the parent scope must wait for child tasks to complete before the scope exits. Apple’s TaskGroup documentation describes this lifetime and inheritance relationship. ([Apple Developer, "TaskGroup"](https://developer.apple.com/documentation/swift/taskgroup))
 
 Important nuance:
 
@@ -425,7 +425,7 @@ Task {} is not a structured child task.
 Task.detached {} is even more independent and does not inherit task-local values.
 ```
 
-Apple states that detached tasks do not inherit the parent task’s priority or task-local storage and require manual handling for cancellation-like behavior. ([Apple Developer](https://developer.apple.com/documentation/swift/task/detached%28name%3Apriority%3Aoperation%3A%29-795w1?utm_source=chatgpt.com "detached(name:priority:operation:)"))
+Apple states that detached tasks do not inherit the parent task’s priority or task-local storage and require manual handling for cancellation-like behavior. ([Apple Developer, "detached(name:priority:operation:)"](https://developer.apple.com/documentation/swift/task/detached%28name%3apriority%3aoperation%3a%29-795w1))
 
 Interview version:
 
@@ -860,10 +860,10 @@ A: Cell reuse is not part of Swift’s task hierarchy, so the cell must cancel s
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — D2 task hierarchy, cancellation, and priorities.
-- Swift Book — Concurrency; cooperative cancellation model. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
-- Apple Developer Documentation — `TaskGroup`; child task inheritance and bounded lifetime. ([Apple Developer](https://developer.apple.com/documentation/swift/taskgroup?utm_source=chatgpt.com "TaskGroup | Apple Developer Documentation"))
-- Apple Developer Documentation — `Task.detached`; detached tasks do not inherit structured child-task behavior. ([Apple Developer](https://developer.apple.com/documentation/swift/task/detached%28name%3Apriority%3Aoperation%3A%29-795w1?utm_source=chatgpt.com "detached(name:priority:operation:)"))
-- Apple WWDC23 — “Beyond the basics of structured concurrency”; task tree, cancellation, priority propagation, task-local values. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
-- Swift Evolution SE-0304 — Structured Concurrency; task hierarchy and child task model. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md?utm_source=chatgpt.com "swift-evolution/proposals/0304-structured-concurrency.md ..."))
-- Swift Evolution SE-0311 — Task-local values. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0311-task-locals.md?utm_source=chatgpt.com "swift-evolution/proposals/0311-task-locals.md at main"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D2 task hierarchy, cancellation, and priorities.
+- Swift.org. "Concurrency." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/
+- Apple Developer. "TaskGroup." Apple Developer Documentation. https://developer.apple.com/documentation/swift/taskgroup
+- Apple Developer. "detached(name:priority:operation:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/task/detached%28name%3apriority%3aoperation%3a%29-795w1
+- Apple Developer. "Beyond the Basics of Structured Concurrency." WWDC23. https://developer.apple.com/videos/play/wwdc2023/10170/
+- GitHub. "Structured Concurrency." Swift Evolution SE-0304. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md
+- GitHub. "Task-Local Values." Swift Evolution SE-0311. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0311-task-locals.md

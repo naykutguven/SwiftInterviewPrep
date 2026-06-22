@@ -28,7 +28,7 @@ Understand when `@MainActor` belongs on whole types versus individual members, a
 
 A **global actor** is a single, globally shared actor isolation domain. Instead of protecting state inside one actor instance, it lets declarations across different types, files, or modules agree: “this code must run through the same serialized executor.”
 
-`@MainActor` is Swift’s built-in global actor for main-thread/UI-affine work. SE-0316 describes global actors as extending actor isolation beyond one actor instance, especially for state and operations that must run on the UI/main thread. It also says a declaration isolated to a global actor can be synchronously accessed only from the same global actor, and must be reached asynchronously from elsewhere. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md "swift-evolution/proposals/0316-global-actors.md at main · swiftlang/swift-evolution · GitHub"))
+`@MainActor` is Swift’s built-in global actor for main-thread/UI-affine work. SE-0316 describes global actors as extending actor isolation beyond one actor instance, especially for state and operations that must run on the UI/main thread. It also says a declaration isolated to a global actor can be synchronously accessed only from the same global actor, and must be reached asynchronously from elsewhere. ([GitHub, "Global Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0316-global-actors.md))
 
 The key idea:
 
@@ -92,7 +92,7 @@ note: calls to instance method 'update()' from outside of its actor context are 
 note: add '@MainActor' to make global function 'render' part of global actor 'MainActor'
 ```
 
-This is the compiler enforcing the isolation boundary. Swift’s diagnostics describe the same rule for global actors like `@MainActor`: calling a main-actor-isolated method from a synchronous nonisolated context is invalid. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/?utm_source=chatgpt.com "Calling an actor-isolated method from a synchronous ..."))
+This is the compiler enforcing the isolation boundary. Swift’s diagnostics describe the same rule for global actors like `@MainActor`: calling a main-actor-isolated method from a synchronous nonisolated context is invalid. ([Swift.org, "Calling an Actor-Isolated Method from a Synchronous Nonisolated Context"](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/))
 
 ---
 
@@ -128,7 +128,7 @@ This is common for:
 - presentation state containers
 ```
 
-SE-0316 explicitly notes that when an entire type predominantly requires main-thread execution, the type itself can be annotated with a global actor, and members can opt out with `nonisolated` when needed. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md "swift-evolution/proposals/0316-global-actors.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0316 explicitly notes that when an entire type predominantly requires main-thread execution, the type itself can be annotated with a global actor, and members can opt out with `nonisolated` when needed. ([GitHub, "Global Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0316-global-actors.md))
 
 ---
 
@@ -219,7 +219,7 @@ final class ViewModel {
 
 ### 2.5 Swift 6.2 caveat: default main-actor isolation changes the baseline
 
-Swift 6.2 introduced an option to isolate code to the main actor by default, intended for scripts, UI code, and executable targets. It also introduced `@concurrent` to explicitly request concurrent execution where needed. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+Swift 6.2 introduced an option to isolate code to the main actor by default, intended for scripts, UI code, and executable targets. It also introduced `@concurrent` to explicitly request concurrent execution where needed. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
 For iOS app targets in Xcode 26, this matters because a UI-heavy module may be main-actor isolated by default. That reduces annotation noise, but it can also hide architectural mistakes.
 
@@ -494,7 +494,7 @@ Compiled with Swift 6 mode:
 
 `update()` is isolated to the main actor because the whole class is `@MainActor`. `render` is synchronous and nonisolated. A synchronous nonisolated function cannot directly call a main-actor-isolated method because that would cross an actor boundary without a suspension point.
 
-Actor-isolated declarations can be accessed directly only from the same isolation domain. Cross-actor calls are asynchronous because they may need to enqueue work on that actor’s executor. SE-0306 describes cross-actor asynchronous calls as messages placed in the actor’s mailbox, with actor-isolated code processed one-at-a-time. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+Actor-isolated declarations can be accessed directly only from the same isolation domain. Cross-actor calls are asynchronous because they may need to enqueue work on that actor’s executor. SE-0306 describes cross-actor asynchronous calls as messages placed in the actor’s mailbox, with actor-isolated code processed one-at-a-time. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
 
 ### Fix 1: Make the caller async and cross the boundary explicitly
 
@@ -692,7 +692,7 @@ final class SearchViewModel {
 - The view model owns presentation state, not networking/parsing details.
 ```
 
-Important nuance: `Task {}` inside a `@MainActor` method inherits the main actor for its body, so state mutation is safe. The expensive work must be placed behind APIs that do not perform CPU-heavy work on the main actor. In Swift 6.2, `@concurrent` is the explicit tool for work that should run on the concurrent executor rather than remaining serialized on the current actor. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+Important nuance: `Task {}` inside a `@MainActor` method inherits the main actor for its body, so state mutation is safe. The expensive work must be placed behind APIs that do not perform CPU-heavy work on the main actor. In Swift 6.2, `@concurrent` is the explicit tool for work that should run on the concurrent executor rather than remaining serialized on the current actor. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
 ---
 
@@ -826,8 +826,8 @@ A: Usually no. Keep reusable non-UI packages nonisolated unless their purpose is
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — D5 Global actors and `@MainActor`.
-- SE-0316: Global Actors. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0316-global-actors.md "swift-evolution/proposals/0316-global-actors.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0306: Actors and actor isolation. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift compiler diagnostic: actor-isolated calls from synchronous nonisolated contexts. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/?utm_source=chatgpt.com "Calling an actor-isolated method from a synchronous ..."))
-- Swift 6.2 Released: default main-actor isolation and `@concurrent`. ([Swift.org](https://swift.org/blog/swift-6.2-released/ "Swift 6.2 Released | Swift.org"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D5 Global actors and `@MainActor`.
+- GitHub. "Global Actors." Swift Evolution SE-0316. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0316-global-actors.md
+- GitHub. "Actors." Swift Evolution SE-0306. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md
+- Swift.org. "Calling an Actor-Isolated Method from a Synchronous Nonisolated Context." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/
+- Swift.org. "Swift 6.2 Released." Swift.org Blog. https://swift.org/blog/swift-6.2-released/

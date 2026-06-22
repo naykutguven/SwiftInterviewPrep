@@ -56,9 +56,9 @@ async function = one result later
 AsyncSequence = repeated awaits until termination
 ```
 
-A consumer pulls values by repeatedly awaiting `next()` through `for await`. Each iteration may suspend. The sequence ends only when its iterator returns `nil` or throws. SE-0298 introduced `AsyncSequence` to make asynchronous iteration over many values feel like ordinary `for-in`, but with `await` marking suspension. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0298-asyncsequence.md "swift-evolution/proposals/0298-asyncsequence.md at main · swiftlang/swift-evolution · GitHub"))
+A consumer pulls values by repeatedly awaiting `next()` through `for await`. Each iteration may suspend. The sequence ends only when its iterator returns `nil` or throws. SE-0298 introduced `AsyncSequence` to make asynchronous iteration over many values feel like ordinary `for-in`, but with `await` marking suspension. ([GitHub, "AsyncSequence"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0298-asyncsequence.md))
 
-`AsyncStream` and `AsyncThrowingStream` are convenience root sequences. They let you bridge callback/delegate-style APIs into Swift concurrency without manually writing an `AsyncIteratorProtocol`. Their continuation is the producer side; the stream is the consumer side. SE-0314 describes them as a bridge from non-`async/await` asynchronous behavior into async contexts, especially for delegate or multi-callback APIs. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0314-async-stream.md "swift-evolution/proposals/0314-async-stream.md at main · swiftlang/swift-evolution · GitHub"))
+`AsyncStream` and `AsyncThrowingStream` are convenience root sequences. They let you bridge callback/delegate-style APIs into Swift concurrency without manually writing an `AsyncIteratorProtocol`. Their continuation is the producer side; the stream is the consumer side. SE-0314 describes them as a bridge from non-`async/await` asynchronous behavior into async contexts, especially for delegate or multi-callback APIs. ([GitHub, "AsyncStream and AsyncThrowingStream"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0314-async-stream.md))
 
 The trap is that `AsyncStream` is **buffered push-to-pull adaptation**, not automatically a fully backpressured pipeline. A fast producer may keep yielding while a slow consumer is not keeping up. Buffering policy decides what happens to excess elements, but it does not necessarily slow the upstream producer.
 
@@ -104,7 +104,7 @@ func numbers() -> AsyncStream<Int> {
 
 `yield(_:)` sends a value. `finish()` terminates the stream. Without `finish()`, a consumer that tries to keep iterating may suspend forever after the last yielded value.
 
-Apple’s documentation describes `AsyncStream` as conforming to `AsyncSequence` and being suited for adapting callback/delegate APIs to `async/await`. ([Apple Developer](https://developer.apple.com/documentation/swift/asyncstream?utm_source=chatgpt.com "AsyncStream | Apple Developer Documentation")) The continuation is used to yield values and then terminate the stream normally with `finish()`. ([Apple Developer](https://developer.apple.com/documentation/swift/asyncstream/continuation?utm_source=chatgpt.com "AsyncStream.Continuation | Apple Developer Documentation"))
+Apple’s documentation describes `AsyncStream` as conforming to `AsyncSequence` and being suited for adapting callback/delegate APIs to `async/await`. ([Apple Developer, "AsyncStream"](https://developer.apple.com/documentation/swift/asyncstream)) The continuation is used to yield values and then terminate the stream normally with `finish()`. ([Apple Developer, "AsyncStream.Continuation"](https://developer.apple.com/documentation/swift/asyncstream/continuation))
 
 ### 2.3 Buffering policy is part of correctness
 
@@ -129,7 +129,7 @@ Important policies:
 .bufferingNewest(n)   // keep newest buffered values; drop old overflow
 ```
 
-Apple documents `bufferingNewest(_:)` as keeping at most the specified number of newest values and discarding older values when the buffer is full. ([Apple Developer](https://developer.apple.com/documentation/swift/asyncstream/continuation/bufferingpolicy/bufferingnewest%28_%3A%29?utm_source=chatgpt.com "AsyncStream.Continuation.BufferingPolicy. ..."))
+Apple documents `bufferingNewest(_:)` as keeping at most the specified number of newest values and discarding older values when the buffer is full. ([Apple Developer, "bufferingNewest(_:)"](https://developer.apple.com/documentation/swift/asyncstream/continuation/bufferingpolicy/bufferingnewest%28_%3a%29))
 
 For UI state, `.bufferingNewest(1)` is often right: stale states are worthless. For audit logs, telemetry, payment events, or ordered network messages, dropping values is usually wrong.
 
@@ -170,7 +170,7 @@ func notifications(
 }
 ```
 
-`onTermination` is where you stop observation, cancel tasks, close sockets, invalidate timers, or release delegate ownership. Apple’s `onTermination` docs state that task cancellation during stream iteration invokes the callback, allowing cleanup. ([Apple Developer](https://developer.apple.com/documentation/swift/asyncthrowingstream/continuation/ontermination?utm_source=chatgpt.com "onTermination | Apple Developer Documentation"))
+`onTermination` is where you stop observation, cancel tasks, close sockets, invalidate timers, or release delegate ownership. Apple’s `onTermination` docs state that task cancellation during stream iteration invokes the callback, allowing cleanup. ([Apple Developer, "onTermination"](https://developer.apple.com/documentation/swift/asyncthrowingstream/continuation/ontermination))
 
 ### 2.5 `AsyncStream` is not always enough for real backpressure
 
@@ -195,7 +195,7 @@ for await value in channel {
 }
 ```
 
-`AsyncChannel.send(_:)` suspends until consumption progresses, so production cannot outrun consumption in the same way. The Swift Async Algorithms documentation describes `AsyncChannel` as a communication type where backpressure from `send(_:)` prevents production from exceeding consumption. ([GitHub](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md "swift-async-algorithms/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md at main · apple/swift-async-algorithms · GitHub")) The implementation comments also describe `send(_:)` as suspending after enqueueing until the next iterator call or finish. ([GitHub](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/Channels/AsyncChannel.swift "swift-async-algorithms/Sources/AsyncAlgorithms/Channels/AsyncChannel.swift at main · apple/swift-async-algorithms · GitHub"))
+`AsyncChannel.send(_:)` suspends until consumption progresses, so production cannot outrun consumption in the same way. The Swift Async Algorithms documentation describes `AsyncChannel` as a communication type where backpressure from `send(_:)` prevents production from exceeding consumption. ([GitHub, "Channel"](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md)) The implementation comments also describe `send(_:)` as suspending after enqueueing until the next iterator call or finish. ([GitHub, "AsyncChannel.swift"](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/Channels/AsyncChannel.swift))
 
 ---
 
@@ -276,11 +276,11 @@ let stream = websocketMessages()
 // socket may already be created/started depending on implementation
 ```
 
-If the `AsyncStream` builder starts a monitor, opens a socket, registers a delegate, or starts a timer, merely creating the stream may consume resources. SE-0314’s example starts monitoring inside the stream builder and uses `onTermination` to stop monitoring. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0314-async-stream.md "swift-evolution/proposals/0314-async-stream.md at main · swiftlang/swift-evolution · GitHub"))
+If the `AsyncStream` builder starts a monitor, opens a socket, registers a delegate, or starts a timer, merely creating the stream may consume resources. SE-0314’s example starts monitoring inside the stream builder and uses `onTermination` to stop monitoring. ([GitHub, "AsyncStream and AsyncThrowingStream"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0314-async-stream.md))
 
 ### Trap 4: Assuming one stream means broadcast semantics
 
-`AsyncSequence` itself does not promise multicast behavior. Some sequences are single-consumer, some support multiple iterators, and behavior can be surprising. The Async Algorithms channel proposal explicitly notes that `AsyncSequence` itself makes no assumption about whether multiple consumers are supported. ([GitHub](https://github.com/apple/swift-async-algorithms/blob/main/Evolution/0016-mutli-producer-single-consumer-channel.md "swift-async-algorithms/Evolution/0016-mutli-producer-single-consumer-channel.md at main · apple/swift-async-algorithms · GitHub"))
+`AsyncSequence` itself does not promise multicast behavior. Some sequences are single-consumer, some support multiple iterators, and behavior can be surprising. The Async Algorithms channel proposal explicitly notes that `AsyncSequence` itself makes no assumption about whether multiple consumers are supported. ([GitHub, "Multi-Producer, Single-Consumer Channel"](https://github.com/apple/swift-async-algorithms/blob/main/Evolution/0016-mutli-producer-single-consumer-channel.md))
 
 For app code, document this:
 
@@ -751,8 +751,8 @@ A: Creating a stream that starts resources but has no clear termination, cancell
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, section D10.
-- SE-0298: `AsyncSequence`, implemented in Swift 5.5; introduced async iteration over many values over time. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0298-asyncsequence.md "swift-evolution/proposals/0298-asyncsequence.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0314: `AsyncStream` and `AsyncThrowingStream`; bridge callback/delegate-style multi-value APIs into async contexts. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0314-async-stream.md "swift-evolution/proposals/0314-async-stream.md at main · swiftlang/swift-evolution · GitHub"))
-- Apple Developer Documentation: `AsyncStream`, `AsyncStream.Continuation`, buffering policy, and termination behavior. ([Apple Developer](https://developer.apple.com/documentation/swift/asyncstream?utm_source=chatgpt.com "AsyncStream | Apple Developer Documentation"))
-- Swift Async Algorithms: `AsyncChannel` and backpressure semantics. ([GitHub](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md "swift-async-algorithms/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md at main · apple/swift-async-algorithms · GitHub"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — section D10.
+- GitHub. "AsyncSequence." Swift Evolution SE-0298. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0298-asyncsequence.md
+- GitHub. "AsyncStream and AsyncThrowingStream." Swift Evolution SE-0314. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0314-async-stream.md
+- Apple Developer. "AsyncStream." Apple Developer Documentation. https://developer.apple.com/documentation/swift/asyncstream
+- GitHub. "Channel." apple/swift-async-algorithms. https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md

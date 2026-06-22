@@ -42,11 +42,11 @@ async function = ordinary-looking control flow that may suspend at explicit awai
 structured concurrency = child work cannot outlive the scope that created it
 ```
 
-An `async` function can start, reach an `await`, give up its thread, and later resume from the same logical point. Swift does **not** guarantee that it resumes on the same physical thread, unless actor isolation gives you an executor guarantee such as `@MainActor` or another actor. SE-0296 describes asynchronous functions as functions with the special ability to give up their thread and resume later; thread identity is intentionally not part of the high-level model. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0296-async-await.md "swift-evolution/proposals/0296-async-await.md at main · swiftlang/swift-evolution · GitHub"))
+An `async` function can start, reach an `await`, give up its thread, and later resume from the same logical point. Swift does **not** guarantee that it resumes on the same physical thread, unless actor isolation gives you an executor guarantee such as `@MainActor` or another actor. SE-0296 describes asynchronous functions as functions with the special ability to give up their thread and resume later; thread identity is intentionally not part of the high-level model. ([GitHub, "async/await"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0296-async-await.md))
 
-`await` marks a **potential suspension point**. It does not mean the function definitely suspends every time. It means the operation is allowed to suspend, and the caller must acknowledge that suspension could interrupt atomic-looking reasoning. SE-0296 explicitly says potential suspension points must be marked with `await` because suspension can break atomicity and allow other work to interleave. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0296-async-await.md "swift-evolution/proposals/0296-async-await.md at main · swiftlang/swift-evolution · GitHub"))
+`await` marks a **potential suspension point**. It does not mean the function definitely suspends every time. It means the operation is allowed to suspend, and the caller must acknowledge that suspension could interrupt atomic-looking reasoning. SE-0296 explicitly says potential suspension points must be marked with `await` because suspension can break atomicity and allow other work to interleave. ([GitHub, "async/await"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0296-async-await.md))
 
-Structured concurrency is about task shape. Child tasks created with `async let` or task groups form a task tree. Parent tasks cannot complete until their structured child tasks complete. Apple’s WWDC material describes this as a real hierarchy that affects cancellation, priority, and task-local values, not merely an implementation detail. ([Apple Developer](https://developer.apple.com/wwdc21/10134 "Explore structured concurrency in Swift - WWDC21 - Videos - Apple Developer"))
+Structured concurrency is about task shape. Child tasks created with `async let` or task groups form a task tree. Parent tasks cannot complete until their structured child tasks complete. Apple’s WWDC material describes this as a real hierarchy that affects cancellation, priority, and task-local values, not merely an implementation detail. ([Apple Developer, "Explore Structured Concurrency in Swift"](https://developer.apple.com/videos/play/wwdc2021/10134/))
 
 Concurrency is not the same as parallelism:
 
@@ -76,7 +76,7 @@ func loadScreen() async throws {
 }
 ```
 
-`async` is part of the function’s type, similar to `throws`. A synchronous function cannot simply call an async function because the async function may need to abandon its thread, while the synchronous caller has no suspension machinery. SE-0296 explains that blocking the entire thread to wait would defeat the purpose of async functions. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0296-async-await.md "swift-evolution/proposals/0296-async-await.md at main · swiftlang/swift-evolution · GitHub"))
+`async` is part of the function’s type, similar to `throws`. A synchronous function cannot simply call an async function because the async function may need to abandon its thread, while the synchronous caller has no suspension machinery. SE-0296 explains that blocking the entire thread to wait would defeat the purpose of async functions. ([GitHub, "async/await"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0296-async-await.md))
 
 Bad:
 
@@ -171,7 +171,7 @@ func loadProfile(id: User.ID) async throws -> Profile {
 
 Here, both operations can start concurrently because they are independent.
 
-The child tasks are scoped to `loadProfile`. The parent cannot return while these child tasks are still running. If exiting the scope early, Swift cancels unawaited structured child work and waits for it to finish. Apple describes this as a fundamental guarantee that prevents accidentally leaking tasks. ([Apple Developer](https://developer.apple.com/wwdc21/10134 "Explore structured concurrency in Swift - WWDC21 - Videos - Apple Developer"))
+The child tasks are scoped to `loadProfile`. The parent cannot return while these child tasks are still running. If exiting the scope early, Swift cancels unawaited structured child work and waits for it to finish. Apple describes this as a fundamental guarantee that prevents accidentally leaking tasks. ([Apple Developer, "Explore Structured Concurrency in Swift"](https://developer.apple.com/videos/play/wwdc2021/10134/))
 
 Use `async let` when:
 
@@ -206,7 +206,7 @@ task-local values
 debugging / tracing
 ```
 
-WWDC23 summarizes the model well: structured concurrency lets you reason about where execution branches off and rejoins, similar to how `if` and `for` structure synchronous control flow; structured tasks are created with `async let` and task groups, while `Task` and `Task.detached` are unstructured. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
+WWDC23 summarizes the model well: structured concurrency lets you reason about where execution branches off and rejoins, similar to how `if` and `for` structure synchronous control flow; structured tasks are created with `async let` and task groups, while `Task` and `Task.detached` are unstructured. ([Apple Developer, "Beyond the Basics of Structured Concurrency"](https://developer.apple.com/videos/play/wwdc2023/10170/))
 
 ---
 
@@ -883,8 +883,8 @@ A: For a small, fixed number of independent child operations that should complet
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — D1 Structured concurrency fundamentals.
-- Swift Evolution SE-0296 — `async` / `await`, suspension points, and why `await` marks possible suspension. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0296-async-await.md "swift-evolution/proposals/0296-async-await.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0304 — structured concurrency, task hierarchy, and async/await not introducing concurrency by itself. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md "swift-evolution/proposals/0304-structured-concurrency.md at main · swiftlang/swift-evolution · GitHub"))
-- Apple WWDC21 — task trees, child task lifetime, cancellation, and structured task cleanup. ([Apple Developer](https://developer.apple.com/wwdc21/10134 "Explore structured concurrency in Swift - WWDC21 - Videos - Apple Developer"))
-- Apple WWDC23 — task tree model, structured vs unstructured tasks, and why to prefer structured tasks. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2023/10170/ "Beyond the basics of structured concurrency - WWDC23 - Videos - Apple Developer"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D1 Structured concurrency fundamentals.
+- GitHub. "async/await." Swift Evolution SE-0296. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0296-async-await.md
+- GitHub. "Structured Concurrency." Swift Evolution SE-0304. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md
+- Apple Developer. "Explore Structured Concurrency in Swift." WWDC21. https://developer.apple.com/videos/play/wwdc2021/10134/
+- Apple Developer. "Beyond the Basics of Structured Concurrency." WWDC23. https://developer.apple.com/videos/play/wwdc2023/10170/

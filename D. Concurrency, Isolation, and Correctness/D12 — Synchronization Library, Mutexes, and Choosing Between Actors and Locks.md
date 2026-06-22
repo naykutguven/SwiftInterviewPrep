@@ -35,9 +35,9 @@ Locking can be the correct tool for tightly scoped shared mutable state, but onl
 
 Swift gives you several tools for avoiding data races. They do not solve the same problem.
 
-Actors protect mutable state by isolating it into a concurrency domain. Access from outside the actor is asynchronous and goes through actor isolation. Swift’s concurrency model guarantees that only code running on an actor can access that actor’s isolated state directly. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
+Actors protect mutable state by isolating it into a concurrency domain. Access from outside the actor is asynchronous and goes through actor isolation. Swift’s concurrency model guarantees that only code running on an actor can access that actor’s isolated state directly. ([Swift.org, "Concurrency"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/))
 
-A mutex protects mutable state by mutual exclusion. One execution context enters a critical section at a time. Swift 6 introduced the `Synchronization` library with low-level concurrency APIs, including atomics and a mutex API. ([Swift.org](https://swift.org/blog/announcing-swift-6/ "Announcing Swift 6 | Swift.org"))
+A mutex protects mutable state by mutual exclusion. One execution context enters a critical section at a time. Swift 6 introduced the `Synchronization` library with low-level concurrency APIs, including atomics and a mutex API. ([Swift.org, "Announcing Swift 6"](https://swift.org/blog/announcing-swift-6/))
 
 The key distinction:
 
@@ -65,7 +65,7 @@ The mistake is treating “make it thread-safe” as “put a lock around it.”
 
 ### 2.1 `Synchronization.Mutex` protects state, not arbitrary code
 
-Swift’s `Mutex` is a synchronization primitive that protects shared mutable state through mutual exclusion. SE-0433 introduced it as a standard-library synchronization primitive in the `Synchronization` module. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0433-mutex.md "swift-evolution/proposals/0433-mutex.md at main · swiftlang/swift-evolution · GitHub"))
+Swift’s `Mutex` is a synchronization primitive that protects shared mutable state through mutual exclusion. SE-0433 introduced it as a standard-library synchronization primitive in the `Synchronization` module. ([GitHub, "Synchronous Mutual Exclusion Lock"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0433-mutex.md))
 
 ```swift
 import Synchronization
@@ -93,7 +93,7 @@ Output:
 2
 ```
 
-The important design detail is `withLock`. The lock is acquired before the closure and released after the closure. Apple documents `withLock(_:)` as calling a closure after acquiring the lock and releasing ownership afterward. ([Apple Developer](https://developer.apple.com/documentation/synchronization/mutex/withlock%28_%3A%29?utm_source=chatgpt.com "withLock(_:) | Apple Developer Documentation"))
+The important design detail is `withLock`. The lock is acquired before the closure and released after the closure. Apple documents `withLock(_:)` as calling a closure after acquiring the lock and releasing ownership afterward. ([Apple Developer, "withLock(_:)"](https://developer.apple.com/documentation/synchronization/mutex/withlock%28_%3a%29))
 
 This is safer than manually calling `lock()` / `unlock()` because `defer`-style release is built into the API shape.
 
@@ -135,7 +135,7 @@ Compiler error with Swift 6.2:
 11 | }
 ```
 
-SE-0433 explicitly calls out that primitive `lock()` / `unlock()` operations are dangerous with `async` / `await`, because after a suspension, execution may resume on a different thread. The closure-based API keeps the critical section synchronous. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0433-mutex.md "swift-evolution/proposals/0433-mutex.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0433 explicitly calls out that primitive `lock()` / `unlock()` operations are dangerous with `async` / `await`, because after a suspension, execution may resume on a different thread. The closure-based API keeps the critical section synchronous. ([GitHub, "Synchronous Mutual Exclusion Lock"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0433-mutex.md))
 
 Correct shape:
 
@@ -925,8 +925,8 @@ A: It leaks mutable state and lets callers bypass or split invariants. The type 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, D12 section and study tier placement.
-- Swift.org — “Announcing Swift 6”: Swift 6 introduced the `Synchronization` library with low-level concurrency APIs, including atomics and mutexes. ([Swift.org](https://swift.org/blog/announcing-swift-6/ "Announcing Swift 6 | Swift.org"))
-- Swift Evolution SE-0433 — Synchronous Mutual Exclusion Lock: motivation, actor comparison, `Mutex` design, critical-section semantics, non-recursive warning, and async/await caveats. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0433-mutex.md "swift-evolution/proposals/0433-mutex.md at main · swiftlang/swift-evolution · GitHub"))
-- Apple Developer Documentation — `Synchronization.Mutex` and `withLock(_:)`. ([Apple Developer](https://developer.apple.com/documentation/Synchronization/Mutex?utm_source=chatgpt.com "Mutex | Apple Developer Documentation"))
-- The Swift Programming Language — Concurrency chapter: actor isolation guarantee. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D12 section and study tier placement.
+- Swift.org. "Announcing Swift 6." Swift.org Blog. https://swift.org/blog/announcing-swift-6/
+- GitHub. "Synchronous Mutual Exclusion Lock." Swift Evolution SE-0433. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0433-mutex.md
+- Apple Developer. "Mutex." Apple Developer Documentation. https://developer.apple.com/documentation/synchronization/mutex
+- Swift.org. "Concurrency." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/

@@ -16,7 +16,7 @@ Understand that actor methods can interleave at suspension points, and that acto
 
 **Caveats**
 
-Actors prevent low-level data races on actor-isolated mutable state, but they do **not** make a whole async method atomic. Swift Evolution SE-0306 states that actor-isolated functions are reentrant: when such a function suspends, other work may execute on the same actor before the original function resumes. It also explicitly warns that actor state can change across an `await`. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+Actors prevent low-level data races on actor-isolated mutable state, but they do **not** make a whole async method atomic. Swift Evolution SE-0306 states that actor-isolated functions are reentrant: when such a function suspends, other work may execute on the same actor before the original function resumes. It also explicitly warns that actor state can change across an `await`. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
 
 **You should be able to answer**
 
@@ -38,7 +38,7 @@ The important boundary is `await`.
 
 Before an `await`, your actor method has exclusive access to its isolated state. At the `await`, the method may suspend. While it is suspended, the actor is free to process other queued work. That other work can mutate the same actor-isolated state. When the original method resumes, all assumptions it made before the `await` may be stale.
 
-Swift Evolution describes this as **interleaving**: no two pieces of actor-isolated code execute at the exact same time on the same actor, but different partial executions may interleave at suspension points. This preserves the “single-threaded illusion” at the low level while still allowing high-level logic races. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+Swift Evolution describes this as **interleaving**: no two pieces of actor-isolated code execute at the exact same time on the same actor, but different partial executions may interleave at suspension points. This preserves the “single-threaded illusion” at the low level while still allowing high-level logic races. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
 
 The key idea:
 
@@ -56,7 +56,7 @@ Inside an actor:
 - code after await = must revalidate assumptions
 ```
 
-Apple’s WWDC actor guidance uses the cache/download example: checking a cache, awaiting a download, and then writing into the cache can be wrong because another task may have populated the cache while the first task was suspended. Apple’s suggested principle is to check assumptions after `await` and keep actor-state mutation in synchronous actor code where possible. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2021/10133/?utm_source=chatgpt.com "Protect mutable state with Swift actors - WWDC21 - Videos"))
+Apple’s WWDC actor guidance uses the cache/download example: checking a cache, awaiting a download, and then writing into the cache can be wrong because another task may have populated the cache while the first task was suspended. Apple’s suggested principle is to check assumptions after `await` and keep actor-state mutation in synchronous actor code where possible. ([Apple Developer, "Protect Mutable State with Swift Actors"](https://developer.apple.com/videos/play/wwdc2021/10133/))
 
 ---
 
@@ -135,7 +135,7 @@ No memory race occurs. The bug is a **logic race**.
 
 ### 2.3 Reentrancy is intentional, not an accident
 
-Non-reentrant actors sound simpler, but they can cause deadlocks and unnecessary blocking. SE-0306 explains that reentrancy avoids deadlocks where actors wait on each other, improves scheduling, and prevents one suspended call from blocking unrelated actor work. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
+Non-reentrant actors sound simpler, but they can cause deadlocks and unnecessary blocking. SE-0306 explains that reentrancy avoids deadlocks where actors wait on each other, improves scheduling, and prevents one suspended call from blocking unrelated actor work. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
 
 So the answer is not “Swift actors are broken.” The answer is:
 
@@ -778,7 +778,7 @@ A: Not generally. Strict concurrency catches many data-race and isolation violat
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric: D7 Actor reentrancy and logic races.
-- Swift Evolution SE-0306 — Actors: actor-isolated functions are reentrant, interleaving can occur at suspension points, and actor state can change across `await`. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0306-actors.md "swift-evolution/proposals/0306-actors.md at main · swiftlang/swift-evolution · GitHub"))
-- Apple WWDC21 — “Protect mutable state with Swift actors”: cache/download example, rechecking assumptions after `await`, and designing actor-state mutation carefully. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2021/10133/?utm_source=chatgpt.com "Protect mutable state with Swift actors - WWDC21 - Videos"))
-- The Swift Programming Language — Concurrency: asynchronous code can suspend and resume later. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
+- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D7 Actor reentrancy and logic races.
+- GitHub. "Actors." Swift Evolution SE-0306. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md
+- Apple Developer. "Protect Mutable State with Swift Actors." WWDC21. https://developer.apple.com/videos/play/wwdc2021/10133/
+- Swift.org. "Concurrency." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/
