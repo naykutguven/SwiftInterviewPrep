@@ -36,11 +36,11 @@ Understand how mutability is expressed for value and reference types, including 
 
 Swift’s mutability model is not “can this object change?” It is “does this operation require write access to this binding’s value?” That distinction is the entire topic.
 
-For a value type, such as a `struct` or `enum`, changing a stored property means changing the value itself. A method that does this must be marked `mutating`, because calling it requires write access to `self`. Swift’s official documentation describes `mutating` methods as opt-in behavior that lets a structure or enumeration modify its properties or even assign a new value to `self`. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/methods/?utm_source=chatgpt.com "Methods - Documentation - Swift Programming Language"))
+For a value type, such as a `struct` or `enum`, changing a stored property means changing the value itself. A method that does this must be marked `mutating`, because calling it requires write access to `self`. Swift’s official documentation describes `mutating` methods as opt-in behavior that lets a structure or enumeration modify its properties or even assign a new value to `self`. ([Swift.org, "Methods"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/methods/))
 
-For a class, the variable stores a reference to an object. Calling a method that changes the object’s stored properties does not change the reference stored in the local binding. This is why a class method does not need `mutating`. A `let` class binding freezes the reference, not the object behind the reference. Swift’s basics documentation defines constants as bindings whose value can’t be changed, while variables can be set to a different value later. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/TheBasics.html?utm_source=chatgpt.com "The Basics | Documentation - Swift Programming Language"))
+For a class, the variable stores a reference to an object. Calling a method that changes the object’s stored properties does not change the reference stored in the local binding. This is why a class method does not need `mutating`. A `let` class binding freezes the reference, not the object behind the reference. Swift’s basics documentation defines constants as bindings whose value can’t be changed, while variables can be set to a different value later. ([Swift.org, "The Basics"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/))
 
-A computed property setter is normally mutating for value types, because setting a property usually modifies `self`. But Swift allows an explicit `nonmutating set`. That says: “assigning this property does not require write access to the value itself.” It can still mutate something else, such as heap storage referenced by the value. Swift’s grammar explicitly allows mutation modifiers such as `mutating` and `nonmutating` on setters. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/summaryofthegrammar/?utm_source=chatgpt.com "Summary of the Grammar - Documentation"))
+A computed property setter is normally mutating for value types, because setting a property usually modifies `self`. But Swift allows an explicit `nonmutating set`. That says: “assigning this property does not require write access to the value itself.” It can still mutate something else, such as heap storage referenced by the value. Swift’s grammar explicitly allows mutation modifiers such as `mutating` and `nonmutating` on setters. ([Swift.org, "Summary of the Grammar"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/summaryofthegrammar/))
 
 The key idea:
 
@@ -196,7 +196,7 @@ final class FormController: Resettable {
 }
 ```
 
-The struct needs `mutating`. The class does not, because classes mutate through reference identity. Swift’s protocol documentation calls out `mutating` method requirements for methods that modify value-type instances. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols | Documentation - Swift Programming Language"))
+The struct needs `mutating`. The class does not, because classes mutate through reference identity. Swift’s protocol documentation calls out `mutating` method requirements for methods that modify value-type instances. ([Swift.org, "Protocols"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/))
 
 Protocols can also force awkward designs around setters:
 
@@ -210,7 +210,7 @@ This says conforming value types must allow setting `draft` without requiring mu
 
 ### Property wrappers can hide the same mechanism
 
-A property wrapper can synthesize backing storage for a property. Swift documentation states that wrapper storage is synthesized using an underscore-prefixed property, such as `_someProperty`. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/?utm_source=chatgpt.com "Attributes | Documentation - Swift Programming Language"))
+A property wrapper can synthesize backing storage for a property. Swift documentation states that wrapper storage is synthesized using an underscore-prefixed property, such as `_someProperty`. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
 
 A wrapper can also expose a `nonmutating` `wrappedValue` setter:
 
@@ -371,7 +371,7 @@ Does this still deserve to look like a value type?
 
 ### Trap 4: Accidentally breaking `Sendable`
 
-Apple defines `Sendable` as a protocol for thread-safe types whose values can be shared across concurrent contexts without introducing data races. ([Apple Developer](https://developer.apple.com/documentation/Swift/Sendable?utm_source=chatgpt.com "Sendable | Apple Developer Documentation"))
+Apple defines `Sendable` as a protocol for thread-safe types whose values can be shared across concurrent contexts without introducing data races. ([Apple Developer, "Sendable"](https://developer.apple.com/documentation/Swift/Sendable))
 
 This looks harmless:
 
@@ -438,7 +438,7 @@ Interview version:
 
 ### Q3. How can one mutable reference-typed stored property change a type’s `Sendable` story or make a synthesized conformance less meaningful?
 
-A value type with mutable reference storage may no longer be safely shareable across concurrency domains, because copying the value can still share the same mutable object. This can block `Sendable` synthesis or make explicit `Sendable` conformance invalid unless the reference storage is itself safely synchronized or immutable. Since `Sendable` is about safe cross-concurrency transfer, hidden mutable references are a serious design issue. ([Apple Developer](https://developer.apple.com/documentation/Swift/Sendable?utm_source=chatgpt.com "Sendable | Apple Developer Documentation"))
+A value type with mutable reference storage may no longer be safely shareable across concurrency domains, because copying the value can still share the same mutable object. This can block `Sendable` synthesis or make explicit `Sendable` conformance invalid unless the reference storage is itself safely synchronized or immutable. Since `Sendable` is about safe cross-concurrency transfer, hidden mutable references are a serious design issue. ([Apple Developer, "Sendable"](https://developer.apple.com/documentation/Swift/Sendable))
 
 It can also make synthesized conformances misleading. A struct may look value-semantic, but if equality, hashing, or encoding includes a reference-backed object, the synthesized behavior may reflect storage mechanics rather than domain semantics.
 
@@ -718,7 +718,7 @@ This is usually the better choice when the state is actually shared and mutable 
 
 ### SwiftUI-style justification
 
-SwiftUI’s `@State` is a real-world example of state stored outside the immediate view value. Apple describes `@State` as a single source of truth for a value stored in a view hierarchy and recommends declaring it private to avoid conflicting with SwiftUI’s storage management. ([Apple Developer](https://developer.apple.com/documentation/swiftui/state?utm_source=chatgpt.com "State | Apple Developer Documentation"))
+SwiftUI’s `@State` is a real-world example of state stored outside the immediate view value. Apple describes `@State` as a single source of truth for a value stored in a view hierarchy and recommends declaring it private to avoid conflicting with SwiftUI’s storage management. ([Apple Developer, "State"](https://developer.apple.com/documentation/swiftui/state))
 
 That is a valid reason to use non-obvious storage semantics: the framework owns the lifecycle and update model. In your own code, you need the same level of justification.
 
@@ -850,11 +850,11 @@ A: When the property is intentionally backed by external, shared, or framework-m
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist.
-- Swift.org Documentation — The Basics: constants and variables. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/TheBasics.html?utm_source=chatgpt.com "The Basics | Documentation - Swift Programming Language"))
-- Swift.org Documentation — Methods: mutating methods for value types. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/methods/?utm_source=chatgpt.com "Methods - Documentation - Swift Programming Language"))
-- Swift.org Documentation — Protocols: mutating method requirements. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols | Documentation - Swift Programming Language"))
-- Swift.org Documentation — Summary of the Grammar: setter mutation modifiers. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/summaryofthegrammar/?utm_source=chatgpt.com "Summary of the Grammar - Documentation"))
-- Swift.org Documentation — Attributes: property-wrapper synthesized storage. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/?utm_source=chatgpt.com "Attributes | Documentation - Swift Programming Language"))
-- Apple Developer Documentation — `Sendable`. ([Apple Developer](https://developer.apple.com/documentation/Swift/Sendable?utm_source=chatgpt.com "Sendable | Apple Developer Documentation"))
-- Apple Developer Documentation — SwiftUI `State`. ([Apple Developer](https://developer.apple.com/documentation/swiftui/state?utm_source=chatgpt.com "State | Apple Developer Documentation"))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist."
+- Swift.org. "The Basics." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/
+- Swift.org. "Methods." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/methods/
+- Swift.org. "Protocols." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+- Swift.org. "Summary of the Grammar." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/summaryofthegrammar/
+- Swift.org. "Attributes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/
+- Apple Developer. "Sendable." Apple Developer Documentation. https://developer.apple.com/documentation/Swift/Sendable
+- Apple Developer. "State." Apple Developer Documentation. https://developer.apple.com/documentation/swiftui/state

@@ -49,7 +49,7 @@ But the API surface also says:
 client.data(for: endpoint, cachePolicy: .reloadIgnoringLocalCacheData)
 ```
 
-That second part matters. Swift is designed around call-site clarity. A function call should usually read like a small phrase. Argument labels are how Swift encodes the role of arguments, especially when the argument type is weakly informative, such as `Bool`, `Int`, `String`, `Data`, or `URL`. The official API Design Guidelines explicitly prioritize clarity over brevity and recommend labels that describe argument roles rather than merely repeating type information. ([Swift.org](https://swift.org/documentation/api-design-guidelines/?utm_source=chatgpt.com "API Design Guidelines | Swift.org"))
+That second part matters. Swift is designed around call-site clarity. A function call should usually read like a small phrase. Argument labels are how Swift encodes the role of arguments, especially when the argument type is weakly informative, such as `Bool`, `Int`, `String`, `Data`, or `URL`. The official API Design Guidelines explicitly prioritize clarity over brevity and recommend labels that describe argument roles rather than merely repeating type information. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
 The key idea:
 
@@ -57,9 +57,9 @@ The key idea:
 A Swift function signature is a public sentence: labels explain roles, defaults express policy, and inout marks exclusive mutation.
 ```
 
-Default arguments are not overloads, although they can feel like overloads at the call site. They let one declaration support progressive disclosure: required semantic inputs first, less common customization later. The API Design Guidelines specifically prefer a single method with defaults over a family of nearly identical overloads, and recommend putting parameters with defaults toward the end. ([Swift.org](https://swift.org/documentation/api-design-guidelines/?utm_source=chatgpt.com "API Design Guidelines | Swift.org"))
+Default arguments are not overloads, although they can feel like overloads at the call site. They let one declaration support progressive disclosure: required semantic inputs first, less common customization later. The API Design Guidelines specifically prefer a single method with defaults over a family of nearly identical overloads, and recommend putting parameters with defaults toward the end. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
-`inout` is Swift’s controlled mutation escape hatch. The caller must write `&`, which makes mutation visible at the call site. During the call, Swift requires exclusive access to the modified storage; overlapping access is rejected or trapped because exclusivity is part of Swift’s memory-safety model. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/?utm_source=chatgpt.com "Memory Safety"))
+`inout` is Swift’s controlled mutation escape hatch. The caller must write `&`, which makes mutation visible at the call site. During the call, Swift requires exclusive access to the modified storage; overlapping access is rejected or trapped because exclusivity is part of Swift’s memory-safety model. ([Swift.org, "Memory Safety"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/))
 
 ---
 
@@ -81,7 +81,7 @@ move(from: oldURL, to: newURL)
     
 - `source` and `destination` are **parameter names** used inside the function body.
     
-- By default, Swift uses the parameter name as the argument label. The Swift book describes this as the standard model for function parameters. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/functions/?utm_source=chatgpt.com "Functions | Documentation - Swift Programming Language"))
+- By default, Swift uses the parameter name as the argument label. The Swift book describes this as the standard model for function parameters. ([Swift.org, "Functions"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/functions/))
     
 
 Use `_` only when the label adds no useful information:
@@ -156,7 +156,7 @@ let data = try await loadImage(
 
 Good defaults should represent stable, unsurprising behavior. They should not hide major policy decisions that product, security, privacy, or performance owners may want to audit.
 
-A serious library caveat: default argument expressions are emitted into the caller according to Swift ABI discussions, so changing a default can affect newly compiled clients differently from already compiled clients. ([Swift Forums](https://forums.swift.org/t/swift-abi-stability-manifesto/4987 "Swift ABI Stability Manifesto - Discussion - Swift Forums")) In practice: changing a public default is a semantic API change, even if the function declaration still compiles.
+A serious library caveat: default argument expressions are emitted into the caller according to Swift ABI discussions, so changing a default can affect newly compiled clients differently from already compiled clients. ([Swift Forums, "Swift ABI Stability Manifesto"](https://forums.swift.org/t/swift-abi-stability-manifesto/4987)) In practice: changing a public default is a semantic API change, even if the function declaration still compiles.
 
 ---
 
@@ -513,7 +513,7 @@ func search(
 
 ### Q1. Why are argument labels part of Swift API design rather than syntax decoration?
 
-Argument labels are part of the meaning of a Swift call. They describe the role of each argument at the use site, disambiguate weakly typed values, and make the call read naturally. The API Design Guidelines explicitly frame clarity at the point of use as more important than brevity. ([Swift.org](https://swift.org/documentation/api-design-guidelines/?utm_source=chatgpt.com "API Design Guidelines | Swift.org"))
+Argument labels are part of the meaning of a Swift call. They describe the role of each argument at the use site, disambiguate weakly typed values, and make the call read naturally. The API Design Guidelines explicitly frame clarity at the point of use as more important than brevity. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
 Labels are especially important for:
 
@@ -556,7 +556,7 @@ Interview version:
 
 ### Q2. What are the semantic pitfalls of changing a default parameter value in a library?
 
-Changing a default parameter value can silently change behavior for clients that recompile, while already compiled clients may continue using the old default because default argument expressions are emitted into the caller. ([Swift Forums](https://forums.swift.org/t/swift-abi-stability-manifesto/4987 "Swift ABI Stability Manifesto - Discussion - Swift Forums"))
+Changing a default parameter value can silently change behavior for clients that recompile, while already compiled clients may continue using the old default because default argument expressions are emitted into the caller. ([Swift Forums, "Swift ABI Stability Manifesto"](https://forums.swift.org/t/swift-abi-stability-manifesto/4987))
 
 That means this can be dangerous:
 
@@ -602,7 +602,7 @@ Interview version:
 
 ### Q3. Why is `inout` not plain pass-by-reference?
 
-`inout` gives a function temporary exclusive mutable access to caller-owned storage. The caller must mark the argument with `&`, and Swift enforces exclusivity so the same storage is not simultaneously read or modified in conflicting ways. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/?utm_source=chatgpt.com "Memory Safety"))
+`inout` gives a function temporary exclusive mutable access to caller-owned storage. The caller must mark the argument with `&`, and Swift enforces exclusivity so the same storage is not simultaneously read or modified in conflicting ways. ([Swift.org, "Memory Safety"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/))
 
 This is valid:
 
@@ -1116,11 +1116,11 @@ A: Positional primitive parameters hide meaning; labels or domain types should e
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — A7 section and caveats.
-- The Swift Programming Language — Functions. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/functions/?utm_source=chatgpt.com "Functions | Documentation - Swift Programming Language"))
-- Swift API Design Guidelines — clarity, parameter labels, defaults, and call-site fluency. ([Swift.org](https://swift.org/documentation/api-design-guidelines/?utm_source=chatgpt.com "API Design Guidelines | Swift.org"))
-- The Swift Programming Language — Memory Safety. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/?utm_source=chatgpt.com "Memory Safety"))
-- Swift compiler diagnostics — exclusivity violation. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/exclusivity-violation/?utm_source=chatgpt.com "Overlapping accesses, but operation requires exclusive ..."))
-- Swift ABI Stability Manifesto — default argument expressions emitted into the caller. ([Swift Forums](https://forums.swift.org/t/swift-abi-stability-manifesto/4987 "Swift ABI Stability Manifesto - Discussion - Swift Forums"))
-- SE-0279 — Multiple Trailing Closures; useful context for closure-heavy API surface design. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0279-multiple-trailing-closures.md "swift-evolution/proposals/0279-multiple-trailing-closures.md at main · swiftlang/swift-evolution · GitHub"))
-- SE-0411 — Isolated default value expressions; modern Swift concurrency interaction with default arguments. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0411-isolated-default-values.md "swift-evolution/proposals/0411-isolated-default-values.md at main · swiftlang/swift-evolution · GitHub"))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist." A7 section and caveats.
+- Swift.org. "Functions." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/functions/
+- Swift.org. "API Design Guidelines." Swift.org Documentation. https://swift.org/documentation/api-design-guidelines/
+- Swift.org. "Memory Safety." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/memorysafety/
+- Swift.org. "Exclusivity Violation." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/exclusivity-violation/
+- Swift Forums. "Swift ABI Stability Manifesto." https://forums.swift.org/t/swift-abi-stability-manifesto/4987
+- GitHub. "SE-0279: Multiple Trailing Closures." swift-evolution. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0279-multiple-trailing-closures.md
+- GitHub. "SE-0411: Isolated Default Value Expressions." swift-evolution. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0411-isolated-default-values.md

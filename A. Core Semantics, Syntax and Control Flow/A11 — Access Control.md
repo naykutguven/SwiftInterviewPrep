@@ -33,7 +33,7 @@ Understand `private`, `fileprivate`, `internal`, `package`, `public`, and `open`
 
 ## 1. Core mental model
 
-Access control is Swift’s compile-time mechanism for controlling **who is allowed to name, call, instantiate, subclass, override, or mutate** a declaration. It is not primarily about security. It is about API boundaries, encapsulation, build boundaries, and future change. Swift’s official documentation describes access control as a way to restrict access from other source files and modules, hide implementation details, and define a preferred interface. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/?utm_source=chatgpt.com "Access Control | Documentation - Swift Programming Language"))
+Access control is Swift’s compile-time mechanism for controlling **who is allowed to name, call, instantiate, subclass, override, or mutate** a declaration. It is not primarily about security. It is about API boundaries, encapsulation, build boundaries, and future change. Swift’s official documentation describes access control as a way to restrict access from other source files and modules, hide implementation details, and define a preferred interface. ([Swift.org, "Access Control"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/))
 
 The important boundaries are:
 
@@ -41,7 +41,7 @@ The important boundaries are:
 scope < file < module < package < external clients
 ```
 
-A **module** is usually a target: an app target, framework target, SwiftPM target, or test target. A **package** can contain multiple modules/targets. This is why `internal` and `package` are not the same: `internal` crosses files inside one module; `package` crosses modules inside one package. SE-0386 introduced `package` because package authors often had to make helper APIs `public` just so sibling targets could use them, accidentally exposing those helpers to external clients. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0386-package-access-modifier.md "swift-evolution/proposals/0386-package-access-modifier.md at main · swiftlang/swift-evolution · GitHub"))
+A **module** is usually a target: an app target, framework target, SwiftPM target, or test target. A **package** can contain multiple modules/targets. This is why `internal` and `package` are not the same: `internal` crosses files inside one module; `package` crosses modules inside one package. SE-0386 introduced `package` because package authors often had to make helper APIs `public` just so sibling targets could use them, accidentally exposing those helpers to external clients. ([GitHub, "SE-0386: Package Access Modifier"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0386-package-access-modifier.md))
 
 The access-control question is not “can I make this compile?” The senior/staff-level question is:
 
@@ -142,7 +142,7 @@ open class ImageLoader {
 }
 ```
 
-A class can be `open` while some of its methods remain merely `public`. This is common and useful: you may want clients to subclass a type but only override specific customization points. SE-0117 introduced `open` to distinguish public use from public overridability. ([GitHub](https://github.com/apple/swift-evolution/blob/master/proposals/0117-non-public-subclassable-by-default.md?utm_source=chatgpt.com "swift-evolution/proposals/0117-non-public-subclassable-by ..."))
+A class can be `open` while some of its methods remain merely `public`. This is common and useful: you may want clients to subclass a type but only override specific customization points. SE-0117 introduced `open` to distinguish public use from public overridability. ([GitHub, "SE-0117: Distinguishing Public Access and Public Overridability"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0117-non-public-subclassable-by-default.md))
 
 ---
 
@@ -188,7 +188,7 @@ let signer = RequestSigner()
 // Error: unavailable outside the package
 ```
 
-SE-0386 defines `package` as accessible from outside the defining module, but only from other modules in the same package. It also places `package` below `public`/`open` and above `internal`/`fileprivate`/`private` for signature accessibility rules. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0386-package-access-modifier.md "swift-evolution/proposals/0386-package-access-modifier.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0386 defines `package` as accessible from outside the defining module, but only from other modules in the same package. It also places `package` below `public`/`open` and above `internal`/`fileprivate`/`private` for signature accessibility rules. ([GitHub, "SE-0386: Package Access Modifier"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0386-package-access-modifier.md))
 
 ---
 
@@ -445,7 +445,7 @@ Interview version:
 
 `package` lets sibling modules inside the same Swift package share implementation APIs without exposing those APIs to external clients.
 
-Without `package`, developers often make helper declarations `public` because `internal` is only module-wide. That creates accidental public API. SE-0386’s motivation explicitly describes this problem: APIs needed by another module in the same package had to be public, which allowed clients outside the package to depend on APIs that were never meant for them. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0386-package-access-modifier.md "swift-evolution/proposals/0386-package-access-modifier.md at main · swiftlang/swift-evolution · GitHub"))
+Without `package`, developers often make helper declarations `public` because `internal` is only module-wide. That creates accidental public API. SE-0386’s motivation explicitly describes this problem: APIs needed by another module in the same package had to be public, which allowed clients outside the package to depend on APIs that were never meant for them. ([GitHub, "SE-0386: Package Access Modifier"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0386-package-access-modifier.md))
 
 Example:
 
@@ -959,7 +959,7 @@ A: Usually `package`, if the fixtures are shared across package test targets but
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — A11 Access Control.
-- Swift Documentation — Access Control. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/?utm_source=chatgpt.com "Access Control | Documentation - Swift Programming Language"))
-- Swift Evolution SE-0386 — `package` Access Modifier. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0386-package-access-modifier.md "swift-evolution/proposals/0386-package-access-modifier.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0117 — Distinguishing Public Access and Public Overridability. ([GitHub](https://github.com/apple/swift-evolution/blob/master/proposals/0117-non-public-subclassable-by-default.md?utm_source=chatgpt.com "swift-evolution/proposals/0117-non-public-subclassable-by ..."))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist." A11 Access Control.
+- Swift.org. "Access Control." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/
+- GitHub. "SE-0386: Package Access Modifier." swift-evolution. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0386-package-access-modifier.md
+- GitHub. "SE-0117: Distinguishing Public Access and Public Overridability." swift-evolution. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0117-non-public-subclassable-by-default.md

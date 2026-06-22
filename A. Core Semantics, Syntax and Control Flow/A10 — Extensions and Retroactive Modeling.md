@@ -15,7 +15,7 @@ Know how extensions organize behavior, add protocol conformances, and change dis
 
 **Caveats**
 
-Retroactive conformances are not local decoration. Once a module adds a conformance, that conformance becomes part of the program’s type system behavior for clients that import the module. Swift Evolution SE-0364 states that protocol conformances are globally unique within a process in the Swift runtime, and duplicate conformances can cause major problems for clients and library evolution. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md "swift-evolution/proposals/0364-retroactive-conformance-warning.md at main · swiftlang/swift-evolution · GitHub"))
+Retroactive conformances are not local decoration. Once a module adds a conformance, that conformance becomes part of the program’s type system behavior for clients that import the module. Swift Evolution SE-0364 states that protocol conformances are globally unique within a process in the Swift runtime, and duplicate conformances can cause major problems for clients and library evolution. ([GitHub, "SE-0364: Warning for Retroactive Conformances of External Types"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md))
 
 **You should be able to answer**
 
@@ -31,7 +31,7 @@ Retroactive conformances are not local decoration. Once a module adds a conforma
 
 ## 1. Core mental model
 
-An extension lets you attach behavior to an existing nominal type after the type’s original declaration. This is useful for organizing code by responsibility, adding protocol conformances, separating platform-specific behavior, and keeping public models readable. Swift’s language guide describes extensions as a way to add new functionality to existing types, including types whose original source you do not control. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/extensions/?utm_source=chatgpt.com "Extensions - Documentation | Swift.org"))
+An extension lets you attach behavior to an existing nominal type after the type’s original declaration. This is useful for organizing code by responsibility, adding protocol conformances, separating platform-specific behavior, and keeping public models readable. Swift’s language guide describes extensions as a way to add new functionality to existing types, including types whose original source you do not control. ([Swift.org, "Extensions"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/extensions/))
 
 The important point: extensions do **not** create a local “view” of a type. They modify what members or conformances are visible through normal Swift lookup in the module/import context. A method added through an extension is still a method on that type. A protocol conformance added through an extension is still a conformance of that type.
 
@@ -53,7 +53,7 @@ extension conformance = global semantic claim about a type
 retroactive conformance = global semantic claim made by a non-owner
 ```
 
-Swift guarantees that extension members and conformances are checked by the compiler. Swift does **not** guarantee that a conformance you add for someone else’s type to someone else’s protocol will remain compatible with future versions of those modules. SE-0364 exists because if the owning module later adds the same conformance, it is indeterminate which conformance “wins” before the duplicate is removed, and clients can observe broken behavior. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md "swift-evolution/proposals/0364-retroactive-conformance-warning.md at main · swiftlang/swift-evolution · GitHub"))
+Swift guarantees that extension members and conformances are checked by the compiler. Swift does **not** guarantee that a conformance you add for someone else’s type to someone else’s protocol will remain compatible with future versions of those modules. SE-0364 exists because if the owning module later adds the same conformance, it is indeterminate which conformance “wins” before the duplicate is removed, and clients can observe broken behavior. ([GitHub, "SE-0364: Warning for Retroactive Conformances of External Types"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md))
 
 ---
 
@@ -106,7 +106,7 @@ The better version makes the additional state explicit and avoids pretending tha
 
 ### Extensions can add protocol conformances
 
-You can add protocol conformance in an extension. Swift’s protocol documentation explicitly supports extending an existing type to adopt and conform to a new protocol, even when you do not have access to the original type’s source. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols | Documentation - Swift Programming Language"))
+You can add protocol conformance in an extension. Swift’s protocol documentation explicitly supports extending an existing type to adopt and conform to a new protocol, even when you do not have access to the original type’s source. ([Swift.org, "Protocols"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/))
 
 ```swift
 struct User {
@@ -176,13 +176,13 @@ extension Date: Identifiable {
 
 This compiles with a Swift 6 warning, because both `Date` and `Identifiable` come from external modules relative to your module.
 
-SE-0364 says the warning appears when the extended type and the protocol both come from different modules than the extension, with exceptions such as same-package conformances and Swift overlays. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md "swift-evolution/proposals/0364-retroactive-conformance-warning.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0364 says the warning appears when the extended type and the protocol both come from different modules than the extension, with exceptions such as same-package conformances and Swift overlays. ([GitHub, "SE-0364: Warning for Retroactive Conformances of External Types"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md))
 
 ---
 
 ### `@retroactive` acknowledges risk; it does not remove risk
 
-Swift 6 added a warning for retroactive conformances of external types. SE-0364 marks this proposal as implemented in Swift 6.0. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md "swift-evolution/proposals/0364-retroactive-conformance-warning.md at main · swiftlang/swift-evolution · GitHub"))
+Swift 6 added a warning for retroactive conformances of external types. SE-0364 marks this proposal as implemented in Swift 6.0. ([GitHub, "SE-0364: Warning for Retroactive Conformances of External Types"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md))
 
 ```swift
 import Foundation
@@ -199,7 +199,7 @@ I know this conformance is retroactive.
 I accept responsibility for future collisions.
 ```
 
-It is not a magic namespace. It does not make the conformance private. Swift does not support private protocol conformances; this is also why conformance extensions cannot have explicit access modifiers in the same way normal member-only extensions can. The Swift access-control documentation notes that an extension adding protocol conformance cannot provide an explicit access-level modifier; the protocol’s access level controls the default access level for protocol requirement implementations. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/?utm_source=chatgpt.com "Access Control | Documentation - Swift Programming Language"))
+It is not a magic namespace. It does not make the conformance private. Swift does not support private protocol conformances; this is also why conformance extensions cannot have explicit access modifiers in the same way normal member-only extensions can. The Swift access-control documentation notes that an extension adding protocol conformance cannot provide an explicit access-level modifier; the protocol’s access level controls the default access level for protocol requirement implementations. ([Swift.org, "Access Control"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/))
 
 ---
 
@@ -425,7 +425,7 @@ extension Date: Identifiable {
 }
 ```
 
-You own neither `Date` nor `Identifiable`. If Foundation later adds `Date: Identifiable` with a different `id`, your code and persisted data can break. SE-0364 uses this exact class of problem as motivation: a library adding `Date: Identifiable` can conflict with a future Foundation conformance and propagate the issue to every client importing that library. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md "swift-evolution/proposals/0364-retroactive-conformance-warning.md at main · swiftlang/swift-evolution · GitHub"))
+You own neither `Date` nor `Identifiable`. If Foundation later adds `Date: Identifiable` with a different `id`, your code and persisted data can break. SE-0364 uses this exact class of problem as motivation: a library adding `Date: Identifiable` can conflict with a future Foundation conformance and propagate the issue to every client importing that library. ([GitHub, "SE-0364: Warning for Retroactive Conformances of External Types"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md))
 
 Interview version:
 
@@ -514,7 +514,7 @@ Result:
 Your module declares a semantic relationship it does not own.
 ```
 
-SE-0364 says this warning is emitted when the type being extended and the protocol being conformed to are both declared in modules different from the extension’s module. It also says conformances of external types to protocols defined in the current module, and extensions of external types that do not introduce conformances, are still valid and allowed. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md "swift-evolution/proposals/0364-retroactive-conformance-warning.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0364 says this warning is emitted when the type being extended and the protocol being conformed to are both declared in modules different from the extension’s module. It also says conformances of external types to protocols defined in the current module, and extensions of external types that do not introduce conformances, are still valid and allowed. ([GitHub, "SE-0364: Warning for Retroactive Conformances of External Types"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md))
 
 ### Fix or redesign
 
@@ -836,8 +836,8 @@ A: Define an owned DTO or wrapper type that conforms to `Codable`, and map to/fr
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — A10 rubric entry.
-- Swift.org Documentation — Extensions. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/extensions/?utm_source=chatgpt.com "Extensions - Documentation | Swift.org"))
-- Swift.org Documentation — Protocols: adding protocol conformance with an extension. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols | Documentation - Swift Programming Language"))
-- Swift.org Documentation — Access Control: protocol-conformance extensions and access-level rules. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/?utm_source=chatgpt.com "Access Control | Documentation - Swift Programming Language"))
-- Swift Evolution SE-0364 — Warning for Retroactive Conformances of External Types. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md "swift-evolution/proposals/0364-retroactive-conformance-warning.md at main · swiftlang/swift-evolution · GitHub"))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist." A10 rubric entry.
+- Swift.org. "Extensions." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/extensions/
+- Swift.org. "Protocols." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+- Swift.org. "Access Control." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/
+- GitHub. "SE-0364: Warning for Retroactive Conformances of External Types." swift-evolution. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0364-retroactive-conformance-warning.md

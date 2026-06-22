@@ -22,7 +22,7 @@ Understand the semantic difference between copying a value and sharing identity;
 
 - `let` on a class freezes the reference binding, not the object’s internal mutable state.
 - Copy-on-write is an implementation/performance strategy, not the definition of value semantics.
-- `Array`, `Dictionary`, `Set`, and `String` usually behave like values while sharing storage internally until mutation. Apple’s `Array` documentation describes this directly: multiple copies can share storage until one copy is modified. ([Apple Developer](https://developer.apple.com/documentation/swift/array?utm_source=chatgpt.com "Array | Apple Developer Documentation"))
+- `Array`, `Dictionary`, `Set`, and `String` usually behave like values while sharing storage internally until mutation. Apple’s `Array` documentation describes this directly: multiple copies can share storage until one copy is modified. ([Apple Developer, "Array"](https://developer.apple.com/documentation/swift/array))
 
 **You should be able to answer**
 
@@ -45,11 +45,11 @@ Value semantics: assignment creates an independent logical value.
 Reference semantics: assignment copies a reference to the same identity.
 ```
 
-A `struct` or `enum` instance is a value. When you assign it to another variable, pass it to a function, or return it, Swift gives you a separate logical value. This does **not** mean Swift eagerly performs a deep physical copy of every byte. It means mutations through one variable should not be visible through another independent variable unless you deliberately store shared reference state inside the value. Swift’s language guide describes structures and enumerations as value types, copied when assigned or passed. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/?utm_source=chatgpt.com "Structures and Classes - Documentation"))
+A `struct` or `enum` instance is a value. When you assign it to another variable, pass it to a function, or return it, Swift gives you a separate logical value. This does **not** mean Swift eagerly performs a deep physical copy of every byte. It means mutations through one variable should not be visible through another independent variable unless you deliberately store shared reference state inside the value. Swift’s language guide describes structures and enumerations as value types, copied when assigned or passed. ([Swift.org, "Structures and Classes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/))
 
-A `class` instance has identity. Assignment copies the reference, not the object. Two variables can refer to the same instance, and mutating through either name mutates the same object. Swift provides `===` and `!==` specifically to test whether two class references point to the exact same instance. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/?utm_source=chatgpt.com "Structures and Classes - Documentation"))
+A `class` instance has identity. Assignment copies the reference, not the object. Two variables can refer to the same instance, and mutating through either name mutates the same object. Swift provides `===` and `!==` specifically to test whether two class references point to the exact same instance. ([Swift.org, "Structures and Classes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/))
 
-Copy-on-write is how Swift standard-library value types often make value semantics efficient. An `Array` variable may share a buffer with another `Array` variable after assignment. As long as nobody mutates, sharing is fine. When one copy mutates, the array checks whether the buffer is uniquely referenced; if not, it copies the buffer and then mutates the new buffer. The observable semantics stay value-like. ([Apple Developer](https://developer.apple.com/documentation/swift/array?utm_source=chatgpt.com "Array | Apple Developer Documentation"))
+Copy-on-write is how Swift standard-library value types often make value semantics efficient. An `Array` variable may share a buffer with another `Array` variable after assignment. As long as nobody mutates, sharing is fine. When one copy mutates, the array checks whether the buffer is uniquely referenced; if not, it copies the buffer and then mutates the new buffer. The observable semantics stay value-like. ([Apple Developer, "Array"](https://developer.apple.com/documentation/swift/array))
 
 The key idea:
 
@@ -132,7 +132,7 @@ print(a)         // [1, 2, 3]
 print(b)         // [1, 2, 3, 4]
 ```
 
-From your code’s point of view, `Array` behaves like a value. Internally, it may share storage until mutation. Apple documents this copy-on-write strategy for `Array`. ([Apple Developer](https://developer.apple.com/documentation/swift/array?utm_source=chatgpt.com "Array | Apple Developer Documentation"))
+From your code’s point of view, `Array` behaves like a value. Internally, it may share storage until mutation. Apple documents this copy-on-write strategy for `Array`. ([Apple Developer, "Array"](https://developer.apple.com/documentation/swift/array))
 
 This distinction matters for performance conversations. Saying “arrays copy on assignment” is semantically true but mechanically incomplete. A senior answer says: assignment creates an independent logical value; the actual buffer copy is commonly deferred until mutation.
 
@@ -266,7 +266,7 @@ Using `===` is fine for identity-sensitive infrastructure: object graphs, cache 
 
 `==` is domain-defined. For a `User`, it might mean same `id`. For a `Point`, it might mean same coordinates. For a `String`, it means same textual value. Not every type gets meaningful equality for free; types define or synthesize it according to their structure and semantics.
 
-`===` bypasses domain equality and asks about object identity. Swift only supports it for class instances. The Swift language guide documents identity operators for checking whether two constants or variables refer to exactly the same class instance. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/?utm_source=chatgpt.com "Structures and Classes - Documentation"))
+`===` bypasses domain equality and asks about object identity. Swift only supports it for class instances. The Swift language guide documents identity operators for checking whether two constants or variables refer to exactly the same class instance. ([Swift.org, "Structures and Classes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/))
 
 Using `===` is a design smell when the domain question is actually “are these equivalent?” or “do these represent the same entity?” It ties correctness to allocation and object lifetime rather than explicit model semantics.
 
@@ -278,7 +278,7 @@ Interview version:
 
 ### Q2. Why can `Array` usually behave like a value even though copying it may be cheap until mutation?
 
-Because `Array` uses copy-on-write. Assigning an array to another variable creates an independent logical value, but the underlying storage may be shared until one variable mutates. When mutation happens, the mutating array ensures it has unique storage before applying the change. Apple documents this exact behavior for `Array`: multiple copies share storage until one copy is modified. ([Apple Developer](https://developer.apple.com/documentation/swift/array?utm_source=chatgpt.com "Array | Apple Developer Documentation"))
+Because `Array` uses copy-on-write. Assigning an array to another variable creates an independent logical value, but the underlying storage may be shared until one variable mutates. When mutation happens, the mutating array ensures it has unique storage before applying the change. Apple documents this exact behavior for `Array`: multiple copies share storage until one copy is modified. ([Apple Developer, "Array"](https://developer.apple.com/documentation/swift/array))
 
 So this is safe and value-like:
 
@@ -708,7 +708,7 @@ A: Yes, if it stores shared mutable reference-type storage without implementing 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — A1 section and code probe.
-- Swift.org Documentation — Structures and Classes, including value/reference semantics and identity operators. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/?utm_source=chatgpt.com "Structures and Classes - Documentation"))
-- Apple Developer Documentation — `Array`, copy-on-write behavior. ([Apple Developer](https://developer.apple.com/documentation/swift/array?utm_source=chatgpt.com "Array | Apple Developer Documentation"))
-- Swift.org Documentation — Declarations, enumerations as value types. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations - Documentation | Swift.org"))
+- "Swift Senior/Staff Rubric." A1 section and code probe.
+- Swift.org. "Structures and Classes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/
+- Apple Developer. "Array." Apple Developer Documentation. https://developer.apple.com/documentation/swift/array
+- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/

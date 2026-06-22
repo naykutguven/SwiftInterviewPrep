@@ -26,11 +26,11 @@ Understand `defer` ordering, especially around `throw`, `return`, and nested sco
 
 ## 1. Core mental model
 
-`defer` registers synchronous cleanup work to run when execution leaves the **lexical scope** where the `defer` statement was reached. Swift’s language guide describes `defer` as code executed when leaving the current scope, and its error-handling section specifies that deferred actions execute in reverse source order. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/?utm_source=chatgpt.com "Control Flow - Documentation | Swift.org"))
+`defer` registers synchronous cleanup work to run when execution leaves the **lexical scope** where the `defer` statement was reached. Swift’s language guide describes `defer` as code executed when leaving the current scope, and its error-handling section specifies that deferred actions execute in reverse source order. ([Swift.org, "Control Flow"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/))
 
 The important word is **reached**. A `defer` statement does nothing until execution passes over it. If you return before reaching a `defer`, that cleanup is never registered.
 
-The second important word is **scope**. If a `defer` is inside a `do`, `if`, `for`, `while`, or `switch` case body, it runs when that inner scope exits, not necessarily when the whole function exits. Swift forum discussion clarifies this as Swift’s static lexical scope, not a dynamic “current function” scope like Go’s `defer`. ([Swift Forums](https://forums.swift.org/t/details-of-defer-statement-in-swift/4483?utm_source=chatgpt.com "Details of defer statement in Swift"))
+The second important word is **scope**. If a `defer` is inside a `do`, `if`, `for`, `while`, or `switch` case body, it runs when that inner scope exits, not necessarily when the whole function exits. Swift forum discussion clarifies this as Swift’s static lexical scope, not a dynamic “current function” scope like Go’s `defer`. ([Swift Forums, "Details of defer statement in Swift"](https://forums.swift.org/t/details-of-defer-statement-in-swift/4483))
 
 The key idea:
 
@@ -46,7 +46,7 @@ defer = register cleanup now; execute it synchronously when this exact scope exi
 
 ### 2.1 Multiple `defer` blocks run in reverse order
 
-Multiple `defer` blocks in the same scope execute like a stack: last registered, first executed. Swift’s documentation explicitly states that deferred actions run in reverse order. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/ErrorHandling.html?utm_source=chatgpt.com "Error Handling - Documentation | Swift.org"))
+Multiple `defer` blocks in the same scope execute like a stack: last registered, first executed. Swift’s documentation explicitly states that deferred actions run in reverse order. ([Swift.org, "Error Handling"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/errorhandling/))
 
 ```swift
 func example() {
@@ -83,7 +83,7 @@ defer { lockB.unlock() }
 
 ### 2.2 `defer` runs on normal return, early return, and `throw`
 
-Once a `defer` is reached, it runs when the scope exits, regardless of whether the scope exits normally, through `return`, or by throwing an error. The official docs describe this behavior in the context of cleanup actions. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/ErrorHandling.html?utm_source=chatgpt.com "Error Handling - Documentation | Swift.org"))
+Once a `defer` is reached, it runs when the scope exits, regardless of whether the scope exits normally, through `return`, or by throwing an error. The official docs describe this behavior in the context of cleanup actions. ([Swift.org, "Error Handling"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/errorhandling/))
 
 ```swift
 enum LoadError: Error {
@@ -194,7 +194,7 @@ Place `defer` **immediately after successful acquisition**, not before acquisiti
 
 ### 2.5 `defer` is synchronous and cannot transfer control out
 
-A `defer` body cannot contain `return`, `break`, `continue`, or throw an error out of the `defer` body. Swift’s docs state that deferred statements may not contain code that transfers control out of the statements, such as `break`, `return`, or throwing an error. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/ErrorHandling.html?utm_source=chatgpt.com "Error Handling - Documentation | Swift.org"))
+A `defer` body cannot contain `return`, `break`, `continue`, or throw an error out of the `defer` body. Swift’s docs state that deferred statements may not contain code that transfers control out of the statements, such as `break`, `return`, or throwing an error. ([Swift.org, "Error Handling"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/errorhandling/))
 
 Compiler probe:
 
@@ -407,7 +407,7 @@ For reference types, this can be more surprising because the returned value may 
 
 ### Q1. In what order do multiple `defer` blocks execute?
 
-Multiple `defer` blocks in the same scope execute in reverse order of registration: last in, first out. This mirrors resource cleanup: if you acquire A then B, B should usually be released before A. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/ErrorHandling.html?utm_source=chatgpt.com "Error Handling - Documentation | Swift.org"))
+Multiple `defer` blocks in the same scope execute in reverse order of registration: last in, first out. This mirrors resource cleanup: if you acquire A then B, B should usually be released before A. ([Swift.org, "Error Handling"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/errorhandling/))
 
 Interview version:
 
@@ -745,7 +745,7 @@ The operation is clearer as explicit do/catch/finalization.
 The deferred code hides important domain behavior.
 ```
 
-For locks, prefer scoped APIs when available. Apple’s `Synchronization.Mutex` provides exclusive access to protected state, and `withLock(_:)` calls a closure after acquiring the lock and then releases ownership. ([Apple Developer](https://developer.apple.com/documentation/Synchronization/Mutex?utm_source=chatgpt.com "Mutex | Apple Developer Documentation"))
+For locks, prefer scoped APIs when available. Apple’s `Synchronization.Mutex` provides exclusive access to protected state, and `withLock(_:)` calls a closure after acquiring the lock and then releases ownership. ([Apple Developer, "Mutex"](https://developer.apple.com/documentation/Synchronization/Mutex))
 
 Manual lock version:
 
@@ -881,8 +881,8 @@ A: Immediately after successful resource acquisition.
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric, A6 — `defer`, early exits, and cleanup semantics.
-- The Swift Programming Language — Control Flow / Deferred Actions. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/?utm_source=chatgpt.com "Control Flow - Documentation | Swift.org"))
-- The Swift Programming Language — Error Handling / Specifying Cleanup Actions. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/ErrorHandling.html?utm_source=chatgpt.com "Error Handling - Documentation | Swift.org"))
-- Swift Forums discussion clarifying static lexical scope behavior. ([Swift Forums](https://forums.swift.org/t/details-of-defer-statement-in-swift/4483?utm_source=chatgpt.com "Details of defer statement in Swift"))
-- Apple Developer Documentation — `Synchronization.Mutex` and `withLock(_:)`. ([Apple Developer](https://developer.apple.com/documentation/Synchronization/Mutex?utm_source=chatgpt.com "Mutex | Apple Developer Documentation"))
+- "Swift Senior/Staff Rubric." A6 `defer`, early exits, and cleanup semantics.
+- Swift.org. "Control Flow." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/
+- Swift.org. "Error Handling." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/errorhandling/
+- Swift Forums. "Details of defer statement in Swift." https://forums.swift.org/t/details-of-defer-statement-in-swift/4483
+- Apple Developer. "Mutex." Apple Developer Documentation. https://developer.apple.com/documentation/Synchronization/Mutex

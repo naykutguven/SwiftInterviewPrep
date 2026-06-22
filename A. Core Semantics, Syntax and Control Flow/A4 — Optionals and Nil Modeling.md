@@ -30,7 +30,7 @@ Force unwraps in infrastructure code often hide design problems. Nested optional
 
 ## 1. Core mental model
 
-`Optional<Wrapped>` is not magic storage. It is a type that represents one of two states: there is a wrapped value, or there is no value. In Swift’s model, `nil` is only valid for optional types; it is not a universal null pointer that can infect every reference. The Swift book describes optional values as values that either contain something or contain `nil` to indicate absence. ([docs.swift.org](https://docs.swift.org/swift-book/GuidedTour/GuidedTour.html?utm_source=chatgpt.com "A Swift Tour - Documentation"))
+`Optional<Wrapped>` is not magic storage. It is a type that represents one of two states: there is a wrapped value, or there is no value. In Swift’s model, `nil` is only valid for optional types; it is not a universal null pointer that can infect every reference. The Swift book describes optional values as values that either contain something or contain `nil` to indicate absence. ([Swift.org, "A Swift Tour"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/guidedtour/))
 
 Conceptually:
 
@@ -78,7 +78,7 @@ if case let value? = name {
 }
 ```
 
-That pattern matches `.some(value)`. The Swift reference describes optional patterns as matching values wrapped in the `.some(Wrapped)` case of `Optional<Wrapped>`. ([docs.swift.org](https://docs.swift.org/swift-book/ReferenceManual/Patterns.html?utm_source=chatgpt.com "Patterns | Documentation - Swift Programming Language"))
+That pattern matches `.some(value)`. The Swift reference describes optional patterns as matching values wrapped in the `.some(Wrapped)` case of `Optional<Wrapped>`. ([Swift.org, "Patterns"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/))
 
 ### Optional binding: `if let` vs `guard let`
 
@@ -115,7 +115,7 @@ Optional chaining lets you access members on an optional without manually unwrap
 let city = user.profile?.address?.city
 ```
 
-If any link in the chain is `nil`, the entire chain evaluates to `nil`. The Swift documentation describes optional chaining as querying or calling properties, methods, and subscripts on an optional that might be `nil`, where the chain fails gracefully if a link is missing. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/optionalchaining/?utm_source=chatgpt.com "Optional Chaining - Documentation - Swift.org"))
+If any link in the chain is `nil`, the entire chain evaluates to `nil`. The Swift documentation describes optional chaining as querying or calling properties, methods, and subscripts on an optional that might be `nil`, where the chain fails gracefully if a link is missing. ([Swift.org, "Optional Chaining"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/optionalchaining/))
 
 Important: optional chaining wraps the result in an optional even if the accessed member itself is non-optional.
 
@@ -377,7 +377,7 @@ let unsafe = service!.refresh()
 // runtime trap
 ```
 
-The deeper difference is semantic. Optional chaining models absence as part of the program’s control flow. Force unwrapping models non-nil as an invariant. The Swift book explicitly describes implicitly unwrapped optional access as having the same runtime failure behavior as force unwrapping a normal optional when it contains no value. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/TheBasics.html?utm_source=chatgpt.com "The Basics - Documentation | Swift.org"))
+The deeper difference is semantic. Optional chaining models absence as part of the program’s control flow. Force unwrapping models non-nil as an invariant. The Swift book explicitly describes implicitly unwrapped optional access as having the same runtime failure behavior as force unwrapping a normal optional when it contains no value. ([Swift.org, "The Basics"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/))
 
 Interview version:
 
@@ -916,7 +916,8 @@ A: Mostly for framework lifecycle or interop cases where the value cannot be ini
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist.
-- Swift Documentation — The Basics: optionals and implicitly unwrapped optionals. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/TheBasics.html?utm_source=chatgpt.com "The Basics - Documentation | Swift.org"))
-- Swift Documentation — Optional Chaining. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/optionalchaining/?utm_source=chatgpt.com "Optional Chaining - Documentation - Swift.org"))
-- Swift Reference Manual — Patterns: optional patterns. ([docs.swift.org](https://docs.swift.org/swift-book/ReferenceManual/Patterns.html?utm_source=chatgpt.com "Patterns | Documentation - Swift Programming Language"))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist."
+- Swift.org. "The Basics." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/
+- Swift.org. "Optional Chaining." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/optionalchaining/
+- Swift.org. "Patterns." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/
+- Swift.org. "A Swift Tour." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/guidedtour/

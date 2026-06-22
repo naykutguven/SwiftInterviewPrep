@@ -34,7 +34,7 @@ Know escaping vs nonescaping closures, capture behavior for value and reference 
 
 ## 1. Core mental model
 
-A closure is a callable reference that may carry an environment with it. That environment contains the values or variables the closure needs from the scope where it was created. Swift calls this “capturing values”: the closure can refer to constants and variables from the surrounding context, and it can keep those captured values alive after the original scope has ended. The Swift book explicitly describes closures as self-contained blocks that can capture and store references to surrounding constants and variables. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/Closures.md "raw.githubusercontent.com"))
+A closure is a callable reference that may carry an environment with it. That environment contains the values or variables the closure needs from the scope where it was created. Swift calls this “capturing values”: the closure can refer to constants and variables from the surrounding context, and it can keep those captured values alive after the original scope has ended. The Swift book explicitly describes closures as self-contained blocks that can capture and store references to surrounding constants and variables. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
 
 The dangerous part is not the `{ ... }` syntax. The dangerous part is lifetime. A nonescaping closure is guaranteed not to outlive the function call that receives it. An escaping closure may be stored, executed later, passed into async work, or retained by another object. Once a closure escapes, its captures can escape too.
 
@@ -44,9 +44,9 @@ The key idea:
 closure = callable code + captured environment + lifetime
 ```
 
-Closures are reference types. Assigning a closure to two variables does not copy independent closure state; both variables can refer to the same closure and the same captured storage. Swift’s closure documentation shows this with incrementer closures that share their captured running total. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/Closures.md "raw.githubusercontent.com"))
+Closures are reference types. Assigning a closure to two variables does not copy independent closure state; both variables can refer to the same closure and the same captured storage. Swift’s closure documentation shows this with incrementer closures that share their captured running total. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
 
-For value types, capture semantics depend on whether the closure captures a value snapshot or mutable storage. A closure that captures a mutable local variable captures storage so later calls observe mutations. The Swift book describes this as capturing a reference to local variables such as `runningTotal`, ensuring the variable remains available after the creating function returns. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/Closures.md "raw.githubusercontent.com"))
+For value types, capture semantics depend on whether the closure captures a value snapshot or mutable storage. A closure that captures a mutable local variable captures storage so later calls observe mutations. The Swift book describes this as capturing a reference to local variables such as `runningTotal`, ensuring the variable remains available after the creating function returns. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
 
 For class instances, capturing `self` strongly increments the reference count of the instance. If the instance also stores the closure, you get the classic cycle:
 
@@ -54,7 +54,7 @@ For class instances, capturing `self` strongly increments the reference count of
 object -> closure property -> closure -> object
 ```
 
-Swift’s ARC documentation explicitly describes strong reference cycles between a class instance and a closure assigned to one of its properties. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/AutomaticReferenceCounting.md "raw.githubusercontent.com"))
+Swift’s ARC documentation explicitly describes strong reference cycles between a class instance and a closure assigned to one of its properties. ([Swift.org, "Automatic Reference Counting"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/))
 
 ---
 
@@ -100,7 +100,7 @@ final class Loader {
 }
 ```
 
-The Swift book describes escaping closures as closures that are passed as arguments but called after the receiving function returns; storing a closure outside the function is the canonical example. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/Closures.md "raw.githubusercontent.com"))
+The Swift book describes escaping closures as closures that are passed as arguments but called after the receiving function returns; storing a closure outside the function is the canonical example. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
 
 ### Escaping closures make `self` capture explicit
 
@@ -120,7 +120,7 @@ final class ViewModel {
 }
 ```
 
-In an escaping closure, Swift requires explicit `self` when capturing a class instance. This is not cosmetic. It forces you to notice that the closure may keep the object alive. Swift’s documentation says explicit `self` expresses intent and reminds you to check for reference cycles. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/Closures.md "raw.githubusercontent.com"))
+In an escaping closure, Swift requires explicit `self` when capturing a class instance. This is not cosmetic. It forces you to notice that the closure may keep the object alive. Swift’s documentation says explicit `self` expresses intent and reminds you to check for reference cycles. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
 
 ### Capturing mutable locals captures storage
 
@@ -195,7 +195,7 @@ logIfNeeded(expensiveMessage(), enabled: false)
 
 `expensiveMessage()` is not evaluated unless `message()` is called.
 
-Swift’s documentation describes `@autoclosure` as automatically creating a no-argument closure around an expression, allowing delayed evaluation. It also warns that overuse can make code harder to understand because evaluation is deferred invisibly. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/Closures.md "raw.githubusercontent.com"))
+Swift’s documentation describes `@autoclosure` as automatically creating a no-argument closure around an expression, allowing delayed evaluation. It also warns that overuse can make code harder to understand because evaluation is deferred invisibly. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
 
 Use `@autoclosure` mainly for assertion-like APIs, lazy logging, and APIs where the function name makes deferred evaluation obvious.
 
@@ -271,7 +271,7 @@ final class HTMLElement {
 }
 ```
 
-Here, the closure is owned by the instance and is not expected to outlive it. Swift’s ARC documentation uses this kind of example for `unowned` closure captures. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/AutomaticReferenceCounting.md "raw.githubusercontent.com"))
+Here, the closure is owned by the instance and is not expected to outlive it. Swift’s ARC documentation uses this kind of example for `unowned` closure captures. ([Swift.org, "Automatic Reference Counting"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/))
 
 Risky candidate:
 
@@ -319,7 +319,7 @@ outerEscapingClosure {
 }
 ```
 
-The outer closure may still strongly capture `self`. Swift has diagnostics around implicit strong captures of weak capture list items in nested escaping closures because this pattern can unexpectedly extend lifetimes or create cycles. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/implicit-strong-capture/?utm_source=chatgpt.com "Implicit strong captures of weak capture list items ..."))
+The outer closure may still strongly capture `self`. Swift has diagnostics around implicit strong captures of weak capture list items in nested escaping closures because this pattern can unexpectedly extend lifetimes or create cycles. ([Swift.org, "Implicit Strong Capture"](https://docs.swift.org/compiler/documentation/diagnostics/implicit-strong-capture/))
 
 ---
 
@@ -374,7 +374,7 @@ lazy var descriptionProvider: () -> String = { [unowned self] in
 }
 ```
 
-Use `[unowned self]` only when the closure and object have tightly coupled lifetimes and the closure cannot be invoked after the object is gone. Swift’s ARC documentation says weak references are appropriate when the reference may become `nil`, while unowned references are appropriate when the closure and captured instance are expected to be deallocated together. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/AutomaticReferenceCounting.md "raw.githubusercontent.com"))
+Use `[unowned self]` only when the closure and object have tightly coupled lifetimes and the closure cannot be invoked after the object is gone. Swift’s ARC documentation says weak references are appropriate when the reference may become `nil`, while unowned references are appropriate when the closure and captured instance are expected to be deallocated together. ([Swift.org, "Automatic Reference Counting"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/))
 
 Interview version:
 
@@ -792,7 +792,7 @@ func run(_ operation: @escaping @Sendable () async -> Void) {
 }
 ```
 
-`@Sendable` is separate from `@escaping`, but they often appear together in async APIs. `@Sendable` closures can be called concurrently, so captured values must be safe to access across concurrency domains; Swift compiler diagnostics explicitly warn about unsafe captures in `@Sendable` closures. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/?utm_source=chatgpt.com "Captures in a `@Sendable` closure ..."))
+`@Sendable` is separate from `@escaping`, but they often appear together in async APIs. `@Sendable` closures can be called concurrently, so captured values must be safe to access across concurrency domains; Swift compiler diagnostics explicitly warn about unsafe captures in `@Sendable` closures. ([Swift.org, "Sendable Closure Captures"](https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/))
 
 ---
 
@@ -893,8 +893,8 @@ A: It automatically wraps an expression in a no-argument closure, delaying evalu
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — A8 closure expectations, caveats, exercise, and code probe.
-
-- Swift.org Documentation — Closures: capture behavior, escaping closures, explicit `self`, and `@autoclosure`. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/Closures.md "raw.githubusercontent.com"))
-- Swift.org Documentation — Automatic Reference Counting: closure reference cycles, capture lists, weak vs unowned. ([GitHub](https://raw.githubusercontent.com/swiftlang/swift-book/main/TSPL.docc/LanguageGuide/AutomaticReferenceCounting.md "raw.githubusercontent.com"))
-- Swift.org Compiler Diagnostics — `@Sendable` closure captures. ([docs.swift.org](https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/?utm_source=chatgpt.com "Captures in a `@Sendable` closure ..."))
+- "Swift Senior/Staff Rubric." A8 closure expectations, caveats, exercise, and code probe.
+- Swift.org. "Closures." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/
+- Swift.org. "Automatic Reference Counting." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/
+- Swift.org. "Sendable Closure Captures." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/
+- Swift.org. "Implicit Strong Capture." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/implicit-strong-capture/

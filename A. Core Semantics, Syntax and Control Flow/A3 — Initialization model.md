@@ -32,11 +32,11 @@ Know designated vs convenience initializers, two-phase initialization, memberwis
 
 ## 1. Core mental model
 
-Initialization is Swift’s proof that an instance starts life in a valid state. Before an instance can be used, every stored property must have a value, class inheritance must initialize each layer correctly, and no method or property access may observe a partially formed object. Swift’s safety model depends on “initialized before use,” which Apple also advertises as one of Swift’s safety properties. ([Apple Developer](https://developer.apple.com/swift/?utm_source=chatgpt.com "Swift - Apple Developer"))
+Initialization is Swift’s proof that an instance starts life in a valid state. Before an instance can be used, every stored property must have a value, class inheritance must initialize each layer correctly, and no method or property access may observe a partially formed object. Swift’s safety model depends on “initialized before use,” which Apple also advertises as one of Swift’s safety properties. ([Apple Developer, "Swift"](https://developer.apple.com/swift/))
 
-For structs and enums, initialization is mostly about assigning all stored properties before use. For classes, initialization is more complex because an instance is built across an inheritance chain. Swift class initialization is two-phase: first, every stored property in every class layer gets initialized; second, each layer may customize the fully initialized instance. Swift’s compiler performs safety checks for this model, including the rule that a designated initializer initializes its own stored properties before delegating to a superclass initializer. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization/?utm_source=chatgpt.com "Initialization - Documentation | Swift.org"))
+For structs and enums, initialization is mostly about assigning all stored properties before use. For classes, initialization is more complex because an instance is built across an inheritance chain. Swift class initialization is two-phase: first, every stored property in every class layer gets initialized; second, each layer may customize the fully initialized instance. Swift’s compiler performs safety checks for this model, including the rule that a designated initializer initializes its own stored properties before delegating to a superclass initializer. ([Swift.org, "Initialization"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization/))
 
-Designated initializers are the primary initialization paths for a class. Convenience initializers are secondary paths that must eventually delegate to a designated initializer in the same class. Convenience initializers cannot call superclass initializers directly; their job is to normalize arguments and funnel construction into the designated path. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations | Documentation - Swift Programming Language"))
+Designated initializers are the primary initialization paths for a class. Convenience initializers are secondary paths that must eventually delegate to a designated initializer in the same class. Convenience initializers cannot call superclass initializers directly; their job is to normalize arguments and funnel construction into the designated path. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
 
 The key idea:
 
@@ -129,7 +129,7 @@ The subclass must initialize `url` first because `url` belongs to `ImageResource
 
 ### Convenience initializers delegate sideways before touching state
 
-A convenience initializer is not allowed to partially initialize the class itself. It must call another initializer in the same class first, and that chain must eventually reach a designated initializer. Swift’s declarations documentation states that convenience initializers delegate to another convenience initializer or a designated initializer, and the process must end at a designated initializer. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations | Documentation - Swift Programming Language"))
+A convenience initializer is not allowed to partially initialize the class itself. It must call another initializer in the same class first, and that chain must eventually reach a designated initializer. Swift’s declarations documentation states that convenience initializers delegate to another convenience initializer or a designated initializer, and the process must end at a designated initializer. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
 
 ```swift
 final class Endpoint {
@@ -217,7 +217,7 @@ A static helper does not need an initialized instance, so it is safe.
 
 ### Memberwise initialization is synthesized for structs, with caveats
 
-Swift gives structures a memberwise initializer by default. Stored properties with default values can be omitted from the memberwise call. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization/?utm_source=chatgpt.com "Initialization - Documentation | Swift.org"))
+Swift gives structures a memberwise initializer by default. Stored properties with default values can be omitted from the memberwise call. ([Swift.org, "Initialization"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization/))
 
 ```swift
 struct Size {
@@ -275,7 +275,7 @@ let named = User(id: 1, name: "Aykut")
 let guest = User(id: 2)
 ```
 
-Also, access control matters. The synthesized memberwise initializer is `internal` by default unless private/file-private stored properties reduce its visibility; it is not automatically public for a public struct. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/?utm_source=chatgpt.com "Access Control | Documentation - Swift Programming Language"))
+Also, access control matters. The synthesized memberwise initializer is `internal` by default unless private/file-private stored properties reduce its visibility; it is not automatically public for a public struct. ([Swift.org, "Access Control"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/))
 
 ### Failable initializers model invalid construction
 
@@ -322,7 +322,7 @@ struct UserID {
 
 ### `required` propagates initializer obligations through subclasses
 
-A `required` initializer means every subclass must provide or inherit that initializer. This is common when a protocol requires an initializer on a non-final class. The Swift protocols documentation notes that a class implementation of a protocol initializer requirement is marked `required` so subclasses also satisfy the protocol. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols - Documentation | Swift.org"))
+A `required` initializer means every subclass must provide or inherit that initializer. This is common when a protocol requires an initializer on a non-final class. The Swift protocols documentation notes that a class implementation of a protocol initializer requirement is marked `required` so subclasses also satisfy the protocol. ([Swift.org, "Protocols"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/))
 
 ```swift
 protocol DecodableModel {
@@ -382,7 +382,7 @@ This differs from many Objective-C habits. In Swift, each class layer proves its
 
 ### Trap 2: Expecting `didSet` during initialization
 
-Property observers are not called when a variable or property is first initialized; they run when the value is set outside the initialization context. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations | Documentation - Swift Programming Language"))
+Property observers are not called when a variable or property is first initialized; they run when the value is set outside the initialization context. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
 
 ```swift
 final class UserProfile {
@@ -515,7 +515,7 @@ Interview version:
 
 ### Q2. When does Swift synthesize a memberwise initializer, and when does it disappear?
 
-Swift synthesizes a memberwise initializer for structs that do not define their own initializer in the main struct declaration. Stored properties become initializer parameters, and properties with defaults can be omitted. It disappears if you define a custom initializer inside the struct body. It remains available if you define custom initializers in an extension. Access control can also make it less visible than you expect. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization/?utm_source=chatgpt.com "Initialization - Documentation | Swift.org"))
+Swift synthesizes a memberwise initializer for structs that do not define their own initializer in the main struct declaration. Stored properties become initializer parameters, and properties with defaults can be omitted. It disappears if you define a custom initializer inside the struct body. It remains available if you define custom initializers in an extension. Access control can also make it less visible than you expect. ([Swift.org, "Initialization"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization/))
 
 Interview version:
 
@@ -938,9 +938,9 @@ A: They mirror stored properties, so storage changes can become source-breaking 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist.
-- Swift Programming Language — Initialization. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization/?utm_source=chatgpt.com "Initialization - Documentation | Swift.org"))
-- Swift Programming Language — Declarations. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations | Documentation - Swift Programming Language"))
-- Swift Programming Language — Access Control. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/?utm_source=chatgpt.com "Access Control | Documentation - Swift Programming Language"))
-- Swift Programming Language — Protocols. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols - Documentation | Swift.org"))
-- Swift Programming Language — Property observers in declarations. ([Swift Documentation](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations | Documentation - Swift Programming Language"))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist."
+- Swift.org. "Initialization." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/initialization/
+- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/
+- Swift.org. "Access Control." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/
+- Swift.org. "Protocols." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+- Apple Developer. "Swift." https://developer.apple.com/swift/

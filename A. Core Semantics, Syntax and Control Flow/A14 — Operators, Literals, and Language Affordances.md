@@ -34,7 +34,7 @@ Operators and literals are not “free expressiveness.” They change the langua
 
 Operators and literal conformances are **language affordances**: they let your own types participate in syntax that usually belongs to the language or the standard library.
 
-A custom operator lets you define a symbolic operation such as `+`, `<>`, `>>>`, or `&&&`. This can be useful when the operation has a widely understood domain meaning: vector addition, matrix multiplication, parser composition, predicate composition, bitmask operations, layout math, or functional composition. Swift supports custom operators and custom precedence behavior; custom infix operators belong to precedence groups that define how they associate and how tightly they bind relative to other operators. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/advancedoperators/?utm_source=chatgpt.com "Advanced Operators | Documentation"))
+A custom operator lets you define a symbolic operation such as `+`, `<>`, `>>>`, or `&&&`. This can be useful when the operation has a widely understood domain meaning: vector addition, matrix multiplication, parser composition, predicate composition, bitmask operations, layout math, or functional composition. Swift supports custom operators and custom precedence behavior; custom infix operators belong to precedence groups that define how they associate and how tightly they bind relative to other operators. ([Swift.org, "Advanced Operators"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/advancedoperators/))
 
 Literal protocols let your type be initialized from literal syntax:
 
@@ -44,7 +44,7 @@ let amount: Money = 100
 let route: Route = "/settings/profile"
 ```
 
-That can make call sites concise, but it is only safe when the literal syntax is **unambiguous, total, and unsurprising**. If a literal value can be invalid, a literal conformance usually becomes dangerous because literal initializers cannot express normal throwing or failable validation. Apple’s standard library documentation describes protocols such as `ExpressibleByStringLiteral` and `ExpressibleByIntegerLiteral` as ways for types to be initialized from corresponding literal syntax; for example, `String` and `StaticString` conform to `ExpressibleByStringLiteral`, and standard integer/floating-point types conform to `ExpressibleByIntegerLiteral`. ([Apple Developer](https://developer.apple.com/documentation/Swift/ExpressibleByStringLiteral?utm_source=chatgpt.com "ExpressibleByStringLiteral | Apple Developer Documentation"))
+That can make call sites concise, but it is only safe when the literal syntax is **unambiguous, total, and unsurprising**. If a literal value can be invalid, a literal conformance usually becomes dangerous because literal initializers cannot express normal throwing or failable validation. Apple’s standard library documentation describes protocols such as `ExpressibleByStringLiteral` and `ExpressibleByIntegerLiteral` as ways for types to be initialized from corresponding literal syntax; for example, `String` and `StaticString` conform to `ExpressibleByStringLiteral`, and standard integer/floating-point types conform to `ExpressibleByIntegerLiteral`. ([Apple Developer, "ExpressibleByStringLiteral"](https://developer.apple.com/documentation/Swift/ExpressibleByStringLiteral))
 
 The key idea:
 
@@ -359,7 +359,7 @@ Experiment assignment
 Anything with hidden side effects
 ```
 
-Swift’s API Design Guidelines put clarity at the point of use above brevity, and explicitly say clarity is more important than brevity. That principle is the main test for custom operators. ([Swift.org](https://swift.org/documentation/api-design-guidelines/ "API Design Guidelines | Swift.org"))
+Swift’s API Design Guidelines put clarity at the point of use above brevity, and explicitly say clarity is more important than brevity. That principle is the main test for custom operators. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
 Interview version:
 
@@ -724,9 +724,9 @@ A: It affects onboarding, code review, documentation, tooling, API stability, an
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — A14 rubric.    
-- The Swift Programming Language — Advanced Operators / custom operators and precedence groups. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/advancedoperators/?utm_source=chatgpt.com "Advanced Operators | Documentation"))
-- The Swift Programming Language — Basic Operators. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/basicoperators/?utm_source=chatgpt.com "Basic Operators - Documentation - Swift.org"))
-- Swift.org — API Design Guidelines, especially clarity at point of use and clarity over brevity. ([Swift.org](https://swift.org/documentation/api-design-guidelines/ "API Design Guidelines | Swift.org"))
-- Apple Developer Documentation — `ExpressibleByStringLiteral`. ([Apple Developer](https://developer.apple.com/documentation/Swift/ExpressibleByStringLiteral?utm_source=chatgpt.com "ExpressibleByStringLiteral | Apple Developer Documentation"))
-- Apple Developer Documentation — `ExpressibleByIntegerLiteral`. ([Apple Developer](https://developer.apple.com/documentation/swift/expressiblebyintegerliteral?utm_source=chatgpt.com "ExpressibleByIntegerLiteral"))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist." A14 rubric.
+- Swift.org. "Advanced Operators." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/advancedoperators/
+- Swift.org. "Basic Operators." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/basicoperators/
+- Swift.org. "API Design Guidelines." Swift.org Documentation. https://swift.org/documentation/api-design-guidelines/
+- Apple Developer. "ExpressibleByStringLiteral." Apple Developer Documentation. https://developer.apple.com/documentation/Swift/ExpressibleByStringLiteral
+- Apple Developer. "ExpressibleByIntegerLiteral." Apple Developer Documentation. https://developer.apple.com/documentation/swift/expressiblebyintegerliteral

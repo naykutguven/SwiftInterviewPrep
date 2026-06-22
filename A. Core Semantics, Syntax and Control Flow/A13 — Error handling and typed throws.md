@@ -39,7 +39,7 @@ normal return: Output
 error return:  Error type
 ```
 
-Historically, Swift’s thrown error type was always type-erased to `any Error`; SE-0413 added the ability to specify that a function or closure only throws a particular concrete error type, implemented in Swift 6.0. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md "swift-evolution/proposals/0413-typed-throws.md at main · swiftlang/swift-evolution · GitHub"))
+Historically, Swift’s thrown error type was always type-erased to `any Error`; SE-0413 added the ability to specify that a function or closure only throws a particular concrete error type, implemented in Swift 6.0. ([GitHub, "SE-0413: Typed Throws"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md))
 
 The modern model is:
 
@@ -62,7 +62,7 @@ throws(E) makes the error path part of the function type.
 
 This gives the compiler more information. A caller of `throws(LoginError)` knows that the error path is `LoginError`, not an arbitrary `any Error`. That helps when the caller can meaningfully handle every case, especially inside a module, package, parser, validation layer, or generic algorithm.
 
-But the type is also an API promise. If a public SDK says `throws(NetworkError)`, changing that to `throws(AuthError)`, `throws(any Error)`, or a wrapper error later affects source compatibility. Swift Evolution explicitly notes that typed throws constrain implementation evolution and that untyped `throws` remains a good default for most code. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md "swift-evolution/proposals/0413-typed-throws.md at main · swiftlang/swift-evolution · GitHub"))
+But the type is also an API promise. If a public SDK says `throws(NetworkError)`, changing that to `throws(AuthError)`, `throws(any Error)`, or a wrapper error later affects source compatibility. Swift Evolution explicitly notes that typed throws constrain implementation evolution and that untyped `throws` remains a good default for most code. ([GitHub, "SE-0413: Typed Throws"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md))
 
 Use typed throws when the failure domain is stable and meaningful to clients. Use untyped `throws` when errors are mostly propagated, logged, rendered to the user, or sourced from dependencies that may change. Use `Result` when success/failure must be stored, passed around, combined, or delivered through callback-like boundaries rather than immediately propagated.
 
@@ -120,7 +120,7 @@ a13_bad.swift:5:24: error: thrown expression type 'NetworkError' cannot be conve
 
 ### 2.2 `throws(any Error)` and `throws(Never)`
 
-SE-0413 defines untyped `throws` as equivalent to `throws(any Error)`, and `throws(Never)` as equivalent to a non-throwing function. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md "swift-evolution/proposals/0413-typed-throws.md at main · swiftlang/swift-evolution · GitHub"))
+SE-0413 defines untyped `throws` as equivalent to `throws(any Error)`, and `throws(Never)` as equivalent to a non-throwing function. ([GitHub, "SE-0413: Typed Throws"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md))
 
 ```swift
 func canThrowAnything() throws(any Error) {
@@ -208,7 +208,7 @@ let doubled = [1, 2, 3].oldTransformed { $0 * 2 }
 
 But `rethrows` is untyped. It expresses “when this throws,” not precisely “what this throws.”
 
-Typed throws can express many rethrowing algorithms more precisely by carrying a generic error type through the closure and the outer function. SE-0413 uses `map` as the canonical example: the operation directly throws the same error as the body; for non-throwing closures, the error type becomes `Never`; for untyped throwing closures, it becomes `any Error`. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md "swift-evolution/proposals/0413-typed-throws.md at main · swiftlang/swift-evolution · GitHub"))
+Typed throws can express many rethrowing algorithms more precisely by carrying a generic error type through the closure and the outer function. SE-0413 uses `map` as the canonical example: the operation directly throws the same error as the body; for non-throwing closures, the error type becomes `Never`; for untyped throwing closures, it becomes `any Error`. ([GitHub, "SE-0413: Typed Throws"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md))
 
 ---
 
@@ -280,7 +280,7 @@ public func fetchFeed() async throws -> Feed
 
 ### Trap 3: Assuming typed throws gives exhaustive `catch` over enum cases
 
-This is subtle. Even with typed throws, Swift’s `do/catch` exhaustiveness is not the same as `switch` exhaustiveness. SE-0413 notes that unconditional `catch` is what makes a `do/catch` exhaustive; type-pattern catches alone do not prove exhaustiveness. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md "swift-evolution/proposals/0413-typed-throws.md at main · swiftlang/swift-evolution · GitHub"))
+This is subtle. Even with typed throws, Swift’s `do/catch` exhaustiveness is not the same as `switch` exhaustiveness. SE-0413 notes that unconditional `catch` is what makes a `do/catch` exhaustive; type-pattern catches alone do not prove exhaustiveness. ([GitHub, "SE-0413: Typed Throws"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md))
 
 Prefer:
 
@@ -405,7 +405,7 @@ func transformed<Output, Failure: Error>(
 
 The typed version preserves the transform’s error type. If the transform throws `ValidationError`, the outer function throws `ValidationError`. If the transform is non-throwing, the outer function is effectively non-throwing.
 
-But typed throws cannot represent every `rethrows` design. If the outer function catches the closure’s error and substitutes a different error type, then it no longer throws the same `Failure`. SE-0413 explicitly calls this out: typed throws models direct propagation well, but not error substitution in the same way. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md "swift-evolution/proposals/0413-typed-throws.md at main · swiftlang/swift-evolution · GitHub"))
+But typed throws cannot represent every `rethrows` design. If the outer function catches the closure’s error and substitutes a different error type, then it no longer throws the same `Failure`. SE-0413 explicitly calls this out: typed throws models direct propagation well, but not error substitution in the same way. ([GitHub, "SE-0413: Typed Throws"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md))
 
 Interview version:
 
@@ -851,8 +851,7 @@ A: Use an unconditional `catch`, then `switch error` inside the catch.
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — A13 Error handling and typed throws.
-- Swift Evolution SE-0413 — Typed throws; implemented in Swift 6.0; introduces concrete thrown error types. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md "swift-evolution/proposals/0413-typed-throws.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift Evolution SE-0413 — `throws(any Error)`, `throws(Never)`, typed propagation, and `map`-style generic typed throws. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md "swift-evolution/proposals/0413-typed-throws.md at main · swiftlang/swift-evolution · GitHub"))
-- Swift.org — The Swift Programming Language, Error Handling. ([docs.swift.org](https://docs.swift.org/swift-book/LanguageGuide/ErrorHandling.html?utm_source=chatgpt.com "Error Handling - Documentation | Swift.org"))
-- Apple Developer Documentation — `Result`. ([developer.apple.com](https://developer.apple.com/documentation/swift/result?utm_source=chatgpt.com "Result | Apple Developer Documentation"))
+- "Swift Senior/Staff Rubric." A13 Error handling and typed throws.
+- GitHub. "SE-0413: Typed Throws." swift-evolution. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0413-typed-throws.md
+- Swift.org. "Error Handling." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/errorhandling/
+- Apple Developer. "Result." Apple Developer Documentation. https://developer.apple.com/documentation/swift/result

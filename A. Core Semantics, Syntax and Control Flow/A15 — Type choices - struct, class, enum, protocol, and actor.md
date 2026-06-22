@@ -31,15 +31,15 @@ Reaching for classes or protocols by default usually adds incidental complexity.
 
 Swift type choice is not about syntax preference. It is about choosing the semantic contract that matches the problem.
 
-A `struct` says: “this is a value.” Copies should behave independently, equality is usually structural or domain-defined, and mutation should affect only the value being mutated. Swift’s official documentation defines structures and enumerations as value types, while classes are reference types that are not copied when assigned or passed around. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/?utm_source=chatgpt.com "Structures and Classes - Documentation"))
+A `struct` says: “this is a value.” Copies should behave independently, equality is usually structural or domain-defined, and mutation should affect only the value being mutated. Swift’s official documentation defines structures and enumerations as value types, while classes are reference types that are not copied when assigned or passed around. ([Swift.org, "Structures and Classes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/))
 
-An `enum` says: “this value is one of a closed set of states.” It is best when the domain has mutually exclusive cases, especially when each case needs different associated data. Swift enums model a group of related values in a type-safe way, and associated values can vary by case. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/?utm_source=chatgpt.com "Enumerations | Documentation - Swift Programming Language"))
+An `enum` says: “this value is one of a closed set of states.” It is best when the domain has mutually exclusive cases, especially when each case needs different associated data. Swift enums model a group of related values in a type-safe way, and associated values can vary by case. ([Swift.org, "Enumerations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/))
 
 A `class` says: “this object has identity and shared lifetime.” Two references can point to the same instance. Mutation through one reference is visible through another. That is powerful, but it creates aliasing, ARC lifetime, retain-cycle, and concurrency questions.
 
-A `protocol` says: “this is a capability boundary.” It should model behavior that multiple concrete types can provide, not become a default substitute for every type. Swift protocols define a blueprint of methods, properties, and requirements for a task or piece of functionality. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols - Documentation | Swift.org"))
+A `protocol` says: “this is a capability boundary.” It should model behavior that multiple concrete types can provide, not become a default substitute for every type. Swift protocols define a blueprint of methods, properties, and requirements for a task or piece of functionality. ([Swift.org, "Protocols"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/))
 
-An `actor` says: “this is shared mutable state protected by actor isolation.” Swift guarantees that only code running on an actor can access that actor’s local state directly; crossing the actor boundary requires asynchronous access. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
+An `actor` says: “this is shared mutable state protected by actor isolation.” Swift guarantees that only code running on an actor can access that actor’s local state directly; crossing the actor boundary requires asynchronous access. ([Swift.org, "Concurrency"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/))
 
 The key idea:
 
@@ -892,11 +892,11 @@ A: It introduces reference aliasing, ARC lifetime issues, retain-cycle risk, and
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — A15 type choices.
-- Swift.org, _Structures and Classes_ — value types and reference types. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/?utm_source=chatgpt.com "Structures and Classes - Documentation"))
-- Swift.org, _Enumerations_ — finite groups of related values and associated values. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/?utm_source=chatgpt.com "Enumerations | Documentation - Swift Programming Language"))
-- Swift.org, _Protocols_ — protocols as blueprints of requirements. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/?utm_source=chatgpt.com "Protocols - Documentation | Swift.org"))
-- Swift.org, _Concurrency_ — actor isolation and actor-local state. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/?utm_source=chatgpt.com "Concurrency - Documentation | Swift.org"))
-- Swift compiler diagnostics — actor-isolated calls and data-race risk. ([Swift Belgeleri](https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/?utm_source=chatgpt.com "Calling an actor-isolated method from a synchronous ..."))
-- Apple Developer Documentation, `Sendable` — values may have no shared mutable state or protect it through synchronization/actor isolation. ([developer.apple.com](https://developer.apple.com/documentation/Swift/Sendable?utm_source=chatgpt.com "Sendable | Apple Developer Documentation"))
-- Swift.org, _API Design Guidelines_ — clarity at the point of use. ([swift.org](https://swift.org/documentation/api-design-guidelines/?utm_source=chatgpt.com "API Design Guidelines"))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist." A15 type choices.
+- Swift.org. "Structures and Classes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/
+- Swift.org. "Enumerations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/
+- Swift.org. "Protocols." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/protocols/
+- Swift.org. "Concurrency." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/
+- Swift.org. "Actor-Isolated Call." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/actor-isolated-call/
+- Apple Developer. "Sendable." Apple Developer Documentation. https://developer.apple.com/documentation/Swift/Sendable
+- Swift.org. "API Design Guidelines." Swift.org Documentation. https://swift.org/documentation/api-design-guidelines/

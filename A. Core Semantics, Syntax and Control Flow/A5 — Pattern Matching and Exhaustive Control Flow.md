@@ -49,9 +49,9 @@ patterns destructure the matching shape.
 where refines a matching shape with a Boolean condition.
 ```
 
-Swift patterns are used in `switch` cases, `catch` clauses, and `if`, `while`, `guard`, and `for-in` case conditions. The Swift reference lists enum-case patterns, optional patterns, expression patterns, and type-casting patterns among the forms used for full pattern matching. ([docs.swift.org](https://docs.swift.org/swift-book/ReferenceManual/Patterns.html?utm_source=chatgpt.com "Patterns - Documentation | Swift.org"))
+Swift patterns are used in `switch` cases, `catch` clauses, and `if`, `while`, `guard`, and `for-in` case conditions. The Swift reference lists enum-case patterns, optional patterns, expression patterns, and type-casting patterns among the forms used for full pattern matching. ([Swift.org, "Patterns"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/))
 
-`if case` and `guard case` are for matching one interesting shape without writing a full `switch`. Swift’s documentation describes `if case` as using the same patterns you can write in a `switch` case. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/?utm_source=chatgpt.com "Control Flow | Documentation - Swift Programming Language"))
+`if case` and `guard case` are for matching one interesting shape without writing a full `switch`. Swift’s documentation describes `if case` as using the same patterns you can write in a `switch` case. ([Swift.org, "Control Flow"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/))
 
 ---
 
@@ -201,9 +201,9 @@ Tuple matching is good when the combined state is truly cross-product logic. If 
 
 ### 2.5 `@unknown default` is for non-frozen external enums
 
-External framework enums may gain new cases in future SDKs. SE-0192 introduced the frozen versus non-frozen enum distinction to let libraries add cases without breaking source compatibility for clients; the proposal specifically says adding a case to a non-frozen enum is source-compatible. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md "swift-evolution/proposals/0192-non-exhaustive-enums.md at main · swiftlang/swift-evolution · GitHub"))
+External framework enums may gain new cases in future SDKs. SE-0192 introduced the frozen versus non-frozen enum distinction to let libraries add cases without breaking source compatibility for clients; the proposal specifically says adding a case to a non-frozen enum is source-compatible. ([GitHub, "SE-0192: Handling Future Enum Cases"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md))
 
-Swift’s statement reference says that when switching over a nonfrozen enum, you need a default-like catch-all, and `@unknown default` indicates the branch is meant only for cases added in the future; Swift warns if it matches any case known at compile time. ([docs.swift.org](https://docs.swift.org/swift-book/ReferenceManual/Statements.html?utm_source=chatgpt.com "Statements | Documentation - Swift Programming Language"))
+Swift’s statement reference says that when switching over a nonfrozen enum, you need a default-like catch-all, and `@unknown default` indicates the branch is meant only for cases added in the future; Swift warns if it matches any case known at compile time. ([Swift.org, "Statements"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/statements/))
 
 Example shape:
 
@@ -379,7 +379,7 @@ Swift does not implicitly fall through from one `case` to the next. If you are r
 
 `@unknown default` preserves compiler help when an external enum grows new cases. Plain `default` swallows both future cases and currently unhandled known cases. `@unknown default` says: “I handled all cases I know about; this branch exists only for cases this compiler does not know about yet.”
 
-For SDK enums, this matters because Apple or another framework author may add cases in a future SDK. With plain `default`, your code may keep compiling while applying an inappropriate fallback to a new meaningful case. With `@unknown default`, Swift can warn you when a newly known case is not handled explicitly. SE-0192 exists specifically to support future enum cases while preserving exhaustiveness checking as much as possible. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md "swift-evolution/proposals/0192-non-exhaustive-enums.md at main · swiftlang/swift-evolution · GitHub"))
+For SDK enums, this matters because Apple or another framework author may add cases in a future SDK. With plain `default`, your code may keep compiling while applying an inappropriate fallback to a new meaningful case. With `@unknown default`, Swift can warn you when a newly known case is not handled explicitly. SE-0192 exists specifically to support future enum cases while preserving exhaustiveness checking as much as possible. ([GitHub, "SE-0192: Handling Future Enum Cases"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md))
 
 Interview version:
 
@@ -835,8 +835,8 @@ A: They make domain evolution safer because adding a new enum case forces all re
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — A5 pattern matching and exhaustive control flow.
-- Swift Documentation — Control Flow. ([docs.swift.org](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/?utm_source=chatgpt.com "Control Flow | Documentation - Swift Programming Language"))
-- Swift Documentation — Patterns. ([docs.swift.org](https://docs.swift.org/swift-book/ReferenceManual/Patterns.html?utm_source=chatgpt.com "Patterns - Documentation | Swift.org"))
-- Swift Documentation — Statements / `@unknown default`. ([docs.swift.org](https://docs.swift.org/swift-book/ReferenceManual/Statements.html?utm_source=chatgpt.com "Statements | Documentation - Swift Programming Language"))
-- Swift Evolution SE-0192 — Handling Future Enum Cases. ([GitHub](https://github.com/apple/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md "swift-evolution/proposals/0192-non-exhaustive-enums.md at main · swiftlang/swift-evolution · GitHub"))
+- "Swift Senior/Staff Rubric." A5 pattern matching and exhaustive control flow.
+- Swift.org. "Control Flow." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/controlflow/
+- Swift.org. "Patterns." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/
+- Swift.org. "Statements." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/statements/
+- GitHub. "SE-0192: Handling Future Enum Cases." swift-evolution. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md

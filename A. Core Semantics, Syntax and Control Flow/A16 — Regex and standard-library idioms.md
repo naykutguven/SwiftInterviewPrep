@@ -39,7 +39,7 @@ Swift gives you two major tools for everyday data transformation:
 
 The point is not to replace all loops. The point is to avoid writing custom control flow when the standard library already has a name for the operation you mean. `map` means “transform every element.” `compactMap` means “transform and discard failures.” `reduce(into:)` means “accumulate into mutable state.” `first(where:)` means “find the first matching element.” These names encode intent better than low-level loop mechanics.
 
-Swift Regex is a first-class Swift value. You can create it from regex syntax, including literals, or with `RegexBuilder` for a more structured DSL. Apple’s `Regex` documentation describes regular expressions as concise patterns that match or extract portions of strings, and shows construction from both literals and strings. ([Apple Developer](https://developer.apple.com/documentation/swift/regex?utm_source=chatgpt.com "Regex | Apple Developer Documentation")) `RegexBuilder` is a DSL for building regexes in a more expressive, composable Swift style. ([Apple Developer](https://developer.apple.com/documentation/regexbuilder?utm_source=chatgpt.com "RegexBuilder | Apple Developer Documentation"))
+Swift Regex is a first-class Swift value. You can create it from regex syntax, including literals, or with `RegexBuilder` for a more structured DSL. Apple’s `Regex` documentation describes regular expressions as concise patterns that match or extract portions of strings, and shows construction from both literals and strings. ([Apple Developer, "Regex"](https://developer.apple.com/documentation/swift/regex)) `RegexBuilder` is a DSL for building regexes in a more expressive, composable Swift style. ([Apple Developer, "RegexBuilder"](https://developer.apple.com/documentation/regexbuilder))
 
 The key idea:
 
@@ -62,7 +62,7 @@ In Swift 6.x, regex literals use slash delimiters:
 let regex = /user_id:\s*(\d+)/
 ```
 
-The Swift language reference defines regex literals as regular expression patterns surrounded by slashes. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/lexicalstructure/?utm_source=chatgpt.com "Lexical Structure - Documentation")) For older Swift language modes, you may still see extended delimiters like `#/.../#`.
+The Swift language reference defines regex literals as regular expression patterns surrounded by slashes. ([Swift.org, "Lexical Structure"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/lexicalstructure/)) For older Swift language modes, you may still see extended delimiters like `#/.../#`.
 
 Use a regex literal when the pattern is short and familiar:
 
@@ -100,7 +100,7 @@ Output:
 42
 ```
 
-`RegexBuilder` matters because it lets you build complex regexes using normal Swift composition. Apple’s WWDC material describes Swift Regex as including the `Regex` type, regex literal syntax, and a result-builder API called `RegexBuilder`. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2022/110358/ "Swift Regex: Beyond the basics - WWDC22 - Videos - Apple Developer"))
+`RegexBuilder` matters because it lets you build complex regexes using normal Swift composition. Apple’s WWDC material describes Swift Regex as including the `Regex` type, regex literal syntax, and a result-builder API called `RegexBuilder`. ([Apple Developer, "Swift Regex: Beyond the Basics"](https://developer.apple.com/videos/play/wwdc2022/110358/))
 
 ### `map`, `compactMap`, and `flatMap`
 
@@ -134,7 +134,7 @@ Output:
 [1, 2, 3]
 ```
 
-Apple’s `compactMap(_:)` docs describe it as returning an array containing the non-`nil` results of transforming each sequence element. ([Apple Developer](https://developer.apple.com/documentation/swift/sequence/compactmap%28_%3A%29?changes=latest_minor&utm_source=chatgpt.com "compactMap(_:) | Apple Developer Documentation"))
+Apple’s `compactMap(_:)` docs describe it as returning an array containing the non-`nil` results of transforming each sequence element. ([Apple Developer, "compactMap(_:)"](https://developer.apple.com/documentation/swift/sequence/compactmap%28_%3A%29))
 
 Use `flatMap` when each input produces a sequence and you want one flattened sequence:
 
@@ -194,7 +194,7 @@ Output:
 10201
 ```
 
-Apple’s `LazySequenceProtocol` docs describe lazy sequences as avoiding needless storage allocation and computation by using the underlying sequence for storage and computing elements on demand. ([Apple Developer](https://developer.apple.com/documentation/swift/lazysequenceprotocol?utm_source=chatgpt.com "LazySequenceProtocol | Apple Developer Documentation"))
+Apple’s `LazySequenceProtocol` docs describe lazy sequences as avoiding needless storage allocation and computation by using the underlying sequence for storage and computing elements on demand. ([Apple Developer, "LazySequenceProtocol"](https://developer.apple.com/documentation/swift/lazysequenceprotocol))
 
 Without `lazy`, this kind of infinite sequence example would not be valid because eager `map` would try to build an unbounded result.
 
@@ -853,10 +853,12 @@ A: Using `firstMatch(of:)` when full validation requires `wholeMatch(of:)`.
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — A16 section and senior/staff expectations.
-- Apple Developer Documentation — `Regex`. ([Apple Developer](https://developer.apple.com/documentation/swift/regex?utm_source=chatgpt.com "Regex | Apple Developer Documentation"))
-- Apple Developer Documentation — `RegexBuilder`. ([Apple Developer](https://developer.apple.com/documentation/regexbuilder?utm_source=chatgpt.com "RegexBuilder | Apple Developer Documentation"))
-- The Swift Programming Language — lexical structure for regex literals. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/lexicalstructure/?utm_source=chatgpt.com "Lexical Structure - Documentation"))
-- Swift Evolution SE-0357 — regex-powered string-processing algorithms. ([GitHub](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0357-regex-string-processing-algorithms.md "swift-evolution/proposals/0357-regex-string-processing-algorithms.md at main · swiftlang/swift-evolution · GitHub"))
-- Apple WWDC22 — Swift Regex: Beyond the basics. ([Apple Developer](https://developer.apple.com/videos/play/wwdc2022/110358/ "Swift Regex: Beyond the basics - WWDC22 - Videos - Apple Developer"))
-- Swift.org — Announcing Swift Algorithms. ([swift.org](https://swift.org/blog/swift-algorithms/ "Announcing Swift Algorithms | Swift.org"))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist." A16 section and senior/staff expectations.
+- Apple Developer. "Regex." Apple Developer Documentation. https://developer.apple.com/documentation/swift/regex
+- Apple Developer. "RegexBuilder." Apple Developer Documentation. https://developer.apple.com/documentation/regexbuilder
+- Swift.org. "Lexical Structure." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/lexicalstructure/
+- GitHub. "SE-0357: Regex-Powered String Processing Algorithms." swift-evolution. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0357-regex-string-processing-algorithms.md
+- Apple Developer. "Swift Regex: Beyond the Basics." WWDC22 Video. https://developer.apple.com/videos/play/wwdc2022/110358/
+- Swift.org. "Announcing Swift Algorithms." Swift.org Blog. https://swift.org/blog/swift-algorithms/
+- Apple Developer. "compactMap(_:)" Apple Developer Documentation. https://developer.apple.com/documentation/swift/sequence/compactmap%28_%3A%29
+- Apple Developer. "LazySequenceProtocol." Apple Developer Documentation. https://developer.apple.com/documentation/swift/lazysequenceprotocol

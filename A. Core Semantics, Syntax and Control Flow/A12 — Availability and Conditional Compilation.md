@@ -27,7 +27,7 @@ Can this already-compiled program safely execute this API on the current OS/runt
 Should this source code be compiled into this target at all?
 ```
 
-Swift’s language reference documents `@available` as a declaration attribute for describing a declaration’s availability lifecycle, including introduced, deprecated, obsoleted, unavailable, message, and renamed information. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/?utm_source=chatgpt.com "Attributes | Documentation - Swift Programming Language"))
+Swift’s language reference documents `@available` as a declaration attribute for describing a declaration’s availability lifecycle, including introduced, deprecated, obsoleted, unavailable, message, and renamed information. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
 
 **You should be able to answer**
 
@@ -65,11 +65,11 @@ The key idea:
 @available describes the lifecycle and use constraints of a declaration.
 ```
 
-`@available` belongs on declarations. It tells clients and the compiler when something was introduced, deprecated, obsoleted, renamed, or unavailable. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/?utm_source=chatgpt.com "Attributes | Documentation - Swift Programming Language"))
+`@available` belongs on declarations. It tells clients and the compiler when something was introduced, deprecated, obsoleted, renamed, or unavailable. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
 
-`#available` belongs in control flow. It lets you use a newer API inside a guarded block while still supporting older OS versions. Apple’s Xcode documentation says Swift uses `#available` to run code conditionally for a specific platform or OS version. ([Apple Developer](https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version?utm_source=chatgpt.com "Running code on a specific platform or OS version"))
+`#available` belongs in control flow. It lets you use a newer API inside a guarded block while still supporting older OS versions. Apple’s Xcode documentation says Swift uses `#available` to run code conditionally for a specific platform or OS version. ([Apple Developer, "Running Code on a Specific Platform or OS Version"](https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version))
 
-`#if` belongs to compilation. Swift’s language reference says conditional compilation blocks are compiler control statements; only code in the active branch is compiled for that build. ([Swift Belgeleri](https://docs.swift.org/swift-book/ReferenceManual/Statements.html?utm_source=chatgpt.com "Statements | Documentation - Swift Programming Language"))
+`#if` belongs to compilation. Swift’s language reference says conditional compilation blocks are compiler control statements; only code in the active branch is compiled for that build. ([Swift.org, "Statements"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/statements/))
 
 ---
 
@@ -184,7 +184,7 @@ Common conditions:
 #endif
 ```
 
-`canImport` tests whether a module can be imported. It does not import the module by itself. Swift’s language reference documents conditional compilation conditions including `os`, `arch`, `swift`, `compiler`, `canImport`, and `targetEnvironment`. ([Swift Belgeleri](https://docs.swift.org/swift-book/ReferenceManual/Statements.html?utm_source=chatgpt.com "Statements | Documentation - Swift Programming Language"))
+`canImport` tests whether a module can be imported. It does not import the module by itself. Swift’s language reference documents conditional compilation conditions including `os`, `arch`, `swift`, `compiler`, `canImport`, and `targetEnvironment`. ([Swift.org, "Statements"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/statements/))
 
 ### 2.4 `#unavailable`: clearer fallback-first code
 
@@ -786,7 +786,7 @@ A: Duplicated public surfaces drift over time and create inconsistent behavior, 
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric and Prioritized Study Checklist — A12 availability and conditional compilation.    
-- Swift Book — Attributes / `@available`: [https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/) ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/?utm_source=chatgpt.com "Attributes | Documentation - Swift Programming Language"))
-- Swift Book — Statements / conditional compilation, `#if`, `canImport`, `compiler`, `swift`, `#available`, `#unavailable`: [https://docs.swift.org/swift-book/ReferenceManual/Statements.html](https://docs.swift.org/swift-book/ReferenceManual/Statements.html) ([Swift Belgeleri](https://docs.swift.org/swift-book/ReferenceManual/Statements.html?utm_source=chatgpt.com "Statements | Documentation - Swift Programming Language"))
-- Apple Developer Documentation — Running code on a specific platform or OS version: [https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version](https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version) ([Apple Developer](https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version?utm_source=chatgpt.com "Running code on a specific platform or OS version"))
+- "Swift Senior/Staff Rubric and Prioritized Study Checklist." A12 availability and conditional compilation.
+- Swift.org. "Attributes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/
+- Swift.org. "Statements." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/statements/
+- Apple Developer. "Running Code on a Specific Platform or OS Version." Apple Developer Documentation. https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version

@@ -33,7 +33,7 @@ Multiple booleans often indicate that an enum is missing. Associated values shou
 
 An enum is a **closed set of mutually exclusive cases**. A value of an enum is exactly one case at a time. That makes enums a strong fit for state modeling, because many real app states are mutually exclusive: a screen is idle, loading, loaded, failed, cancelled, or retrying. It should not be “loading and failed and loaded” unless your model intentionally allows that.
 
-Associated values let each enum case carry only the data that makes sense for that case. Swift enumerations can store associated values of different types for different cases, which is what makes them stronger than plain string/status-code enums. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/?utm_source=chatgpt.com "Enumerations - Documentation | Swift.org"))
+Associated values let each enum case carry only the data that makes sense for that case. Swift enumerations can store associated values of different types for different cases, which is what makes them stronger than plain string/status-code enums. ([Swift.org, "Enumerations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/))
 
 The key design move is to stop asking:
 
@@ -49,7 +49,7 @@ Which domain state is this value in?
 
 With booleans and optionals, the compiler accepts many combinations that your domain does not. With an enum, the type system can reject entire classes of bugs because there is no representation for those invalid combinations.
 
-Swift enums are value types, like structs. That means enum state is copied by value unless the associated payload contains reference types. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/?utm_source=chatgpt.com "Structures and Classes - Documentation | Swift.org")) This matters in view models, reducers, state stores, and SwiftUI because you can reason about state transitions as value replacement:
+Swift enums are value types, like structs. That means enum state is copied by value unless the associated payload contains reference types. ([Swift.org, "Structures and Classes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/)) This matters in view models, reducers, state stores, and SwiftUI because you can reason about state transitions as value replacement:
 
 ```swift
 state = .loading
@@ -57,7 +57,7 @@ state = .loaded(items)
 state = .failed(error)
 ```
 
-Recursive enums are enums whose cases contain another value of the same enum type. Swift requires `indirect` for direct recursion so the compiler can insert a layer of indirection instead of trying to lay out an infinitely sized value. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/?utm_source=chatgpt.com "Enumerations - Documentation | Swift.org"))
+Recursive enums are enums whose cases contain another value of the same enum type. Swift requires `indirect` for direct recursion so the compiler can insert a layer of indirection instead of trying to lay out an infinitely sized value. ([Swift.org, "Enumerations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/))
 
 The key idea:
 
@@ -123,7 +123,7 @@ over this:
 case failed(String, Int)
 ```
 
-The Swift API Design Guidelines emphasize clarity at the point of use and clarity over brevity. That applies directly to enum case names and associated-value labels. ([Swift.org](https://swift.org/documentation/api-design-guidelines/?utm_source=chatgpt.com "API Design Guidelines | Swift.org"))
+The Swift API Design Guidelines emphasize clarity at the point of use and clarity over brevity. That applies directly to enum case names and associated-value labels. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
 
 ### Exhaustive switching
 
@@ -374,7 +374,7 @@ indirect enum Tree<Element> {
 }
 ```
 
-Without `indirect`, Swift cannot compute a finite memory layout. A `Tree` would contain a `Tree`, which would contain another `Tree`, forever. Swift’s documentation describes recursive enums as enums that have another instance of the enum as an associated value, and `indirect` tells the compiler to insert the required layer of indirection. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/?utm_source=chatgpt.com "Enumerations - Documentation | Swift.org"))
+Without `indirect`, Swift cannot compute a finite memory layout. A `Tree` would contain a `Tree`, which would contain another `Tree`, forever. Swift’s documentation describes recursive enums as enums that have another instance of the enum as an associated value, and `indirect` tells the compiler to insert the required layer of indirection. ([Swift.org, "Enumerations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/))
 
 Runtime implication:
 
@@ -873,8 +873,8 @@ A: Adding or changing cases can affect source compatibility and client switch ex
 
 ## 12. Sources
 
-- Swift Senior/Staff Rubric — A9 enum-based state modeling and code probe.
-- Swift Documentation — Enumerations, associated values, and recursive enums. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/?utm_source=chatgpt.com "Enumerations - Documentation | Swift.org"))
-- Swift Documentation — Declarations, enum indirection, and recursive layout. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/?utm_source=chatgpt.com "Declarations | Documentation - Swift Programming Language"))
-- Swift Documentation — Structures, classes, and value-type behavior for structs/enums. ([Swift Belgeleri](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/?utm_source=chatgpt.com "Structures and Classes - Documentation | Swift.org"))
-- Swift API Design Guidelines — clarity at the point of use and clarity over brevity. ([Swift.org](https://swift.org/documentation/api-design-guidelines/?utm_source=chatgpt.com "API Design Guidelines | Swift.org"))
+- "Swift Senior/Staff Rubric." A9 enum-based state modeling and code probe.
+- Swift.org. "Enumerations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/
+- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/
+- Swift.org. "Structures and Classes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/
+- Swift.org. "API Design Guidelines." Swift.org Documentation. https://swift.org/documentation/api-design-guidelines/
