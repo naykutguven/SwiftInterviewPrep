@@ -8,6 +8,8 @@ tags:
   - inlinable
   - usableFromInline
 ---
+# E8 — Binary Frameworks, Inlineability, and Public Implementation Detail Leakage
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

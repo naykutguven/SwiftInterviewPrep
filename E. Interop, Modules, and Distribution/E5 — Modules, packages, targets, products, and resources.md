@@ -8,6 +8,8 @@ tags:
   - modules
   - packages
 ---
+# E5 — Modules, Packages, Targets, Products, and Resources
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

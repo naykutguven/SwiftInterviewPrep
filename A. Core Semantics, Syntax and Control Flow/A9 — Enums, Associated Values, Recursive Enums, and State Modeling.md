@@ -7,6 +7,8 @@ tags:
   - enums
   - state-modeling
 ---
+# A9 — Enums, Associated Values, Recursive Enums, and State Modeling
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

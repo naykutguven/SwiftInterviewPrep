@@ -7,6 +7,8 @@ tags:
   - api-design
   - synthesized-conformances
 ---
+# B7 — Synthesized Conformances and Semantic Correctness
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

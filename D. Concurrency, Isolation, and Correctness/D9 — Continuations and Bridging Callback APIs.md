@@ -7,6 +7,8 @@ tags:
   - continuations
   - async-await
 ---
+# D9 — Continuations and Bridging Callback APIs
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

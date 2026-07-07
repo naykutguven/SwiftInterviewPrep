@@ -9,6 +9,8 @@ tags:
   - module-stability
   - binary-frameworks
 ---
+# E7 — Resilience, ABI, and Module Stability
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

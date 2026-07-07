@@ -9,6 +9,8 @@ tags:
   - existentials
   - api-design
 ---
+# B1 — Protocols, Associated Types, `Self` Requirements, and Compositions
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

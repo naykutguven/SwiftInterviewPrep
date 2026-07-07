@@ -8,6 +8,8 @@ tags:
   - protocols
   - api-design
 ---
+# B4 — Dispatch Model - Static, Class Virtual, Witness-Table, and Protocol Extension Dispatch
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

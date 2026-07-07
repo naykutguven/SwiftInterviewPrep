@@ -7,6 +7,8 @@ tags:
   - generics
   - parameter-packs
 ---
+# B12 — Variadic Generics and Parameter Packs
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

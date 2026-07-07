@@ -7,6 +7,8 @@ tags:
   - availability
   - conditional-compilation
 ---
+# A12 — Availability and Conditional Compilation
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

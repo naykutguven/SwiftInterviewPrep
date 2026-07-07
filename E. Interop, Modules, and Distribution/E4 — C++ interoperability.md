@@ -6,6 +6,8 @@ tags:
   - interop
   - cpp-interop
 ---
+# E4 — C++ Interoperability
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

@@ -9,6 +9,8 @@ tags:
   - synchronization
   - swift6
 ---
+# D12 — Synchronization Library, Mutexes, and Choosing Between Actors and Locks
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**
@@ -914,7 +916,7 @@ A: It leaks mutable state and lets callers bypass or split invariants. The type 
 - [[D5 — Global actors and `@MainActor`]]
 - [[D6 — `Sendable` and `@Sendable`]]
 - [[D7 — Actor reentrancy and logic races]]
-- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and assumeIsolatedUntitled]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D10 — `AsyncSequence`, Streams, and Backpressure-aware design]]
 - [[D13 — Swift 6 strict concurrency migration]]
 - [[C3 — Exclusivity enforcement and `inout`]]

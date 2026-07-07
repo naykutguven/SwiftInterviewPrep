@@ -6,6 +6,8 @@ tags:
   - async-await
   - concurrency
 ---
+# D1 — Structured Concurrency Fundamentals
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

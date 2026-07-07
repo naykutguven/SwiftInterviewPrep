@@ -9,6 +9,8 @@ tags:
   - xctest
   - concurrency
 ---
+# F1 — Testing Strategy in Modern Swift
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

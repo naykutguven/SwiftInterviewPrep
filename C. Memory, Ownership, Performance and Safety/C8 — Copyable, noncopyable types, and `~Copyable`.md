@@ -10,6 +10,8 @@ tags:
   - copyable
   - noncopyable
 ---
+# C8 — Copyable, Noncopyable Types, and `~Copyable`
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

@@ -7,6 +7,8 @@ tags:
   - asyncsequence
   - asyncstream
 ---
+# D10 — `AsyncSequence`, Streams, and Backpressure-Aware Design
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

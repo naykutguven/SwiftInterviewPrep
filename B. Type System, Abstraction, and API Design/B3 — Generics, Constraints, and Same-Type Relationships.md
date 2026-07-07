@@ -6,6 +6,8 @@ tags:
   - generics
   - type-system
 ---
+# B3 — Generics, Constraints, and Same-Type Relationships
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

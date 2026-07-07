@@ -9,6 +9,8 @@ tags:
   - generics
   - api-design
 ---
+# B2 — Existentials (`any`) vs Opaque Types (`some`)
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

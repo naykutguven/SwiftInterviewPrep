@@ -10,6 +10,8 @@ tags:
   - string
   - unicode
 ---
+# C4 — String and Unicode Correctness
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

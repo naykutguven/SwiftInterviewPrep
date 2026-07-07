@@ -8,6 +8,8 @@ tags:
   - task-hierarchy
   - priorities
 ---
+# D2 — Task Hierarchy, Cancellation, and Priorities
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

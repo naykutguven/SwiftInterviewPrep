@@ -8,6 +8,8 @@ tags:
   - standard-library
   - collections
 ---
+# A16 — Regex and Standard-Library Idioms
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

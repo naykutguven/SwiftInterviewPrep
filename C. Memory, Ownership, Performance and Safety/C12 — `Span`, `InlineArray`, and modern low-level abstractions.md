@@ -11,6 +11,8 @@ tags:
   - inlinearray
   - low-level-swift
 ---
+# C12 — `Span`, `InlineArray`, and Modern Low-Level Abstractions
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

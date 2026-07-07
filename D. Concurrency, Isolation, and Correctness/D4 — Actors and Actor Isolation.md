@@ -7,6 +7,8 @@ tags:
   - actors
   - actor-isolation
 ---
+# D4 — Actors and Actor Isolation
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**
@@ -1048,7 +1050,7 @@ A: For tiny synchronous critical sections where async boundaries are unnecessary
 - [[D5 — Global actors and `@MainActor`]]
 - [[D6 — `Sendable` and `@Sendable`]]
 - [[D7 — Actor reentrancy and logic races]]
-- [[D8 — Isolation control: `nonisolated`, isolated parameters, and `assumeIsolated`]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D12 — Synchronization library, mutexes, and choosing between actors and locks]]
 - [[D13 — Swift 6 strict concurrency migration]]
 

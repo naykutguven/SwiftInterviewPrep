@@ -8,6 +8,8 @@ tags:
   - actor-reentrancy
   - logic-races
 ---
+# D7 — Actor Reentrancy and Logic Races
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**
@@ -769,7 +771,7 @@ A: Not generally. Strict concurrency catches many data-race and isolation violat
 - [[D4 — Actors and actor isolation]]
 - [[D5 — Global actors and `@MainActor`]]
 - [[D6 — `Sendable` and `@Sendable`]]
-- [[D8 — Isolation control: `nonisolated`, isolated parameters, and `assumeIsolated`]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D10 — `AsyncSequence`, streams, and backpressure-aware design]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]
 - [[F1 — Testing async and concurrent code]]

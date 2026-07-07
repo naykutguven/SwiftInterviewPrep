@@ -9,6 +9,8 @@ tags:
   - safety
   - unsafe-memory
 ---
+# C6 — Unsafe Pointers, Buffers, and Raw Memory
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

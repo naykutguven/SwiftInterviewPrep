@@ -7,6 +7,8 @@ tags:
   - swift6
   - strict-concurrency
 ---
+# D13 — Swift 6 Strict Concurrency Migration
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**
@@ -937,7 +939,7 @@ A: Build clear ownership and isolation boundaries so the compiler can enforce sa
 - [[D5 — Global actors and `@MainActor`]]
 - [[D6 — `Sendable` and `@Sendable`]]
 - [[D7 — Actor reentrancy and logic races]]
-- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and assumeIsolatedUntitled]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]
 - [[D12 — Synchronization library, mutexes, and choosing between actors and locks]]
 - [[D14 — Swift 6.2 approachable concurrency and new defaults]]

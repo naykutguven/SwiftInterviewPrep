@@ -6,6 +6,8 @@ tags:
   - core-semantics
   - type-choices
 ---
+# A15 — Type Choices - Struct, Class, Enum, Protocol, and Actor
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

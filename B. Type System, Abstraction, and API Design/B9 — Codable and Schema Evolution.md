@@ -7,6 +7,8 @@ tags:
   - codable
   - schema-evolution
 ---
+# B9 — Codable and Schema Evolution
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

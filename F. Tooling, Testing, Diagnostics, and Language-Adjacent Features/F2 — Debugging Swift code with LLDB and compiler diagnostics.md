@@ -9,6 +9,8 @@ tags:
   - concurrency
   - debugging
 ---
+# F2 — Debugging Swift Code with LLDB and Compiler Diagnostics
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**
@@ -927,7 +929,7 @@ A: `deinit` does not run, the memory graph shows a strong reference path, often 
 
 - [[D6 — `Sendable` and `@Sendable`]]
 - [[D7 — Actor reentrancy and logic races]]
-- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and assumeIsolatedUntitled]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]
 - [[C1 — ARC fundamentals]]
 - [[C10 — Compiler optimization behavior and debug vs release differences]]

@@ -8,6 +8,8 @@ tags:
   - hashable
   - collections
 ---
+# B8 — Equatable, Hashable, and Collection Correctness
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

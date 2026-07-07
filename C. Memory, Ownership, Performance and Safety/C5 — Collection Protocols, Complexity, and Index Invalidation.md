@@ -8,6 +8,8 @@ tags:
   - safety
   - collections
 ---
+# C5 — Collection Protocols, Complexity, and Index Invalidation
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

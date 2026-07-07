@@ -7,6 +7,8 @@ tags:
   - extensions
   - retroactive-modeling
 ---
+# A10 — Extensions and Retroactive Modeling
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

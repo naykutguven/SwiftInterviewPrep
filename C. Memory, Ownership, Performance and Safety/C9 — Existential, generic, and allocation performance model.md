@@ -10,6 +10,8 @@ tags:
   - existentials
   - generics
 ---
+# C9 — Existential, Generic, and Allocation Performance Model
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

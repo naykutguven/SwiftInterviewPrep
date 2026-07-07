@@ -7,6 +7,8 @@ tags:
   - pattern-matching
   - control-flow
 ---
+# A5 — Pattern Matching and Exhaustive Control Flow
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

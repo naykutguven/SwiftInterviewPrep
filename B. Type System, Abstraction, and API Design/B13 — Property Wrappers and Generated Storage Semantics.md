@@ -6,6 +6,8 @@ tags:
   - type-system
   - property-wrappers
 ---
+# B13 — Property Wrappers and Generated Storage Semantics
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

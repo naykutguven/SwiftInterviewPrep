@@ -7,6 +7,8 @@ tags:
   - import-visibility
   - dependency-leakage
 ---
+# E6 — Import Visibility and Dependency Leakage
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

@@ -8,6 +8,8 @@ tags:
   - task-inheritance
   - main-actor
 ---
+# D11 — Detached Tasks, Task Inheritance, and Isolation Loss
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

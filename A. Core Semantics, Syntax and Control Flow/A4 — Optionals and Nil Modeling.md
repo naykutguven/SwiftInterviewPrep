@@ -6,6 +6,8 @@ tags:
   - core-semantics
   - optionals
 ---
+# A4 — Optionals and Nil Modeling
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

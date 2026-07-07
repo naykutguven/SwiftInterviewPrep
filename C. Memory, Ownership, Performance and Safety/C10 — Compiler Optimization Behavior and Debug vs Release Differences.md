@@ -10,6 +10,8 @@ tags:
   - debug-release
   - compiler-optimization
 ---
+# C10 — Compiler Optimization Behavior and Debug vs Release Differences
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

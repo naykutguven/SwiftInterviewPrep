@@ -9,6 +9,8 @@ tags:
   - safety
   - ownership-modifiers
 ---
+# C7 — Ownership Modifiers - `borrowing`, `consuming`, and `consume`
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

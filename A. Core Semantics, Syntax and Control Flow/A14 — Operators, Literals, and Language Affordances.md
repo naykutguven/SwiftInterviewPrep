@@ -8,6 +8,8 @@ tags:
   - literals
   - api-design
 ---
+# A14 — Operators, Literals, and Language Affordances
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

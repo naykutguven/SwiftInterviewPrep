@@ -6,6 +6,8 @@ tags:
   - core-semantics
   - initialization
 ---
+# A3 — Initialization Model
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

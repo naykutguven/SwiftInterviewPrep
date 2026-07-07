@@ -8,6 +8,8 @@ tags:
   - task-groups
   - structured-concurrency
 ---
+# D3 — `async let`, Task Groups, and Choosing the Right Concurrency Primitive
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

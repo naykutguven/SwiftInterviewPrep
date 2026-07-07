@@ -6,6 +6,8 @@ tags:
   - core-semantics
   - mutability
 ---
+# A2 — `let`, `var`, `mutating`, and Method Semantics
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

@@ -7,6 +7,8 @@ tags:
   - sendable
   - strict-concurrency
 ---
+# D6 — `Sendable` and `@Sendable`
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**
@@ -964,7 +966,7 @@ A: No. Add `T: Sendable` only when values actually cross concurrency domains or 
 - [[D4 — Actors and actor isolation]]
 - [[D5 — Global actors and `@MainActor`]]
 - [[D7 — Actor reentrancy and logic races]]
-- [[D8 — Isolation control]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]
 - [[D13 — Swift 6 strict concurrency migration]]
 - [[B7 — Synthesized conformances and semantic correctness]]

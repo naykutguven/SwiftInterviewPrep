@@ -7,6 +7,8 @@ tags:
   - functions
   - api-design
 ---
+# A7 — Functions, Parameter Labels, Defaults, and API Surface
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

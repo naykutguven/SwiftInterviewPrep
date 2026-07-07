@@ -9,6 +9,8 @@ tags:
   - migration
   - concurrency
 ---
+# F5 — Language Mode, Build Settings, and Migration Flags
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

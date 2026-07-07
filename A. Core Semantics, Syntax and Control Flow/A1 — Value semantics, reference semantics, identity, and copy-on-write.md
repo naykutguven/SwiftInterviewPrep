@@ -8,7 +8,7 @@ tags:
   - reference-semantics
   - copy-on-write
 ---
-# A1 — Value semantics, reference semantics, identity, and copy-on-write
+# A1 — Value Semantics, Reference Semantics, Identity, and Copy-on-Write
 
 Tags: #swift #ios #interview-prep #core-semantics #value-semantics #reference-semantics #copy-on-write
 

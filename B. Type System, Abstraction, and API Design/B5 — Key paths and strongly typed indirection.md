@@ -6,6 +6,8 @@ tags:
   - type-system
   - key-paths
 ---
+# B5 — Key Paths and Strongly Typed Indirection
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

@@ -7,6 +7,8 @@ tags:
   - clean-up
   - control-flow
 ---
+# A6 — `defer`, Early Exits, and Cleanup Semantics
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

@@ -9,6 +9,8 @@ tags:
   - safety
   - arc
 ---
+# C1 — ARC Fundamentals
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

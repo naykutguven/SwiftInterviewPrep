@@ -8,6 +8,8 @@ tags:
   - runtime
   - api-design
 ---
+# E1 — Objective-C Interoperability
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

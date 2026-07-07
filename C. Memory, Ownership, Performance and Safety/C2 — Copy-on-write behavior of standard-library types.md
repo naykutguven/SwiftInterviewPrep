@@ -8,6 +8,8 @@ tags:
   - performance
   - copy-on-write
 ---
+# C2 — Copy-on-Write Behavior of Standard-Library Types
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

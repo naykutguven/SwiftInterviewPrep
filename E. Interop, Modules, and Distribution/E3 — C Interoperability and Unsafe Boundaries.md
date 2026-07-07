@@ -7,6 +7,8 @@ tags:
   - c-interop
   - unsafe-pointers
 ---
+# E3 — C Interoperability and Unsafe Boundaries
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

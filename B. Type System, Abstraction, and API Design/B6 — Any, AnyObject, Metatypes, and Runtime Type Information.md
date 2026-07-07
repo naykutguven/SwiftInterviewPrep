@@ -6,6 +6,8 @@ tags:
   - type-system
   - runtime-type-information
 ---
+# B6 — Any, AnyObject, Metatypes, and Runtime Type Information
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

@@ -7,6 +7,8 @@ tags:
   - main-actor
   - global-actors
 ---
+# D5 — Global Actors and `@MainActor`
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**
@@ -816,7 +818,7 @@ A: Usually no. Keep reusable non-UI packages nonisolated unless their purpose is
 - [[D4 — Actors and actor isolation]]
 - [[D6 — Sendable and `@Sendable`]]
 - [[D7 — Actor reentrancy and logic races]]
-- [[D8 — Isolation control: `nonisolated`, isolated parameters, and `assumeIsolated`]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]
 - [[D14 — Swift 6.2 approachable concurrency and new defaults]]
 - [[F1 — Testing async and concurrent code]]

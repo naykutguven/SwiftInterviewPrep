@@ -10,6 +10,8 @@ tags:
   - inout
   - exclusivity
 ---
+# C3 — Exclusivity Enforcement and `inout`
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

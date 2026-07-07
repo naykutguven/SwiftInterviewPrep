@@ -9,6 +9,8 @@ tags:
   - swiftui
   - macros
 ---
+# F6 — Observation, Property Wrappers, and Language-Adjacent State Tools
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

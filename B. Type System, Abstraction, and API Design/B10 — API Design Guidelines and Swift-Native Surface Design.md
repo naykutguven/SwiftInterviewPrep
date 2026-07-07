@@ -6,6 +6,8 @@ tags:
   - type-system
   - api-design
 ---
+# B10 — API Design Guidelines and Swift-Native Surface Design
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

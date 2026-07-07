@@ -9,6 +9,8 @@ tags:
   - systems-programming
   - swift6-2
 ---
+# C11 — Strict Memory Safety Mode and Safe Systems Programming
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

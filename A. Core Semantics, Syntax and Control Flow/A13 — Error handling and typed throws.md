@@ -7,6 +7,8 @@ tags:
   - error-handling
   - typed-throws
 ---
+# A13 — Error Handling and Typed Throws
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

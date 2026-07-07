@@ -7,6 +7,8 @@ tags:
   - macros
   - code-generation
 ---
+# F4 — Macros and Compile-Time Code Generation
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

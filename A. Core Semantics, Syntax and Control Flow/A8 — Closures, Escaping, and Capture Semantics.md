@@ -6,6 +6,8 @@ tags:
   - core-semantics
   - closures
 ---
+# A8 — Closures, Escaping, and Capture Semantics
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

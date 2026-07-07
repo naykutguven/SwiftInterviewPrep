@@ -8,6 +8,8 @@ tags:
   - main-actor
   - approachable-concurrency
 ---
+# D14 — Swift 6.2 Approachable Concurrency and New Defaults
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**
@@ -770,7 +772,7 @@ A: Split targets by responsibility, audit public APIs, identify CPU-heavy async 
 - [[D5 — Global actors and `@MainActor`]]
 - [[D6 — `Sendable` and `@Sendable`]]
 - [[D7 — Actor reentrancy and logic races]]
-- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and assumeIsolatedUntitled]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]
 - [[D13 — Swift 6 strict concurrency migration]]
 - [[F5 — Language mode, build settings, and migration flags]]

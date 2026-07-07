@@ -7,6 +7,8 @@ tags:
   - performance
   - instruments
 ---
+# F3 — Performance Investigation Habits
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

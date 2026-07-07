@@ -7,6 +7,8 @@ tags:
   - actor-isolation
   - swift6
 ---
+# D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

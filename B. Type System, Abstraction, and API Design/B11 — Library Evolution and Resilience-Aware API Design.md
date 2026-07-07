@@ -8,6 +8,8 @@ tags:
   - library-evolution
   - resilience
 ---
+# B11 — Library Evolution and Resilience-Aware API Design
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**

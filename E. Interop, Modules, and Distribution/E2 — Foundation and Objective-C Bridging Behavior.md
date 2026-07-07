@@ -7,6 +7,8 @@ tags:
   - foundation-bridging
   - objc
 ---
+# E2 — Foundation and Objective-C Bridging Behavior
+
 ## 0. Rubric snapshot
 
 **Rubric expectation**
