@@ -997,7 +997,7 @@ A: When the behavior is cross-field, workflow-level, async, actor-dependent, syn
 - [[A11 — Access control]]
 - [[B7 — Synthesized conformances and semantic correctness]]
 - [[D5 — Global Actors and `@MainActor`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[F6 — Observation, property wrappers, and language-adjacent state tools]]
 
 ---

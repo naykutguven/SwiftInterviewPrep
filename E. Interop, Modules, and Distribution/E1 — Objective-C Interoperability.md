@@ -1113,7 +1113,7 @@ A: Keep a Swift-native core and expose a narrow Objective-C adapter layer.
 - [[B10 — API design guidelines and Swift-native surface design]]
 - [[B11 — Library evolution and resilience-aware API design]]
 - [[C1 — ARC fundamentals]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D13 — Swift 6 strict concurrency migration]]
 - [[E2 — Foundation and Objective-C bridging behavior]]
 - [[E3 — C interoperability and unsafe boundaries]]

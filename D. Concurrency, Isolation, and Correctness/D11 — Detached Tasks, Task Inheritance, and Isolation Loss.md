@@ -677,7 +677,7 @@ A: Use `@MainActor` for UI state, start work with `Task {}`, store the task hand
 - [[D1 — Structured concurrency fundamentals]]
 - [[D2 — Task hierarchy, cancellation, and priorities]]
 - [[D5 — Global actors and `@MainActor`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 - [[D13 — Swift 6 strict concurrency migration]]
 - [[D14 — Swift 6.2 approachable concurrency and new defaults]]

@@ -887,7 +887,7 @@ A: It automatically wraps an expression in a no-argument closure, delaying evalu
 - [[A1 — Value semantics, reference semantics, identity, and copy-on-write]]
 - [[A2 — `let`, `var`, `mutating`, and method semantics]]
 - [[C1 — ARC fundamentals]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D9 — Continuations and bridging callback APIs]]
 - [[D10 — `AsyncSequence`, Streams, and Backpressure-Aware Design]]
 

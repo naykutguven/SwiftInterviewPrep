@@ -924,7 +924,7 @@ A: A domain-specific value type or typed dictionary, ideally with `Sendable` and
 - [[A15 — Type choices - struct, class, enum, protocol, and actor]]
 - [[B7 — Synthesized Conformances and Semantic Correctness]]
 - [[B11 — Library Evolution and Resilience-Aware API Design]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[E6 — Import Visibility and Dependency Leakage]]
 
 ---

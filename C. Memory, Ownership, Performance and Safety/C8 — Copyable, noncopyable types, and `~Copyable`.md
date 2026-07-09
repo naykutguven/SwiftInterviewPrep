@@ -791,7 +791,7 @@ A: For ordinary app data, DTOs, view state, and domain models where copying is s
 - [[C6 — Unsafe pointers, buffers, and raw memory]]
 - [[C9 — Existential, generic, and allocation performance model]]
 - [[C10 — Compiler optimization behavior and debug vs release differences]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[E3 — C interoperability and unsafe boundaries]]
 - [[E4 — C++ interoperability]]
 

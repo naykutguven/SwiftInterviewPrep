@@ -14,17 +14,18 @@ tags:
 
 **Rubric expectation**
 
-Understand Swift 6.2’s approachable concurrency changes: optional default isolation to `MainActor`, `@concurrent`, and the changed/evolving execution semantics of `nonisolated async`. The rubric explicitly calls this section version-sensitive and expects staff-level awareness of what depends on language version or build settings.
+Understand Swift 6.2’s approachable concurrency changes: optional default isolation to `MainActor`, `nonisolated(nonsending)`, `@concurrent`, and the changed/evolving execution semantics of `nonisolated async`. The rubric explicitly calls this section version-sensitive and expects staff-level awareness of what depends on language version or build settings.
 
 **Caveats**
 
 This is not just syntax. These settings change what unannotated code _means_.
 
+`nonisolated(nonsending)` is version- and build-setting-sensitive. In Swift 6.2-era projects, enabling Approachable Concurrency for a target opts that target into `NonisolatedNonsendingByDefault` behavior. Do not infer the behavior from "Swift 6" alone; verify the target's Approachable Concurrency, upcoming-feature settings, and language mode.
+
 You should be able to answer:
 
 - What problem is default actor isolation to `MainActor` trying to solve, and what does it trade off?
-- Why does Swift 6.2’s change to `nonisolated async` behavior matter for app code?
-- When would you reach for `@concurrent` to make concurrency explicit?
+- Why does Swift 6.2's `nonisolated(nonsending)` behavior matter for app code, and when would you reach for `@concurrent` to make concurrent execution explicit?
 
 You should be able to do:
 
@@ -46,6 +47,10 @@ Swift 6.2 option: unannotated code in this module is MainActor-isolated.
 This does **not** mean Swift is globally `@MainActor` by default. Default actor isolation is controlled per module/target. SE-0466 defines a `-default-isolation` compiler flag and a SwiftPM setting; if unspecified, the module default remains `nonisolated`. ([GitHub, "Control Default Actor Isolation Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md))
 
 The second major change is about `async` execution. Historically, a `nonisolated async` function switched off the caller’s actor to the generic executor. With Swift 6.2’s upcoming-feature behavior, a nonisolated async function can instead run in the caller’s execution context, so calling it from the main actor does not automatically mean it leaves the main actor. SE-0461 calls this `nonisolated(nonsending)` behavior, and says `@concurrent` is the explicit spelling for the old “switch off actor” behavior. ([GitHub, "Run Nonisolated Async Functions on the Caller's Actor by Default"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md))
+
+The `nonsending` word is about value transfer, not where the function body runs. D6 covers `sending` and `nonsending`; this section focuses on Swift 6.2 execution defaults and when `@concurrent` is the right explicit escape hatch.
+
+Enablement and behavior are separate. Approachable Concurrency enables `NonisolatedNonsendingByDefault` for the target; the behavior itself is that nonisolated async calls do not send arguments or results across an isolation boundary by default.
 
 The staff-level point:
 
@@ -161,6 +166,8 @@ final class SearchViewModel {
 ### 2.4 `nonisolated async` no longer necessarily means “runs elsewhere”
 
 With the new Swift 6.2 upcoming-feature behavior, `nonisolated async` can run on the caller’s actor. SE-0461 says `nonisolated(nonsending)` functions run on the caller’s actor and do not send arguments/results across an isolation boundary by default. ([GitHub, "Run Nonisolated Async Functions on the Caller's Actor by Default"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md))
+
+For the value-transfer meaning of `nonsending`, see D6. The practical D14 takeaway is that `nonisolated async` should no longer be read as "this work definitely leaves the caller's actor."
 
 ```swift
 // Built with default MainActor isolation
@@ -304,7 +311,7 @@ Interview version:
 
 > Default `MainActor` isolation is a migration and ergonomics tool for code that is already UI-main-thread-oriented. It reduces boilerplate and aligns the compiler with the app’s real isolation model. The tradeoff is architectural: if you apply it too broadly, you accidentally turn general-purpose code into UI-bound code. I would use it for app/UI targets, but keep domain, networking, persistence, parsing, and reusable library targets nonisolated unless there is a clear reason.
 
-### Q2. Why does Swift 6.2’s change to `nonisolated async` behavior matter for app code?
+### Q2. Why does Swift 6.2's `nonisolated(nonsending)` behavior matter for app code?
 
 Because old intuition says “a `nonisolated async` function leaves the actor,” but the Swift 6.2 upcoming-feature behavior says it can run in the caller’s execution context. That makes app code safer for non-`Sendable` values because arguments are not necessarily sent across an isolation boundary, but it also means expensive async work called from the main actor may remain on the main actor. SE-0461 calls out both source-compatibility and performance implications. ([GitHub, "Run Nonisolated Async Functions on the Caller's Actor by Default"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md))
 
@@ -770,7 +777,7 @@ A: Split targets by responsibility, audit public APIs, identify CPU-heavy async 
 ## 11. Related sections
 
 - [[D5 — Global actors and `@MainActor`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 - [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]

@@ -61,6 +61,8 @@ Frameworks add their own isolation/import/generated-code behavior.
 
 Swift 6 language mode is the big semantic switch for data-race safety: the Swift migration guide says Swift 6 enables full data-race safety checking by default. ([Swift.org, "Enable data-race safety checking"](https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/enabledataracesafety/)) But Swift 6.2 adds more knobs around approachability, especially default actor isolation and `nonisolated async` behavior. Swift 6.2 lets code be main-actor isolated by default, changes how `nonisolated async` can run, and introduces `@concurrent` to explicitly move work off an actor. ([Swift.org, "Swift 6.2 Released"](https://swift.org/blog/swift-6.2-released/))
 
+When Xcode's Approachable Concurrency grouping is enabled for a target, `NonisolatedNonsendingByDefault` is part of that setting: nonisolated async calls can stay in the caller's execution context and do not send arguments or results by default. D14 owns that Swift 6.2 execution behavior; D6 owns the value-transfer meaning of `nonsending`.
+
 The staff-level skill is not “turn everything on.” It is knowing which targets should have which semantics. A UI-heavy app target may reasonably use default `MainActor` isolation. A general-purpose networking, parsing, crypto, SDK, or model package usually should not silently become main-actor isolated.
 
 The key idea:
@@ -857,7 +859,7 @@ Can CI prove that no target silently regressed to Swift 5 or weaker diagnostics?
 
 ## 9. Interview-ready summary
 
-Language mode, build settings, and migration flags define the compiler policy for each Swift target. Swift 6 language mode enables full data-race safety checking, surfacing Sendable and actor-isolation problems. Swift 6.2 adds build-setting-driven approachability features such as default MainActor isolation and explicit `@concurrent` for moving work off actor. Strict memory safety is separate: it audits unsafe memory boundaries. A senior engineer can fix the diagnostics; a staff engineer prevents migration drift by choosing target policies deliberately, centralizing settings, documenting exceptions, and enforcing consistency in CI.
+Language mode, build settings, and migration flags define the compiler policy for each Swift target. Swift 6 language mode enables full data-race safety checking, surfacing Sendable and actor-isolation problems. Swift 6.2 adds build-setting-driven approachability features such as default MainActor isolation, `NonisolatedNonsendingByDefault`, and explicit `@concurrent` for moving work off actor. Strict memory safety is separate: it audits unsafe memory boundaries. A senior engineer can fix the diagnostics; a staff engineer prevents migration drift by choosing target policies deliberately, centralizing settings, documenting exceptions, and enforcing consistency in CI.
 
 ---
 
@@ -901,7 +903,7 @@ A: As a temporary compatibility boundary for dependencies not yet annotated for 
 - [[D14 — Swift 6.2 approachable concurrency and new defaults]]
 - [[C11 — Strict memory safety mode and safe systems programming]]
 - [[D5 — Global Actors and `@MainActor`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[E5 — Modules, packages, targets, products, and resources]]
 - [[F2 — Debugging Swift code with LLDB and compiler diagnostics]]
 - [[F3 — Performance investigation habits]]

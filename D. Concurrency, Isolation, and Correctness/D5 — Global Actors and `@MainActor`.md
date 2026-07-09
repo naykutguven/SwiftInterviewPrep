@@ -592,7 +592,7 @@ final class SearchViewModel {
 6. Multiple booleans/optionals allow invalid UI states.
 ```
 
-In Swift 6 mode, a simpler version of this pattern produces a data-race diagnostic:
+In Swift 6 mode, variants of this pattern can produce a data-race diagnostic:
 
 ```swift
 final class BadSearchViewModel {
@@ -619,6 +619,8 @@ Compiler output:
  9 |         }
 10 |     }
 ```
+
+Here, `sending` means the closure is being transferred into concurrent execution; D6 explains the general `sending` value-transfer model.
 
 ### Improved version
 
@@ -816,7 +818,7 @@ A: Usually no. Keep reusable non-UI packages nonisolated unless their purpose is
 - [[D1 — Structured concurrency fundamentals]]
 - [[D2 — Task hierarchy, cancellation, and priorities]]
 - [[D4 — Actors and actor isolation]]
-- [[D6 — Sendable and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 - [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]

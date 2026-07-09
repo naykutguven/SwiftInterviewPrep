@@ -927,7 +927,7 @@ A: `deinit` does not run, the memory graph shows a strong reference path, often 
 
 ## 11. Related sections
 
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 - [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]

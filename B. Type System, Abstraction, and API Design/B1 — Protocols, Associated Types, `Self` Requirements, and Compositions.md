@@ -1097,7 +1097,7 @@ A: Hiding concrete implementation types while preserving a useful public or stor
 - [[B4 — Dispatch model: static, class virtual, witness-table, and protocol extension dispatch]]
 - [[B10 — API design guidelines and Swift-native surface design]]
 - [[C9 — Existential, generic, and allocation performance model]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 
 ---
 

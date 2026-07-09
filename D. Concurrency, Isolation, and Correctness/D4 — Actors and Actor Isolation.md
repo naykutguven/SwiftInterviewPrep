@@ -1048,7 +1048,7 @@ A: For tiny synchronous critical sections where async boundaries are unnecessary
 - [[D1 — Structured concurrency fundamentals]]
 - [[D2 — Task hierarchy, cancellation, and priorities]]
 - [[D5 — Global actors and `@MainActor`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 - [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D12 — Synchronization library, mutexes, and choosing between actors and locks]]

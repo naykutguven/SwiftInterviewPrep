@@ -845,7 +845,7 @@ A: When the property is intentionally backed by external, shared, or framework-m
 - [[A15 — Type choices: struct, class, enum, protocol, and actor]]
 - [[B7 — Synthesized conformances and semantic correctness]]
 - [[B13 — Property wrappers and generated storage semantics]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D12 — Synchronization library, mutexes, and choosing between actors and locks]]
 
 ---

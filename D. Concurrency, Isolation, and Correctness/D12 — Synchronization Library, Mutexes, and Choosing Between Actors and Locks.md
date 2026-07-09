@@ -137,6 +137,8 @@ Compiler error with Swift 6.2:
 11 | }
 ```
 
+The `inout sending` wording comes from the lock API's protected-value boundary; D6 explains `sending` as value transfer at a parameter/result boundary.
+
 SE-0433 explicitly calls out that primitive `lock()` / `unlock()` operations are dangerous with `async` / `await`, because after a suspension, execution may resume on a different thread. The closure-based API keeps the critical section synchronous. ([GitHub, "Synchronous Mutual Exclusion Lock"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0433-mutex.md))
 
 Correct shape:
@@ -546,6 +548,8 @@ Compiler error with Swift 6.2:
 11 | }
 ```
 
+The `inout sending` phrase is a value-transfer detail of the `Mutex.withLock` API; see D6 for the general `sending` model.
+
 Why:
 
 ```text
@@ -914,7 +918,7 @@ A: It leaks mutable state and lets callers bypass or split invariants. The type 
 
 - [[D4 — Actors and actor isolation]]
 - [[D5 — Global actors and `@MainActor`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 - [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D10 — `AsyncSequence`, Streams, and Backpressure-aware design]]

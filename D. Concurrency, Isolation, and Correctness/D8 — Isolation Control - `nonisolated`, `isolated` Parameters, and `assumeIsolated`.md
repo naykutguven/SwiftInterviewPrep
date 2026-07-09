@@ -53,6 +53,8 @@ isolated T   = this parameter gives synchronous access to that actor's isolated 
 assumeIsolated = runtime-checked escape hatch for legacy synchronous boundaries
 ```
 
+Keep this separate from value transfer. `isolated` and `nonisolated` describe where code executes; `sending` and `nonsending` describe whether arguments or results are transferred across isolation boundaries. D6 is the primary reference for `sending`.
+
 Swift guarantees data-race prevention around actor-isolated state. It does **not** guarantee your business logic is correct, and it does not make `nonisolated` code safe if you smuggle mutable shared state through it.
 
 ---
@@ -793,6 +795,7 @@ Debugging checklist:
 5. Is nonisolated being used for clarity or as a diagnostic silencer?
 6. Could a pure helper be moved outside the actor instead?
 7. Is assumeIsolated backed by a real executor guarantee?
+8. Is the diagnostic about where code executes, or about a value being sent across a boundary? If it is value transfer, check D6's `sending` model.
 ```
 
 ---
@@ -863,7 +866,7 @@ A: It may remove the isolation that was protecting mutable state, or make the AP
 
 - [[D4 — Actors and actor isolation]]
 - [[D5 — Global actors and `@MainActor`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]
 - [[D13 — Swift 6 strict concurrency migration]]

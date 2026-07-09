@@ -958,7 +958,7 @@ A: Use it as a UI invalidation mechanism, not as an architecture. Keep source of
 - [[F4 — Macros and compile-time code generation]]
 - [[F5 — Language mode, build settings, and migration flags]]
 - [[D5 — Global Actors and `@MainActor`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]
 - [[A9 — Enums, associated values, recursive enums, and state modeling]]

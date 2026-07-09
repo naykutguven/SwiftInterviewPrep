@@ -1027,7 +1027,7 @@ A: Use identity-based `Equatable`/`Hashable` on the entity and expose a separate
 
 - [[B8 — Equatable, Hashable, and collection correctness]]
 - [[B9 — Codable and schema evolution]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[A1 — Value semantics, reference semantics, identity, and copy-on-write]]
 - [[B11 — Library evolution and resilience-aware API design]]
 - [[F6 — Observation, property wrappers, and language-adjacent state tools]]

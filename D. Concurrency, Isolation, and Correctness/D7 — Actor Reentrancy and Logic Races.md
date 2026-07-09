@@ -770,7 +770,7 @@ A: Not generally. Strict concurrency catches many data-race and isolation violat
 - [[D3 — `async let`, task groups, and choosing the right concurrency primitive]]
 - [[D4 — Actors and actor isolation]]
 - [[D5 — Global actors and `@MainActor`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
 - [[D10 — `AsyncSequence`, streams, and backpressure-aware design]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]

@@ -1338,7 +1338,7 @@ A: Registries are often shared mutable state. They need actor isolation, locks, 
 - [[B4 — Dispatch Model - Static, Class Virtual, Witness-Table, and Protocol Extension Dispatch]]
 - [[B5 — Key paths and strongly typed indirection]]
 - [[C9 — Existential, generic, and allocation performance model]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[E1 — Objective-C interoperability]]
 - [[F4 — Macros and compile-time code generation]]
 

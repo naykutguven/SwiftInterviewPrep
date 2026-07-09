@@ -887,7 +887,7 @@ A: It introduces reference aliasing, ARC lifetime issues, retain-cycle risk, and
 - [[B1 — Protocols, associated types, Self requirements, and compositions]]
 - [[B2 — Existentials (any) vs opaque types (some)]]
 - [[D4 — Actors and actor isolation]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 
 ---

@@ -1112,7 +1112,7 @@ A: Positional primitive parameters hide meaning; labels or domain types should e
 - [[B10 — API design guidelines and Swift-native surface design]]
 - [[B11 — Library evolution and resilience-aware API design]]
 - [[C3 — Exclusivity enforcement and `inout`]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 
 ---
 

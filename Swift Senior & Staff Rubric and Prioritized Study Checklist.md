@@ -89,7 +89,7 @@ For a staff-level or principal candidate:
 - `D3` `async let` and task groups
 - `D4` Actors
 - `D5` `@MainActor`
-- `D6` `Sendable` and `@Sendable`
+- `D6` `Sendable`, `@Sendable`, and `sending`
 - `D7` Actor reentrancy
 - `D8` Isolation control
 - `D9` Continuations
@@ -808,13 +808,16 @@ These topics expose most of the semantic, design, and debugging weaknesses that 
   - Ask: "Why is marking too much code `@MainActor` a design smell?"
   - Exercise: "Refactor a view model so UI mutation is main-actor isolated while background work remains off the main actor."
 
-- `D6. `Sendable` and `@Sendable``
-  - Expect: Understand sendability rules for value types, classes, actors, closures, and generic APIs.
-  - Caveats: `@unchecked Sendable` is a proof obligation, not a compiler silencer; sendability is about safe cross-isolation transfer, not just thread use.
+- `D6. `Sendable`, `@Sendable`, and `sending``
+  - Expect: Understand `Sendable`, `@Sendable`, generic sendability constraints, and `sending` parameters/results for value types, classes, actors, closures, and generic APIs.
+  - Caveats: `@unchecked Sendable` is a proof obligation, not a compiler silencer; `sending` is value-transfer semantics requiring a disconnected region at a parameter/result boundary, not `Sendable` conformance, `@Sendable` closure checking, or move-only ownership.
   - Measure with:
   - Ask: "Why can a `final` immutable class sometimes be `Sendable`, and why are many mutable classes not?"
   - Ask: "What does `@Sendable` require of captured values?"
+  - Ask: "How is `sending T` different from `T: Sendable` and `@Sendable`?"
+  - Ask: "Why can `sending` sometimes allow transfer of a non-`Sendable` value?"
   - Exercise: "Take a non-sendable service type used in async code and propose the safest fix among actorization, value modeling, or unchecked conformance."
+  - Exercise: "Given an API that accepts a `sending` parameter or returns a `sending` result, explain what ownership/aliasing assumptions the compiler is enforcing and what would make the transfer unsafe."
   - Code Probe:
     ```swift
     final class Cache {
@@ -830,6 +833,7 @@ These topics expose most of the semantic, design, and debugging weaknesses that 
     ```
   - Probe Ask: "Why does Swift 6 complain about this?"
   - Probe Ask: "What are the safest fixes, and when would you choose actor isolation, value semantics, or `@unchecked Sendable`?"
+  - Probe Ask: "Follow-up: if `func handOff(_ cache: sending Cache) async` accepts this value, why would mutating `cache.store` after `await handOff(cache)` make the transfer unsafe?"
 
 - `D7. Actor reentrancy and logic races`
   - Expect: Know that actor methods can interleave at suspension points and that reentrancy is a central design concern.
@@ -856,7 +860,7 @@ These topics expose most of the semantic, design, and debugging weaknesses that 
 
 - `D8. Isolation control: `nonisolated`, isolated parameters, and `assumeIsolated``
   - Expect: Understand when behavior should or should not be isolated, and how to express that safely.
-  - Caveats: Removing isolation to satisfy the compiler can reintroduce races or semantic confusion.
+  - Caveats: Removing isolation to satisfy the compiler can reintroduce races or semantic confusion; `isolated`/`nonisolated` describe where code executes, while `sending`/`nonsending` describe value transfer across isolation boundaries.
   - Measure with:
   - Ask: "What does `nonisolated` mean on a member of an actor or globally isolated type?"
   - Ask: "When is `assumeIsolated` appropriate, and what makes it dangerous?"
@@ -947,11 +951,11 @@ These topics expose most of the semantic, design, and debugging weaknesses that 
   - Exercise: "Outline a migration plan for a medium-sized app moving from Swift 5.x concurrency warnings to Swift 6 strict checking."
 
 - `D14. Swift 6.2 approachable concurrency and new defaults`
-  - Expect: Know about optional default isolation to `MainActor`, `@concurrent`, and the evolving execution semantics of `nonisolated async`.
+  - Expect: Know about optional default isolation to `MainActor`, `nonisolated(nonsending)`, `@concurrent`, and the evolving execution semantics of `nonisolated async`.
   - Caveats: This area is version-sensitive; staff engineers should know which behavior is language-version or build-setting dependent.
   - Measure with:
   - Ask: "What problem is default actor isolation to `MainActor` trying to solve, and what does it trade off?"
-  - Ask: "Why does Swift 6.2's change to `nonisolated async` behavior matter for app code, and when would you reach for `@concurrent` to make concurrency explicit?"
+  - Ask: "Why does Swift 6.2's `nonisolated(nonsending)` behavior matter for app code, and when would you reach for `@concurrent` to make concurrent execution explicit?"
   - Exercise: "Review a UI-heavy package and decide whether default isolation to `MainActor` is appropriate, partial, or harmful."
 
 ### E. Interop, Modules, and Distribution

@@ -826,7 +826,7 @@ A: It can create too many concurrent child tasks, overload networking, exhaust m
 
 - [[D1 — Structured concurrency fundamentals]]
 - [[D2 — Task hierarchy, cancellation, and priorities]]
-- [[D6 — `Sendable` and `@Sendable`]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D7 — Actor reentrancy and logic races]]
 - [[D10 — `AsyncSequence`, streams, and backpressure-aware design]]
 - [[D11 — Detached tasks, task inheritance, and isolation loss]]
