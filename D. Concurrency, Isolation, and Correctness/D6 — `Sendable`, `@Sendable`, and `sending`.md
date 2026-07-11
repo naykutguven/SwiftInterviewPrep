@@ -378,9 +378,9 @@ func unsafeAlias() async {
 The compiler is not being picky about variable names. `buffer` and `alias` point to the same object:
 
 ```text
-caller alias --+
-               +-- same ScratchBuffer instance
-sending arg ---+
+caller alias ─┐
+              ├── same ScratchBuffer instance
+sending arg ──┘
 ```
 
 If the callee can keep or merge the value into another isolation region, later mutation through `alias` would be concurrent access to non-`Sendable` shared state.
