@@ -30,7 +30,6 @@ Ownership annotations are semantically meaningful. They are not micro-optimizati
 
 - Explain how a resource-holding type should expose an operation that consumes the resource exactly once.
 
-This note follows the attached Swift Section Answer Template.
 
 ---
 
