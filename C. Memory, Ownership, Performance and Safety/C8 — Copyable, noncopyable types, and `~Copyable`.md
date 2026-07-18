@@ -388,7 +388,7 @@ Interview version:
 
 ## 5. Code probe
 
-The rubric has no dedicated C8 code probe, so use these three probes instead. The answer format follows the uploaded Swift section template’s structure for rubric snapshot, mechanics, traps, direct answers, exercise, production guidance, senior/staff signal, flashcards, related sections, and sources.
+The rubric has no dedicated C8 code probe, so use these three probes instead.
 
 ### 5.1 Minimal valid example
 
