@@ -60,7 +60,7 @@ Use `InlineArray` when the **size is a semantic fact**. Use `Span` when the **ca
 
 Swift guarantees more than C pointers here, but not magic. `Span` improves temporal safety, spatial safety, definite initialization, and type safety, but it is not owned storage and cannot safely escape. `InlineArray` removes dynamic array growth and separate element storage allocation, but it is not a drop-in `Array` replacement and should not be used casually.
 
-For iOS app work with an iOS 18.0 minimum deployment target, availability is a real constraint. Apple documentation search snippets list `InlineArray` members as iOS 26.0+, so these APIs generally need availability-gated use or fallbacks in iOS 18-compatible app code. ([Apple Developer, "index(after:)"](https://developer.apple.com/documentation/swift/inlinearray/index%28after%3a%29))
+For iOS app work with an iOS 18.0 minimum deployment target, distinguish the type from the APIs that vend it. In Xcode 26.5, `Span` and its core operations are available from iOS 12.2 and macOS 10.14.4, so an API that only receives and reads a `Span` needs no iOS 26 availability gate. `InlineArray`, however, is iOS 26.0+, as are standard-library conveniences such as `Array.span` and `String.UTF8View.span`. Gate those creation sites or provide a fallback in iOS 18-compatible app code. ([Apple Developer, "Span"](https://developer.apple.com/documentation/swift/span), [Apple Developer, "index(after:)"](https://developer.apple.com/documentation/swift/inlinearray/index%28after%3a%29))
 
 ---
 
@@ -78,7 +78,6 @@ I do not need to own, retain, resize, or store the container.
 Conceptual API shape:
 
 ```swift
-@available(iOS 26.0, macOS 26.0, *)
 func hasPNGSignature(_ bytes: Span<UInt8>) -> Bool {
     guard bytes.count >= 8 else { return false }
 
@@ -102,7 +101,6 @@ This is better than accepting `UnsafeBufferPointer<UInt8>` for normal parser log
 Safe default:
 
 ```swift
-@available(iOS 26.0, macOS 26.0, *)
 func sum(_ bytes: Span<UInt8>) -> UInt64 {
     var result: UInt64 = 0
 
@@ -117,7 +115,6 @@ func sum(_ bytes: Span<UInt8>) -> UInt64 {
 Unsafe variant only after proof:
 
 ```swift
-@available(iOS 26.0, macOS 26.0, *)
 func sumKnownNonEmptyPrefix(_ bytes: Span<UInt8>) -> UInt64 {
     precondition(bytes.count >= 4)
 
@@ -222,7 +219,6 @@ SE-0453 says `InlineArray` intentionally does not conform to `Sequence` or `Coll
 Bad, conceptually:
 
 ```swift
-@available(iOS 26.0, macOS 26.0, *)
 struct Parser {
     var savedBytes: Span<UInt8> // Wrong model: Span is non-escaping borrowed access.
 }
@@ -239,7 +235,6 @@ struct Parser {
 Or expose parsing as a local operation:
 
 ```swift
-@available(iOS 26.0, macOS 26.0, *)
 struct HeaderParser {
     func parse(_ bytes: Span<UInt8>) -> Header? {
         guard bytes.count >= 4 else { return nil }
@@ -303,9 +298,11 @@ It does not. `Array` has copy-on-write storage. `InlineArray` is inline storage;
 
 This is why generic collection conformances are tricky: ordinary collection algorithms may accidentally copy the whole inline buffer.
 
-### Trap 5: Ignoring availability in app code
+### Trap 5: Treating all `Span` APIs as iOS 26-only
 
-For an iOS 18.0-minimum app, do not expose `InlineArray` or `Span` directly in public APIs used by all deployment paths unless the API is availability-gated.
+For an iOS 18.0-minimum app, do not expose `InlineArray` directly in public APIs used by all deployment paths unless the API is availability-gated. Its type and members require iOS 26.
+
+`Span` is different: an API that receives and reads a `Span` works on iOS 18 without an iOS 26 annotation. But creating one with `Array.span` or `String.UTF8View.span` does require iOS 26. Gate the creation site, rather than unnecessarily gating an algorithm that only consumes a `Span`.
 
 Bad:
 
@@ -461,7 +458,6 @@ struct SearchState {
 ### Production-style example: parser API over borrowed bytes
 
 ```swift
-@available(iOS 26.0, macOS 26.0, *)
 struct BinaryParser {
     func readUInt32BE(from bytes: Span<UInt8>, at offset: Int) -> UInt32? {
         guard offset >= 0 else { return nil }
@@ -546,7 +542,6 @@ struct SHA256Compressor {
 ### Span-based input processing
 
 ```swift
-@available(iOS 26.0, macOS 26.0, *)
 struct SHA256InputProcessor {
     func process(_ input: Span<UInt8>) {
         var offset = 0
@@ -592,7 +587,7 @@ Use this in production when:
 Be careful when:
 
 ```text
-- Your app deployment target is below the availability of these APIs.
+- Your app deployment target is below the availability of `InlineArray` or the API used to obtain a `Span` (for example, `Array.span`).
 - You are exposing these types in public SDK APIs.
 - You are tempted to use unchecked subscripts.
 - You are replacing Array without profiling.
@@ -606,7 +601,7 @@ Avoid when:
 - The number of elements is naturally dynamic.
 - You need append/remove/filter/map-style ordinary collection workflows.
 - The code is UI/model/business logic where clarity beats micro-layout control.
-- You cannot availability-gate the API.
+- You need an `InlineArray` or iOS 26 `Span`-vending API but cannot availability-gate it.
 - Your team does not have tests or profiling around the low-level path.
 ```
 
@@ -618,7 +613,7 @@ Is the Span escaping, stored, captured, or returned incorrectly?
 Is the unsafe boundary narrow and auditable?
 Is the use of unchecked indexing locally proven?
 Did you measure allocation or copy costs before introducing InlineArray?
-Does this code need to run on iOS 18?
+Does this code need to run on iOS 18, and is it creating a `Span` through an iOS 26 API?
 Did the abstraction leak platform availability into public API?
 Is a simpler tuple, struct, Array, Data, or ContiguousArray enough?
 ```
@@ -633,11 +628,11 @@ Is a simpler tuple, struct, Array, Data, or ContiguousArray enough?
 
 ### Senior answer
 
-> `InlineArray` owns fixed-size inline storage, so it is useful when the count is a real invariant and dynamic allocation is unnecessary. `Span` is a borrowed non-owning view into contiguous memory, useful for local parser or codec APIs that should not own storage or expose unsafe pointers. I would use both only with availability checks and after measuring the hot path.
+> `InlineArray` owns fixed-size inline storage, so it is useful when the count is a real invariant and dynamic allocation is unnecessary. `Span` is a borrowed non-owning view into contiguous memory, useful for local parser or codec APIs that should not own storage or expose unsafe pointers. I would availability-gate `InlineArray` and iOS 26 APIs that vend a `Span`, then measure the hot path before adopting either.
 
 ### Staff-level answer
 
-> I would treat `Span` and `InlineArray` as API-design tools for making low-level invariants explicit. `Span` belongs at boundaries where an algorithm needs temporary contiguous access but should not own or escape storage. `InlineArray` belongs where fixed size is a semantic or layout guarantee, such as protocol headers, crypto blocks, matrices, or DSP coefficients. I would not leak these types broadly into an SDK without thinking about platform availability, source compatibility, resilience, and migration. For an iOS 18-minimum app, I would usually hide them behind availability-gated internal fast paths or keep using stable fallback representations until the deployment target moves.
+> I would treat `Span` and `InlineArray` as API-design tools for making low-level invariants explicit. `Span` belongs at boundaries where an algorithm needs temporary contiguous access but should not own or escape storage. `InlineArray` belongs where fixed size is a semantic or layout guarantee, such as protocol headers, crypto blocks, matrices, or DSP coefficients. I would not leak these types broadly into an SDK without thinking about platform availability, source compatibility, resilience, and migration. For an iOS 18-minimum app, I would hide `InlineArray` and iOS 26 span-vending fast paths behind availability checks; a `Span`-consuming algorithm itself can remain available.
 
 Staff-level questions to ask:
 
@@ -686,7 +681,7 @@ Q: What is a bad `InlineArray` use case?
 A: Search results, table rows, network lists, or anything whose count naturally varies.
 
 Q: What should you check before using these in an iOS 18-minimum app?  
-A: API availability, fallback design, and whether the types leak into public APIs that must be usable on older OS versions.
+A: `Span` itself is available, but `InlineArray` and APIs such as `Array.span` are iOS 26-only. Gate those APIs, design the fallback, and avoid leaking unavailable types into public APIs.
 
 Q: What is the staff-level concern with exposing `InlineArray` in a public SDK?  
 A: It couples clients to Swift version, standard-library availability, platform availability, and a fixed representation that may become compatibility debt.
