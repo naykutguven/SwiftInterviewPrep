@@ -7,816 +7,308 @@ tags:
   - continuations
   - async-await
 ---
+
 # D9 — Continuations and Bridging Callback APIs
 
-## 0. Rubric snapshot
+**Goal:** Select one terminal callback result under synchronization and resume outside the lock.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Know `withCheckedContinuation`, `withCheckedThrowingContinuation`, correctness rules, and exactly-once resume semantics. The rubric explicitly calls out multiple resumes and forgotten resumes as correctness bugs, and asks you to explain why a multi-callback API may not fit a single continuation.
+## Mental model
 
-**Caveats**
+A continuation bridges one asynchronous result into the current task. The bridging body runs synchronously and may resume before it returns; completion still waits until that body returns. Resuming does not cancel or unregister the underlying request. A separate synchronized state machine must arbitrate completion, cancellation, and resource release. [SE-0300](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md)
 
-- A continuation is a bridge from callback/event-style code into one suspended async task.
-- It is not a general event stream abstraction.
-- Checked continuations detect some misuse, but they do not make a bad adapter correct.
-- The core invariant is: resume exactly once on every execution path.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Define terminal-action ownership
 
-- What invariants must hold when using a continuation?
-- Why can adapting a multi-callback API to a single continuation be the wrong abstraction?
+Select a winning action under a lock, remove its stored continuation/request handles, then resume or cancel outside the lock. Unknown callbacks and destructors can reenter; do not call them while holding a nonrecursive mutex.
 
-**You should be able to do**
+**Common pitfall:** A plain Boolean guard does not prevent simultaneous duplicate callbacks. Use synchronized state, and make the winner policy explicit.
 
-- Wrap a legacy completion-handler API.
-- Explain how you guarantee exactly one resume.
-- Diagnose the code probe where a legacy API calls the completion twice.
+### Choose the handle and cancellation contract
 
----
+Checked handles diagnose duplicate resume; leaked unfinished handles can still hang. The newer noncopyable Continuation supports noncopyable success with OS 27 requirements here. Typed checked-throwing factories also exist in this SDK.
 
-## 1. Core mental model
+**Common pitfall:** Assuming onCancel only runs after request installation misses cancellation-before-entry and installation races. Store cancellation in the terminal state so a later installed handle is cancelled/released correctly. Use AsyncSequence for genuinely repeated events.
 
-A continuation is a manually held “resume handle” for one suspended async function call.
+## Interview questions
 
-When an async function reaches `withCheckedContinuation` or `withCheckedThrowingContinuation`, Swift gives your synchronous bridging closure a continuation object. Your job is to pass that continuation into the legacy callback world and resume it when the old API finishes.
+### Which handle supports noncopyable success, and why are typed failures not exclusive to withContinuation in this SDK?
 
-The continuation represents **one suspension point**, not the lifetime of a task, not a cancellable operation, and not an event channel. SE-0300 describes continuations as the mechanism that lets async Swift work with callback- or delegate-based systems by suspending the task and later resuming it from synchronous code. ([GitHub, "Continuations for Interfacing Async Tasks with Synchronous Code"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md))
+The newer noncopyable Continuation can support noncopyable success values under its API constraints. Typed errors are not exclusive to it: this SDK accepts explicitly typed checked throwing factories too. Verify handle ownership, factory signature, and runtime availability as separate questions.
 
-The key idea:
+### Why can't an arbitrary escaping callback simply consume a captured noncopyable continuation?
 
-```text
-async function suspends once → legacy API eventually calls back → continuation resumes the suspended task exactly once
-```
+An arbitrary escaping callback can be invoked repeatedly, so its capture cannot simply consume the same noncopyable continuation each time. Put single ownership behind a synchronized one-shot state, transfer the handle to the winning action, and make later callbacks no-ops or protocol violations according to policy.
 
-Swift guarantees that once the continuation is resumed, the suspended task can continue with a returned value or thrown error. It does **not** guarantee that the old API behaves well, calls back once, calls back at all, respects task cancellation, or uses the right abstraction for multi-event data.
+### Can onCancel precede operation entry, or precede installation of the request handle?
 
-Apple’s `CheckedContinuation` documentation states the central rule directly: a resume method must be called exactly once on every execution path, and resuming more than once is a correctness violation. ([Apple Developer, "CheckedContinuation"](https://developer.apple.com/documentation/swift/checkedcontinuation))
+Yes to both. Cancellation can be observed before the operation body enters or while a native start call has not returned its handle. The state machine must remember a terminal cancellation and dispose of a handle installed afterwards. A callback can also complete synchronously during registration.
 
----
+### Why does this adapter select its terminal action under the lock, then resume, cancel, and release resources outside it? Which callbacks or destructors could reenter?
 
-## 2. Essential mechanics
+The lock protects only choosing and detaching terminal state. Resume, request.cancel, unregister callbacks, and releasing captured resources can invoke unknown code or destructors that reenter. Performing them after unlocking prevents lock-order and recursive-entry deadlocks.
 
-### 2.1 `withCheckedContinuation` is for one successful result
+### Can success still win if cancellation is requested afterwards? What policy does the adapter implement?
 
-Use it when the legacy API cannot fail, or when failure is represented in the value domain.
+Yes, under a first-terminal-action policy completion can win before cancellation takes the state. Cancellation requested afterwards does not retroactively change that selected result. State whether the API uses first-wins, cancellation-preferred, or another explicit policy; tests must exercise the chosen boundary.
+
+## Focused exercise
+
+**Task:** Adapt a one-result callback using a synchronized terminal state. Check synchronous completion and duplicate delivery; state the cancellation policy.
+
+**Acceptance checks:**
+
+- Synchronous callback delivery completes successfully.
+- Duplicate delivery cannot resume the continuation twice.
+- No resume occurs under the lock; cancellation policy is stated rather than implied.
+
+**Solution:**
+
+Standalone one-shot adapter using Synchronization.Mutex, macOS 15 / iOS 18 or newer. Policy: first callback wins; task cancellation is not connected to a native request in this focused fixture.
 
 ```swift
-func legacyLoad(completion: @escaping (Data) -> Void) {
-    // Old callback API
+import Synchronization
+@available(macOS 15, iOS 18, *)
+final class OneShot: Sendable {
+    private let state: Mutex<CheckedContinuation<Int, Never>?>
+    init(_ continuation: CheckedContinuation<Int, Never>) { state = Mutex(continuation) }
+    func finish(_ value: Int) {
+        let continuation = state.withLock { stored in
+            let selected = stored
+            stored = nil
+            return selected
+        }
+        continuation?.resume(returning: value)
+    }
 }
-
-func load() async -> Data {
+@available(macOS 15, iOS 18, *)
+func adapt(start: (_ completion: @escaping @Sendable (Int) -> Void) -> Void) async -> Int {
     await withCheckedContinuation { continuation in
-        legacyLoad { data in
-            continuation.resume(returning: data)
-        }
+        let state = OneShot(continuation)
+        start { state.finish($0) }
     }
 }
-```
-
-This adapts:
-
-```text
-callback: (Data) -> Void
-```
-
-into:
-
-```text
-async -> Data
-```
-
-The continuation closure itself is synchronous. It starts the legacy operation and returns. The task remains suspended until the continuation is resumed. SE-0300 specifies that the continuation operation runs immediately in the current task context, and that `resume` makes the task schedulable rather than necessarily continuing it inline. ([GitHub, "Continuations for Interfacing Async Tasks with Synchronous Code"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md))
-
----
-
-### 2.2 `withCheckedThrowingContinuation` is for one success-or-failure result
-
-Use it for completion handlers shaped like `Result<T, Error>` or `(T?, Error?)`.
-
-```swift
-func legacyFetch(completion: @escaping (Result<Data, any Error>) -> Void) {
-    // Old callback API
-}
-
-func fetch() async throws -> Data {
-    try await withCheckedThrowingContinuation { continuation in
-        legacyFetch { result in
-            continuation.resume(with: result)
-        }
-    }
-}
-```
-
-`resume(with:)` is useful when the callback already uses `Result`.
-
-Equivalent manual form:
-
-```swift
-func fetch() async throws -> Data {
-    try await withCheckedThrowingContinuation { continuation in
-        legacyFetch { result in
-            switch result {
-            case .success(let data):
-                continuation.resume(returning: data)
-
-            case .failure(let error):
-                continuation.resume(throwing: error)
+@main struct Probe {
+    static func main() async {
+        if #available(macOS 15, iOS 18, *) {
+            let result = await adapt { completion in
+                completion(7)
+                completion(9)
             }
+            precondition(result == 7)
         }
     }
 }
 ```
 
----
+**Reasoning:** Taking the optional handle under the mutex gives exactly one callback the resume responsibility. This fixture intentionally has no registration resource or cancellation hook; the complete adapter below adds those state transitions rather than treating this small example as production-complete.
 
-### 2.3 Checked continuations are runtime-checked, not statically proven
+## In practice
 
-Checked continuations help detect misuse:
+**Choose it when:** Bridge a single-result callback with explicit result and request ownership.
 
-```swift
-continuation.resume(returning: 1)
-continuation.resume(returning: 2) // trap
-```
+**Investigate by:** Gate cancellation, registration, synchronous completion, and duplicate callbacks independently.
 
-SE-0300 says `CheckedContinuation` traps on multiple resumes and logs a warning if discarded without resuming, leaving the task suspended and leaking resources held by that suspended task. Those checks happen regardless of optimization level. ([GitHub, "Continuations for Interfacing Async Tasks with Synchronous Code"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md))
+**Strong evidence:** Verify installation races and reentrant cleanup, including which terminal result is allowed to win.
 
-This means:
+### Complete cancellation and registration state machine — optional
 
-```text
-checked continuation = diagnostic guardrail
-not = proof that your adapter is correct
-```
+#### Contract
 
----
+Wrap a callback registration function that returns an optional cancellation handle. Callbacks may be synchronous, duplicated, or concurrent. A nil handle means registration failed unless an earlier callback already completed the operation. Cancellation is a nonblocking request and may itself trigger the callback synchronously.
 
-### 2.4 Continuations do not automatically handle cancellation
+Use a first-terminal-event policy. Cancellation before continuation installation must avoid starting the request. Cancellation during registration may allow the request to start, but must be forwarded when its handle becomes available. No external action or request destruction should occur under the state lock.
 
-Task cancellation does not magically cancel the legacy operation. If the old API returns a cancellable token, operation object, `URLSessionTask`, delegate registration, observer token, or similar handle, your async wrapper must connect Swift task cancellation to that handle.
+#### Swift 6.4 implementation
+
+This standalone implementation uses `Continuation` in noncopyable state. The adapter deliberately restricts `Value` to Copyable Sendable payloads so a reusable `Result` callback can safely share its values; the simpler `packet` probe covers noncopyable success separately.
 
 ```swift
-func fetchImage(url: URL, client: LegacyClient) async throws -> UIImage {
-    var request: LegacyRequest?
+import Synchronization
 
+enum BridgeError: Error {
+    case failed
+    case couldNotStart
+    case cancelled
+    case ownerEnded
+    case invalidCallbackState
+}
+
+struct CancelRequest: Sendable {
+    let cancel: @Sendable () -> Void
+}
+
+@available(anyAppleOS 27.0, *)
+final class ResumeGate<Value: Sendable>: Sendable {
+    private struct State: ~Copyable {
+        var continuation: Continuation<Value, BridgeError>?
+        var request: CancelRequest?
+        var finished = false
+        var cancelled = false
+    }
+    private struct Action: ~Copyable {
+        var continuation: Continuation<Value, BridgeError>?
+        var request: CancelRequest?
+    }
+    private let state = Mutex(State())
+
+    // Called once, before registration. Only cancellation can precede it.
+    func install(_ continuation: consuming Continuation<Value, BridgeError>) -> Bool {
+        var incoming: Continuation<Value, BridgeError>? = consume continuation
+        let shouldStart = state.withLock { state in
+            guard !state.finished else { return false }
+            state.continuation = incoming.take()
+            return true
+        }
+        incoming?.resume(throwing: .cancelled)
+        return shouldStart
+    }
+
+    // Called at most once after the registration call returns a handle.
+    func installRequest(_ request: CancelRequest) {
+        let cancelNow = state.withLock { state in
+            if !state.finished {
+                state.request = request
+                return false
+            }
+            return state.cancelled
+        }
+        if cancelNow { request.cancel() }
+    }
+
+    func complete(_ result: Result<Value, BridgeError>) {
+        let action = state.withLock { state -> Action in
+            guard !state.finished else { return Action() }
+            state.finished = true
+            return Action(
+                continuation: state.continuation.take(),
+                request: state.request.take()
+            )
+        }
+        action.continuation?.resume(with: result)
+        // Retain then release the request outside the lock.
+        withExtendedLifetime(action.request) {}
+    }
+
+    func cancel() {
+        let action = state.withLock { state -> Action in
+            guard !state.finished else { return Action() }
+            state.finished = true
+            state.cancelled = true
+            return Action(
+                continuation: state.continuation.take(),
+                request: state.request.take()
+            )
+        }
+        action.continuation?.resume(throwing: .cancelled)
+        action.request?.cancel()
+    }
+}
+
+@available(anyAppleOS 27.0, *)
+nonisolated(nonsending)
+func awaitLegacy<Value: Sendable>(
+    start: @Sendable (
+        @escaping @Sendable (Result<Value, BridgeError>) -> Void
+    ) -> CancelRequest?
+) async throws(BridgeError) -> Value {
+    let gate = ResumeGate<Value>()
     return try await withTaskCancellationHandler {
-        request?.cancel()
-    } operation: {
-        try await withCheckedThrowingContinuation { continuation in
-            request = client.fetchImage(url: url) { result in
-                continuation.resume(with: result)
+        () async throws(BridgeError) -> Value in
+        try await withContinuation(of: Value.self, throwing: BridgeError.self) {
+            continuation in
+            guard gate.install(consume continuation) else { return }
+            if let request = start({ gate.complete($0) }) {
+                gate.installRequest(request)
+            } else {
+                gate.complete(.failure(.couldNotStart))
             }
         }
+    } onCancel: {
+        gate.cancel()
     }
 }
 ```
 
-This sketch shows the intent, but in production you also need thread-safe state handling if cancellation and callback can race. SE-0300 explicitly treats a continuation as a single suspension-point mechanism, not a task handle that controls the whole task lifetime. ([GitHub, "Continuations for Interfacing Async Tasks with Synchronous Code"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md))
+The only event allowed before `install` is cancellation, so the late incoming handle can be resumed with `.cancelled` without buffering a general early result. Each operation creates a fresh gate; continuation and request installation are each called at most once.
 
----
+If completion wins, the gate releases the request without cancelling it. If cancellation wins, it extracts the current request or remembers that a later one must be cancelled. Late callbacks see terminal state and do nothing. The cancellation error is this adapter's typed `BridgeError.cancelled`, not necessarily `CancellationError`.
 
-## 3. Common traps and misconceptions
+The gate resumes before calling the legacy cancellation action, outside the lock. That permits a synchronous reentrant callback without a second resume. It does not guarantee the async caller waits for external teardown.
 
-### Trap 1: “Checked” means safe
+For older deployment targets, use a checked-handle implementation of the same state machine. Changing handle type alone is insufficient; preserve registration, resource-release, and winner-selection behavior.
 
-Bad:
+#### Optional value/error pairs
+
+Reusing `BridgeError` and `CancelRequest` from the implementation, normalize all four callback shapes:
 
 ```swift
-func adapted() async throws -> Int {
-    try await withCheckedThrowingContinuation { continuation in
-        legacy { result in
-            continuation.resume(with: result)
+struct User: Sendable {
+    let id: Int
+}
+
+func normalize(
+    user: User?, error: BridgeError?
+) -> Result<User, BridgeError> {
+    switch (user, error) {
+    case let (user?, nil): .success(user)
+    case let (nil, error?): .failure(error)
+    case (.some, .some), (nil, nil): .failure(.invalidCallbackState)
+    }
+}
+
+@available(anyAppleOS 27.0, *)
+nonisolated(nonsending)
+func loadUser(
+    start: @Sendable (
+        @escaping @Sendable (User?, BridgeError?) -> Void
+    ) -> CancelRequest?
+) async throws(BridgeError) -> User {
+    try await awaitLegacy { complete in
+        start { user, error in
+            complete(normalize(user: user, error: error))
         }
     }
 }
 ```
 
-This is only correct if `legacy` has a real contract that says:
-
-```text
-The completion is called exactly once.
-```
-
-Better:
-
-```swift
-func adapted() async throws -> Int {
-    try await withCheckedThrowingContinuation { continuation in
-        legacyExactlyOnce { result in
-            continuation.resume(with: result)
-        }
-    }
-}
-```
-
-The name is not the important part. The contract is.
-
----
-
-### Trap 2: Using a single continuation for multiple events
-
-Bad:
-
-```swift
-func observeValues() async -> Int {
-    await withCheckedContinuation { continuation in
-        service.onValue = { value in
-            continuation.resume(returning: value)
-        }
-    }
-}
-```
-
-This only works for the **first** value. The second value attempts to resume an already-resumed continuation.
-
-Better:
-
-```swift
-func observeValues() -> AsyncStream<Int> {
-    AsyncStream { continuation in
-        let token = service.observe { value in
-            continuation.yield(value)
-        }
-
-        continuation.onTermination = { @Sendable _ in
-            token.cancel()
-        }
-    }
-}
-```
-
-Use a continuation for one result. Use `AsyncSequence` / `AsyncStream` for a sequence of values.
-
----
-
-### Trap 3: Forgetting the “no callback” path
-
-Bad:
-
-```swift
-func login() async throws -> User {
-    try await withCheckedThrowingContinuation { continuation in
-        auth.login { result in
-            continuation.resume(with: result)
-        }
-    }
-}
-```
-
-If `auth.login` can silently fail, drop the callback, or be deallocated before callback, the async caller hangs.
-
-Better:
-
-```swift
-func login() async throws -> User {
-    try await withCheckedThrowingContinuation { continuation in
-        let didStart = auth.login { result in
-            continuation.resume(with: result)
-        }
-
-        if !didStart {
-            continuation.resume(throwing: LoginError.couldNotStart)
-        }
-    }
-}
-```
-
-Every execution path must resume once.
-
----
-
-### Trap 4: Guarding duplicate callbacks with a plain captured Boolean
-
-Bad:
-
-```swift
-func adapted() async throws -> Int {
-    try await withCheckedThrowingContinuation { continuation in
-        var didResume = false
-
-        legacy { result in
-            guard !didResume else { return }
-            didResume = true
-            continuation.resume(with: result)
-        }
-    }
-}
-```
-
-This is not thread-safe if callbacks can arrive concurrently from different queues. In Swift 6 strict concurrency, mutable captured state in escaping callback bridges is also a diagnostic smell.
-
-Better: use a real synchronization primitive, an actor, or redesign the adapter around the legacy API’s actual lifecycle.
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What invariants must hold when using a continuation?
-
-A continuation must be resumed **exactly once** on every possible path.
-
-That means:
-
-```text
-0 resumes  → suspended task hangs / leaks resources
-1 resume   → correct
-2 resumes  → correctness bug; checked continuation traps
-```
-
-You also need to preserve the semantic shape of the original API:
-
-- one completion → continuation is appropriate
-    
-- multiple values → `AsyncSequence`
-    
-- delegate lifecycle → stream or higher-level wrapper
-    
-- cancellable operation → connect task cancellation to legacy cancellation
-    
-- callback may arrive concurrently → synchronize resume state
-    
-
-Interview version:
-
-> A continuation is a one-shot bridge from callback code into one suspended async task. The invariant is exactly-once resume on all paths: not zero, not two. Checked continuations help detect duplicate resumes and leaked continuations, but they do not prove the adapter is semantically correct. I still need to reason about cancellation, callback threading, ownership, and whether the legacy API is actually one-shot.
-
----
-
-### Q2. Why can adapting a multi-callback API to a single continuation be the wrong abstraction?
-
-Because a continuation returns or throws **once**. A multi-callback API emits multiple events over time.
-
-Examples:
-
-```text
-location updates
-websocket messages
-download progress
-delegate callbacks
-notification observation
-Bluetooth state changes
-AVFoundation capture output
-```
-
-A single continuation forces you to lie about the API shape. You either drop later values, trap on duplicate resumes, or hang because there is no clear terminal callback.
-
-Use `AsyncStream` or `AsyncThrowingStream` when the API emits multiple values.
-
-Interview version:
-
-> A continuation models one eventual result. If the callback can fire multiple times, the natural async shape is usually `AsyncSequence`, not `async -> Value`. Otherwise the second callback violates the continuation’s exactly-once rule. The staff-level judgment is to preserve the semantic shape of the API instead of mechanically wrapping callbacks.
-
----
-
-## 5. Code probe
-
-Given:
-
-```swift
-func legacy(_ completion: @escaping (Result<Int, Error>) -> Void) {
-    completion(.success(1))
-    completion(.success(2))
-}
-
-func adapted() async throws -> Int {
-    try await withCheckedThrowingContinuation { continuation in
-        legacy { result in
-            continuation.resume(with: result)
-        }
-    }
-}
-```
-
-### What happens?
-
-This compiles, but traps at runtime.
-
-On Swift 6.2.1, the meaningful runtime failure is:
-
-```text
-_Concurrency/CheckedContinuation.swift:169: Fatal error: SWIFT TASK CONTINUATION MISUSE: adapted() tried to resume its continuation more than once, returning 2!
-```
-
-There is no reliable normal output like:
-
-```text
-1
-```
-
-Because `legacy` calls the completion synchronously twice. The first callback resumes the continuation. The second callback immediately attempts to resume the same continuation again, so the checked continuation traps before the suspended task can complete normally.
-
-### Why?
-
-Step-by-step:
-
-```text
-adapted()
- └─ withCheckedThrowingContinuation creates one continuation
-     └─ legacy starts
-         ├─ completion(.success(1))
-         │   └─ continuation.resume(returning: 1)  ✅ first resume
-         └─ completion(.success(2))
-             └─ continuation.resume(returning: 2)  ❌ second resume → trap
-```
-
-The broken invariant:
-
-```text
-one continuation instance must be resumed exactly once
-this code resumes the same continuation twice
-```
-
-This is not a compiler error because Swift cannot generally know how many times an arbitrary callback-based API will invoke its callback. This is a runtime contract between your adapter and the legacy API.
-
-### Fix or redesign
-
-If `legacy` is actually a broken one-shot API and you only want the first result, you can defensively gate the continuation:
-
-```swift
-import Synchronization
-
-private enum OneShotState<T: Sendable> {
-    case pending(CheckedContinuation<T, any Error>)
-    case resumed
-}
-
-private final class OneShot<T: Sendable>: Sendable {
-    private let state: Mutex<OneShotState<T>>
-
-    init(_ continuation: CheckedContinuation<T, any Error>) {
-        self.state = Mutex(.pending(continuation))
-    }
-
-    func resume(with result: Result<T, any Error>) {
-        let continuation = state.withLock { state -> CheckedContinuation<T, any Error>? in
-            switch state {
-            case .pending(let continuation):
-                state = .resumed
-                return continuation
-
-            case .resumed:
-                return nil
-            }
-        }
-
-        continuation?.resume(with: result)
-    }
-}
-
-func adaptedFirstResultOnly() async throws -> Int {
-    try await withCheckedThrowingContinuation { continuation in
-        let oneShot = OneShot<Int>(continuation)
-
-        legacy { result in
-            oneShot.resume(with: result)
-        }
-    }
-}
-```
-
-This returns `1` and ignores the second callback.
-
-But be careful: this is only a defensive adapter. It may hide a serious bug in the legacy API. In many production systems, duplicate completion should be logged, asserted, or treated as an integration failure.
-
-### Better redesign for a multi-event API
-
-If multiple success callbacks are valid, the correct abstraction is a stream:
-
-```swift
-func values() -> AsyncThrowingStream<Int, any Error> {
-    AsyncThrowingStream { continuation in
-        legacy { result in
-            switch result {
-            case .success(let value):
-                continuation.yield(value)
-
-            case .failure(let error):
-                continuation.finish(throwing: error)
-            }
-        }
-
-        // Only valid for this toy API because `legacy` emits synchronously.
-        // A real multi-event API needs an explicit completion/cancel callback.
-        continuation.finish()
-    }
-}
-```
-
-Consumer:
-
-```swift
-for try await value in values() {
-    print(value)
-}
-```
-
-Output for this toy `legacy`:
-
-```text
-1
-2
-```
-
-### Why this fix is correct
-
-The stream version matches the shape of the legacy API:
-
-```text
-legacy emits multiple values → AsyncThrowingStream emits multiple values
-```
-
-The one-shot continuation version mismatches the shape:
-
-```text
-legacy emits multiple values → async throws -> Int returns once
-```
-
-### Alternative fixes and tradeoffs
-
-|Option|When it is appropriate|Tradeoff|
-|---|---|---|
-|Plain `withCheckedThrowingContinuation`|Legacy API guarantees exactly one callback|Simple, idiomatic, but relies on a real API contract|
-|One-shot guarded continuation|Legacy API is supposed to be one-shot but may duplicate due to bugs|Prevents crash, but may hide upstream correctness problems|
-|`AsyncStream` / `AsyncThrowingStream`|Legacy API emits multiple values or events|More lifecycle/cancellation handling required|
-|Actor wrapper|Callback state is complex and cross-thread|More overhead and async API design complexity|
-|Unsafe continuation|Proven hot path where checked overhead matters|Removes diagnostics; rarely justified in app code|
-
----
-
-## 6. Exercise
-
-### Problem
-
-Wrap a legacy completion-handler API and explain how you guarantee exactly one resume.
-
-### Bad / naive version
-
-```swift
-func loadUser(id: User.ID) async throws -> User {
-    try await withCheckedThrowingContinuation { continuation in
-        legacyClient.loadUser(id: id) { user, error in
-            if let user {
-                continuation.resume(returning: user)
-            }
-
-            if let error {
-                continuation.resume(throwing: error)
-            }
-        }
-    }
-}
-```
-
-### What is wrong?
-
-```text
-If both user and error are non-nil → resumes twice.
-If both user and error are nil     → never resumes.
-If callback can be called twice    → resumes twice.
-If task is cancelled               → legacy operation may keep running.
-```
-
-This adapter does not define the illegal callback states. It just hopes they do not happen.
-
-### Improved version for a true one-shot completion API
-
-```swift
-enum LoadUserError: Error {
-    case invalidCallbackState
-}
-
-func loadUser(id: User.ID) async throws -> User {
-    try await withCheckedThrowingContinuation { continuation in
-        legacyClient.loadUser(id: id) { user, error in
-            switch (user, error) {
-            case let (user?, nil):
-                continuation.resume(returning: user)
-
-            case let (nil, error?):
-                continuation.resume(throwing: error)
-
-            case (.some, .some), (nil, nil):
-                continuation.resume(throwing: LoadUserError.invalidCallbackState)
-            }
-        }
-    }
-}
-```
-
-This guarantees exactly one resume **assuming the completion itself is called exactly once**.
-
-### Improved version with defensive duplicate-callback handling
-
-```swift
-import Synchronization
-
-enum LoadUserError: Error {
-    case invalidCallbackState
-}
-
-private enum OneShotState<T: Sendable> {
-    case pending(CheckedContinuation<T, any Error>)
-    case resumed
-}
-
-private final class OneShot<T: Sendable>: Sendable {
-    private let state: Mutex<OneShotState<T>>
-
-    init(_ continuation: CheckedContinuation<T, any Error>) {
-        self.state = Mutex(.pending(continuation))
-    }
-
-    func resume(returning value: T) {
-        resume(with: .success(value))
-    }
-
-    func resume(throwing error: any Error) {
-        resume(with: .failure(error))
-    }
-
-    private func resume(with result: Result<T, any Error>) {
-        let continuation = state.withLock { state -> CheckedContinuation<T, any Error>? in
-            switch state {
-            case .pending(let continuation):
-                state = .resumed
-                return continuation
-
-            case .resumed:
-                return nil
-            }
-        }
-
-        continuation?.resume(with: result)
-    }
-}
-
-func loadUserDefensively(id: User.ID) async throws -> User {
-    try await withCheckedThrowingContinuation { continuation in
-        let oneShot = OneShot<User>(continuation)
-
-        legacyClient.loadUser(id: id) { user, error in
-            switch (user, error) {
-            case let (user?, nil):
-                oneShot.resume(returning: user)
-
-            case let (nil, error?):
-                oneShot.resume(throwing: error)
-
-            case (.some, .some), (nil, nil):
-                oneShot.resume(throwing: LoadUserError.invalidCallbackState)
-            }
-        }
-    }
-}
-```
-
-### Why this is better
-
-- The callback state is exhaustively handled.
-- Invalid `(user, error)` combinations are converted into a real failure.
-- Duplicate callbacks cannot resume the continuation twice.
-- The one-shot state is protected by `Mutex`, so concurrent callbacks do not race.
-- The adapter’s semantic contract is explicit.
-
-Still, this wrapper only solves duplicate resume safety. It does **not** automatically cancel the legacy operation. Add cancellation if the legacy API supports it.
-
----
-
-## 7. Production guidance
-
-Use continuations in production when:
-
-```text
-- You are wrapping a true one-shot callback API.
-- You are migrating old completion-handler APIs to async/await.
-- You need to bridge Objective-C, C, delegate, or SDK APIs into Swift concurrency.
-- You can clearly prove every path resumes exactly once.
-```
-
-Be careful when:
-
-```text
-- The callback uses optional value + optional error.
-- The completion can be called synchronously.
-- The completion can be called from arbitrary queues.
-- Cancellation must stop underlying work.
-- The legacy owner can deallocate before calling back.
-- The callback can fire more than once.
-```
-
-Avoid continuations when:
-
-```text
-- The API emits multiple values.
-- There is no completion signal.
-- You need backpressure.
-- You need long-lived observation.
-- You are wrapping a delegate stream, websocket, notification observer, progress callback, or location updates.
-```
-
-Debugging checklist:
-
-```text
-Did every path resume?
-Can any path resume twice?
-Can success and failure both happen?
-Can neither success nor failure happen?
-Can callback happen synchronously before setup completes?
-Can callback race with cancellation?
-Can callback race with deallocation?
-Should this be AsyncSequence instead?
-Is the continuation stored? If yes, who owns and clears it?
-Is duplicate callback a bug that should be logged/asserted?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> Use `withCheckedContinuation` to turn callbacks into async/await, and call `resume` in the completion handler.
-
-### Senior answer
-
-> A checked continuation bridges one callback result into one suspended async task. I must resume exactly once on every path. I need to handle success, failure, invalid callback states, no-callback paths, duplicate callbacks, and cancellation. If the callback can fire multiple times, I should use `AsyncStream` instead.
-
-### Staff-level answer
-
-> Continuations are an interoperability boundary, so I treat them as a small state machine with a proof obligation. I preserve the semantic shape of the legacy API: one-shot completions become `async`, multi-event callbacks become `AsyncSequence`, cancellable operations connect to task cancellation, and delegate lifetimes get explicit termination cleanup. I do not silence continuation misuse; I design the adapter so duplicate, missing, racing, and invalid callback states are either impossible, synchronized, logged, or surfaced as errors.
-
-Staff-level questions to ask:
-
-```text
-What is the exact callback contract?
-Is the callback guaranteed once, at most once, or many times?
-Can it call back synchronously?
-Can it call back concurrently?
-What owns the operation while the task is suspended?
-How does cancellation propagate?
-What happens if the legacy object deallocates?
-Should duplicate completion be ignored, logged, asserted, or treated as fatal?
-Is AsyncSequence the more honest abstraction?
-```
-
----
-
-## 9. Interview-ready summary
-
-A continuation is a one-shot bridge from callback-based code into Swift async/await. `withCheckedContinuation` and `withCheckedThrowingContinuation` suspend the current async task and give legacy code a handle to resume it later. The core rule is exactly-once resume on every execution path. Zero resumes leave the task suspended; multiple resumes are a correctness bug and checked continuations trap or warn at runtime. For one-shot completion handlers, continuations are appropriate. For multi-callback APIs like delegates, progress, notifications, websockets, or location updates, `AsyncStream` / `AsyncThrowingStream` is usually the correct abstraction. In production, the hard part is not calling `resume`; it is proving the adapter handles success, failure, invalid states, duplicate callbacks, cancellation, threading, and lifetime correctly.
-
----
-
-## 10. Flashcards
-
-Q: What is the core invariant of `CheckedContinuation`?  
-A: Resume exactly once on every execution path.
-
-Q: What happens if a checked continuation is resumed twice?  
-A: Runtime trap: Swift reports continuation misuse.
-
-Q: What happens if a continuation is never resumed?  
-A: The awaiting task remains suspended, and resources held by that suspended task can leak.
-
-Q: When should you use `withCheckedThrowingContinuation` instead of `withCheckedContinuation`?  
-A: When the async wrapper needs to throw, usually because the legacy API reports success or failure.
-
-Q: Is a continuation a cancellation handle?  
-A: No. It represents one suspension point. You must separately connect task cancellation to the underlying legacy operation.
-
-Q: Why is a multi-callback API a poor fit for a single continuation?  
-A: A continuation can return or throw once, while a multi-callback API emits many values.
-
-Q: What should you use for repeated events?  
-A: `AsyncStream` or `AsyncThrowingStream`.
-
-Q: Does `resume` immediately continue the async function inline?  
-A: No. It makes the task schedulable; the executor resumes it according to concurrency scheduling.
-
-Q: Why is a plain `var didResume = false` often insufficient?  
-A: If callbacks can arrive concurrently, the flag is a data race and can still allow duplicate resumes.
-
-Q: What is the staff-level way to approach continuations?  
-A: Treat the adapter as a small state machine with explicit ownership, cancellation, threading, and exactly-once semantics.
-
----
-
-## 11. Related sections
-
-- [[D1 — Structured concurrency fundamentals]]
-- [[D2 — Task hierarchy, cancellation, and priorities]]
+The naive pair of independent `if let` statements would resume twice for two non-nil fields and never resume for two nil fields. Normalization chooses one result; the shared gate additionally arbitrates repeated callbacks.
+
+#### Verification tasks
+
+- Synchronous success, synchronous failure, nil registration, and a callback followed by nil registration.
+- Two concurrent callbacks: one result wins without a duplicate-resume trap.
+- Cancellation before operation entry: registration count stays zero.
+- Cancellation while registration is returning its request, and cancellation after request installation.
+- A cancellation action that calls completion synchronously.
+- Callback success winning before cancellation, and cancellation winning before callback.
+- A legacy owner that explicitly reports `ownerEnded` before releasing its callback.
+- Every optional value/error combination.
+- Dropped-handle trap, checked leak/timeout, and consumed-handle diagnostic in isolated probes.
+
+An owner that silently discards a callback still violates the completion contract; the gate cannot infer that external event. The waiting operation retains its gate. Explicit cancellation can release it, but an uncancelled request that never reports completion still requires a timeout or external lifetime guarantee. A task-group timeout alone can also wait forever if its cancelled adapter child never resumes; fix the adapter's cancellation path first.
+
+## References
+
+### Related guides
+
+- [[A13 — Error handling and typed throws]]
+- [[C8 — Copyable, noncopyable types, and `~Copyable`]]
+- [[D1 — Structured Concurrency Fundamentals]]
+- [[D2 — Task Hierarchy, Cancellation, and Priorities]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D10 — `AsyncSequence`, Streams, and Backpressure-Aware Design]]
-- [[D11 — Detached tasks, task inheritance, and isolation loss]]
-- [[D12 — Synchronization library, mutexes, and choosing between actors and locks]]
-- [[F1 — Testing async and concurrent code]]
-- [[F2 — Diagnostics and LLDB]]
+- [[D12 — Synchronization Library, Mutexes, and Choosing Between Actors and Locks]]
+- [[F1 — Testing Strategy in Modern Swift]]
+- [[F2 — Debugging Swift code with LLDB and compiler diagnostics]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D9 — Continuations section.
-- Apple Developer. "CheckedContinuation." Apple Developer Documentation. https://developer.apple.com/documentation/swift/checkedcontinuation
-- Apple Developer. "withCheckedThrowingContinuation(isolation:function:_:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/withcheckedthrowingcontinuation%28isolation%3afunction%3a_%3a%29
-- Apple Developer. "resume(returning:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/checkedcontinuation/resume%28returning%3a%29
-- GitHub. "Continuations for Interfacing Async Tasks with Synchronous Code." Swift Evolution SE-0300. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md
+- [SE-0300](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md)
+- [SE-0528 — Noncopyable Continuation](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0528-noncopyable-continuation.md)
+- [CheckedContinuation](https://developer.apple.com/documentation/swift/checkedcontinuation)
+- [withCheckedThrowingContinuation](https://developer.apple.com/documentation/swift/withcheckedthrowingcontinuation%28isolation%3Afunction%3A_%3A%29)
+- [withTaskCancellationHandler](https://developer.apple.com/documentation/swift/withtaskcancellationhandler(operation:oncancel:isolation:)
+- [Current checked-continuation implementation](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/CheckedContinuation.swift)

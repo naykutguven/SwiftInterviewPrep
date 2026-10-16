@@ -7,627 +7,252 @@ tags:
   - enums
   - state-modeling
 ---
+
 # A9 — Enums, Associated Values, Recursive Enums, and State Modeling
 
-## 0. Rubric snapshot
+**Goal:** Represent refresh-with-previous-data without permitting contradictory workflow flags.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Use enums to model finite state machines and make invalid states unrepresentable. The A9 rubric specifically focuses on enums, associated values, recursive enums, and state modeling.
+## Mental model
 
-**Caveats**
+An enum stores exactly one case with that case's payload. Cases constrain shape; they do not validate arbitrary payloads, authorize transitions, or execute effects. Decide which combinations the product needs before replacing flags. Loading while showing an earlier successful value can be a valid refresh state. [Enumerations](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/)
 
-Multiple booleans often indicate that an enum is missing. Associated values should encode semantics, not anonymous blobs.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Separate representation from transitions
 
-- Why is an enum often a better model than a set of optional properties?
-- When do you need `indirect`, and what is the runtime implication?
+Use cases to exclude impossible combinations and transition methods to reject stale or invalid events. Keep effect execution, such as starting or cancelling a task, under an explicit owner. A request identity should distinguish repeated attempts for the same input.
 
-**You should be able to do**
+**Common pitfall:** A loaded/loading/failed enum that discards previous data cannot represent a valid stale-content refresh. Put previous data on the loading and failed cases when the product retains it.
 
-- Model a request lifecycle with cancel/retry semantics as an enum.
-- Redesign a boolean/optional-based `LoadState` so impossible states become unrepresentable.
+### Respect payload ownership
 
----
+Copying a copyable enum copies its payload values, including shared class references. Indirect cases break recursive inline layout; they do not make arbitrary graph operations iterative or guarantee a cost. A noncopyable payload can require noncopyable enum ownership.
 
-## 1. Core mental model
+**Common pitfall:** Assuming the enum validates associated values leaves negative retries or mismatched IDs constructible. Introduce validated domain types or guarded construction where those invariants matter. See [[C8 — Copyable, noncopyable types, and `~Copyable`]].
 
-An enum is a **closed set of mutually exclusive cases**. A value of an enum is exactly one case at a time. That makes enums a strong fit for state modeling, because many real app states are mutually exclusive: a screen is idle, loading, loaded, failed, cancelled, or retrying. It should not be “loading and failed and loaded” unless your model intentionally allows that.
+## Interview questions
 
-Associated values let each enum case carry only the data that makes sense for that case. Swift enumerations can store associated values of different types for different cases, which is what makes them stronger than plain string/status-code enums. ([Swift.org, "Enumerations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/))
+### Which combinations should this product preserve, and which should the type exclude?
 
-The key design move is to stop asking:
+Preserve combinations required by the product, such as refreshing with visible previous data or refresh failure with retained content. Exclude contradictory shapes such as simultaneously idle and failed. Cases should require the data each state needs; construction and transitions still validate IDs, payload domains, and event ordering.
 
-```text
-Which properties happen to be nil right now?
-```
+### How can a retry timer or cancellation acknowledgment arrive after replacement, and what prevents it from changing the current state?
 
-and start asking:
+Timers and cancellation acknowledgments are asynchronous events and may arrive after replacement. Tag them with the operation identity and apply them only if that operation is still current. Cancellation requests stop permission to publish when the model says so, but do not prove the underlying operation stopped. Old cleanup must not clear a replacement's handle.
 
-```text
-Which domain state is this value in?
-```
+## Focused exercise
 
-With booleans and optionals, the compiler accepts many combinations that your domain does not. With an enum, the type system can reject entire classes of bugs because there is no representation for those invalid combinations.
+**Task:** Represent loading, loaded, and failed states while retaining previous data where required. Check allowed transitions and excluded combinations.
 
-Swift enums are value types, like structs. That means enum state is copied by value unless the associated payload contains reference types. ([Swift.org, "Structures and Classes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/)) This matters in view models, reducers, state stores, and SwiftUI because you can reason about state transitions as value replacement:
+**Acceptance checks:**
 
-```swift
-state = .loading
-state = .loaded(items)
-state = .failed(error)
-```
+- Initial loading has no previous data; refresh retains the previous snapshot.
+- Failure retains that snapshot; empty success remains distinct from absence.
+- An old completion cannot replace the current request.
 
-Recursive enums are enums whose cases contain another value of the same enum type. Swift requires `indirect` for direct recursion so the compiler can insert a layer of indirection instead of trying to lay out an infinitely sized value. ([Swift.org, "Enumerations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/))
+**Solution:**
 
-The key idea:
-
-```text
-Enum state modeling = one valid case + only the payload valid for that case.
-```
-
-Swift guarantees that an enum value is one of its declared cases. It does not guarantee that your case design is semantically good. You can still make bad enums with vague cases, unlabeled associated values, duplicated state, or payloads that are too weak to encode the domain.
-
----
-
-## 2. Essential mechanics
-
-### Case exclusivity
-
-An enum value is exactly one case.
+Standalone synchronous transition model; effects are intentionally external:
 
 ```swift
-enum ScreenState {
+enum State: Equatable {
     case idle
-    case loading
+    case loading(previous: [Int]?)
     case loaded([Int])
-    case failed(message: String)
+    case failed(previous: [Int]?, message: String)
 }
-
-let state: ScreenState = .loading
-```
-
-This is stronger than:
-
-```swift
-struct ScreenState {
-    var isLoading: Bool
-    var data: [Int]?
-    var errorMessage: String?
-}
-```
-
-The struct can represent contradictory states. The enum cannot be both `.loading` and `.failed` at the same time.
-
-### Associated values encode case-specific data
-
-Each case can carry the data relevant to that state.
-
-```swift
-enum ProfileState {
-    case idle
-    case loading
-    case loaded(user: User, isStale: Bool)
-    case failed(error: ProfileError, retryCount: Int)
-}
-```
-
-Good associated values are semantic. Prefer this:
-
-```swift
-case failed(error: ProfileError, retryCount: Int)
-```
-
-over this:
-
-```swift
-case failed(String, Int)
-```
-
-The Swift API Design Guidelines emphasize clarity at the point of use and clarity over brevity. That applies directly to enum case names and associated-value labels. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
-
-### Exhaustive switching
-
-A `switch` over an enum forces you to handle all cases unless you add a catch-all branch.
-
-```swift
-func render(_ state: ScreenState) {
-    switch state {
-    case .idle:
-        print("Show placeholder")
-
-    case .loading:
-        print("Show spinner")
-
-    case .loaded(let values):
-        print("Show \(values.count) values")
-
-    case .failed(let message):
-        print("Show error: \(message)")
+struct Model {
+    private(set) var state: State = .idle
+    private(set) var request = 0
+    mutating func begin() -> Int {
+        let previous: [Int]?
+        switch state {
+        case .loaded(let values): previous = values
+        case .loading(let values), .failed(let values, _): previous = values
+        case .idle: previous = nil
+        }
+        request += 1
+        state = .loading(previous: previous)
+        return request
+    }
+    mutating func succeed(_ values: [Int], request id: Int) {
+        guard id == request, case .loading = state else { return }
+        state = .loaded(values)
+    }
+    mutating func fail(_ message: String, request id: Int) {
+        guard id == request, case .loading(let old) = state else { return }
+        state = .failed(previous: old, message: message)
     }
 }
+var model = Model()
+let first = model.begin()
+model.succeed([1], request: first)
+let refresh = model.begin()
+precondition(model.state == .loading(previous: [1]))
+model.fail("offline", request: refresh)
+precondition(model.state == .failed(previous: [1], message: "offline"))
+let old = model.begin()
+let current = model.begin()
+model.succeed([0], request: old)
+precondition(model.state == .loading(previous: [1]))
+model.succeed([], request: current)
+precondition(model.state == .loaded([]))
 ```
 
-For internal app enums, avoid `default` unless it is truly intentional. Exhaustiveness is one of the main benefits of enums. A `default` branch hides newly added cases from the compiler.
+**Reasoning:** The enum excludes contradictory flags while the model enforces request freshness. This counter is a bounded teaching fixture; production identity can use a unique token and needs an exhaustion policy if numeric revisions are used. Different-user refresh also needs an explicit rule before retaining previous data.
 
-### Recursive enums require `indirect`
+## In practice
 
-Directly recursive enums need `indirect`.
+**Choose it when:** Model mutually exclusive workflow alternatives, with transitions next to their invariants.
+
+**Investigate by:** Enumerate events, including late success, retry, cancellation acknowledgment, and cleanup.
+
+**Strong evidence:** Test controlled event orders and demonstrate that valid stale-content states remain representable.
+
+### Recursive and noncopyable representation — optional
+
+#### Recursive inline storage needs a break in the layout cycle
 
 ```swift
-indirect enum Expression {
+enum EvaluationError: Error { case overflow }
+
+indirect enum Expression: Equatable, Sendable {
     case number(Int)
     case add(Expression, Expression)
     case multiply(Expression, Expression)
 }
 
-let expression = Expression.add(
-    .number(2),
-    .multiply(.number(3), .number(4))
-)
-```
-
-Without indirection, the compiler would need to store an `Expression` inside an `Expression` inside an `Expression`, with no finite layout. `indirect` tells Swift to add a level of indirection. The practical runtime cost is extra pointer indirection and, in many implementations, additional allocation/boxing compared with a fully inline payload.
-
-### Enums can contain behavior
-
-Enums are not just data tags. They can have computed properties and methods.
-
-```swift
-enum LoadState<Value> {
-    case idle
-    case loading
-    case loaded(Value)
-    case failed(message: String)
-
-    var isTerminal: Bool {
-        switch self {
-        case .loaded, .failed:
-            true
-        case .idle, .loading:
-            false
-        }
+func evaluate(_ expression: Expression) throws(EvaluationError) -> Int {
+    switch expression {
+    case let .number(value):
+        return value
+    case let .add(left, right):
+        let a = try evaluate(left), b = try evaluate(right)
+        let result = a.addingReportingOverflow(b)
+        guard !result.overflow else { throw .overflow }
+        return result.partialValue
+    case let .multiply(left, right):
+        let a = try evaluate(left), b = try evaluate(right)
+        let result = a.multipliedReportingOverflow(by: b)
+        guard !result.overflow else { throw .overflow }
+        return result.partialValue
     }
 }
 ```
 
-This keeps state-specific behavior close to the state model.
+The expression add(number(2), multiply(number(3), number(4))) evaluates to 14. Overflow throws the modeled error instead of silently wrapping or relying on optimization-dependent arithmetic checks. The evaluator is recursive: it is not suitable for arbitrary adversarial depth without an explicit depth limit or iterative traversal.
 
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: Replacing one bad model with another vague enum
-
-Bad:
+This direct recursive definition is **intentionally rejected**:
 
 ```swift
-enum State {
-    case state1
-    case state2(String)
-    case state3(Bool, String?)
+enum InvalidRecursive {
+    case end
+    case next(InvalidRecursive)
 }
 ```
 
-This technically uses an enum, but it does not encode domain meaning. It just moves ambiguity into cases and unlabeled payloads.
-
-Better:
+You can place indirect only on the recursive case. A collection can also supply the required storage indirection without an indirect enum declaration:
 
 ```swift
-enum SearchState {
-    case idle
-    case typing(query: String)
-    case searching(query: String)
-    case showingResults(query: String, results: [SearchResult])
-    case noResults(query: String)
-    case failed(query: String, message: String)
+enum Tree: Equatable, Sendable {
+    case leaf(Int)
+    indirect case branch(Tree, Tree)
+}
+
+enum Menu: Equatable, Sendable {
+    case item(String)
+    case group([Menu])
 }
 ```
 
-The better version names the domain states and gives each payload a semantic label.
+Tree's recursive branch and Menu's Array payload both have finite representations. indirect adds representation indirection while preserving enum value behavior. Do not infer an exact heap-allocation count, stack layout, deep copy, or performance ranking from the keyword. Optimizations and reference payloads still matter. [Recursive enumerations](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/#Recursive-Enumerations)
 
-### Trap 2: Using booleans for mutually exclusive states
-
-Bad:
+#### A value type is not necessarily Copyable
 
 ```swift
-struct PlaybackState {
-    var isPlaying: Bool
-    var isPaused: Bool
-    var isBuffering: Bool
-    var error: Error?
-}
-```
+final class ReleaseLog { var serials: [Int] = [] }
 
-This allows nonsense like:
-
-```swift
-isPlaying = true
-isPaused = true
-isBuffering = true
-error != nil
-```
-
-Better:
-
-```swift
-enum PlaybackState {
-    case stopped
-    case buffering(previousTime: TimeInterval?)
-    case playing(position: TimeInterval)
-    case paused(position: TimeInterval)
-    case failed(error: PlaybackError)
-}
-```
-
-### Trap 3: Treating associated values as anonymous tuples
-
-This is weak:
-
-```swift
-enum DownloadState {
-    case failed(String, Int, Bool)
-}
-```
-
-A future reader has to remember what each value means.
-
-Prefer labeled values or small domain structs:
-
-```swift
-struct DownloadFailure: Error, Sendable {
-    let message: String
-    let statusCode: Int?
-    let isRetryable: Bool
+struct Lease: ~Copyable {
+    let serial: Int
+    let log: ReleaseLog
+    consuming func finish() {}
+    deinit { log.serials.append(serial) }
 }
 
-enum DownloadState {
-    case failed(DownloadFailure)
+enum LeaseState: ~Copyable {
+    case empty
+    case ready(Lease)
 }
-```
 
-### Trap 4: Duplicating state outside the enum
-
-Bad:
-
-```swift
-struct ViewModelState {
-    var state: LoadState
-    var isLoading: Bool
-    var errorMessage: String?
-}
-```
-
-Now `state` and the derived flags can disagree.
-
-Better:
-
-```swift
-enum LoadState<Value> {
-    case idle
-    case loading
-    case loaded(Value)
-    case failed(message: String)
-
-    var isLoading: Bool {
-        if case .loading = self { true } else { false }
-    }
-
-    var errorMessage: String? {
-        if case .failed(let message) = self { message } else { nil }
-    }
-}
-```
-
-Derived information should usually be computed from the enum, not stored beside it.
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. Why is an enum often a better model than a set of optional properties?
-
-An enum is better when the domain has **mutually exclusive states**. Optional properties describe absence or presence independently; they do not describe which combinations are valid.
-
-For example:
-
-```swift
-struct LoadState {
-    var isLoading: Bool
-    var data: [Int]?
-    var errorMessage: String?
-}
-```
-
-This allows:
-
-```swift
-LoadState(isLoading: true, data: [1, 2], errorMessage: "Network failed")
-```
-
-That probably makes no sense. Are we loading? Did we succeed? Did we fail? The type does not know.
-
-An enum removes the invalid combinations:
-
-```swift
-enum LoadState {
-    case idle
-    case loading
-    case loaded([Int])
-    case failed(message: String)
-}
-```
-
-Now there is no value that means “loading, loaded, and failed at once.”
-
-Interview version:
-
-> An enum is better when the states are mutually exclusive and each state has different valid data. Optionals and booleans model independent facts, so they allow invalid combinations unless every call site manually preserves invariants. An enum moves that invariant into the type system: the value is exactly one case, and each case carries only the payload that makes sense for that state.
-
-### Q2. When do you need `indirect`, and what is the runtime implication?
-
-You need `indirect` when an enum case directly stores another value of the same enum type.
-
-```swift
-indirect enum Tree<Element> {
-    case leaf(Element)
-    case node(left: Tree<Element>, right: Tree<Element>)
-}
-```
-
-Without `indirect`, Swift cannot compute a finite memory layout. A `Tree` would contain a `Tree`, which would contain another `Tree`, forever. Swift’s documentation describes recursive enums as enums that have another instance of the enum as an associated value, and `indirect` tells the compiler to insert the required layer of indirection. ([Swift.org, "Enumerations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/))
-
-Runtime implication:
-
-```text
-direct enum payload:
-    value stores payload inline when possible
-
-indirect enum payload:
-    value stores a reference-like indirection to payload storage
-```
-
-That means recursive enums are expressive and safe, but they are not free. You should expect extra indirection and possible allocation overhead compared with a flat nonrecursive enum.
-
-Interview version:
-
-> `indirect` is needed when an enum case recursively contains the enum itself. Without it, the compiler cannot form a finite layout for the value. `indirect` adds a level of indirection, which makes the recursive structure representable, but it also means extra pointer chasing and potentially allocation overhead. I would use it for naturally recursive domains like syntax trees, expression trees, routes, nested filters, or filesystem-like structures, not for ordinary flat UI state.
-
----
-
-## 5. Code probe
-
-Given:
-
-```swift
-struct LoadState {
-    var isLoading = false
-    var data: [Int]? = nil
-    var errorMessage: String? = nil
-}
-```
-
-### What happens?
-
-```text
-Compiles successfully.
-
-Exact output:
-No output.
-```
-
-There is no `print` or executable observation in the probe. The bug is semantic, not syntactic.
-
-### Why?
-
-This model allows these invalid or ambiguous states:
-
-```swift
-LoadState(
-    isLoading: true,
-    data: nil,
-    errorMessage: nil
-)
-// Valid: loading.
-
-LoadState(
-    isLoading: false,
-    data: [1, 2, 3],
-    errorMessage: nil
-)
-// Valid: loaded.
-
-LoadState(
-    isLoading: false,
-    data: nil,
-    errorMessage: "Network failed"
-)
-// Valid: failed.
-
-LoadState(
-    isLoading: true,
-    data: [1, 2, 3],
-    errorMessage: nil
-)
-// Invalid or ambiguous: loading and loaded.
-
-LoadState(
-    isLoading: true,
-    data: nil,
-    errorMessage: "Network failed"
-)
-// Invalid or ambiguous: loading and failed.
-
-LoadState(
-    isLoading: false,
-    data: [1, 2, 3],
-    errorMessage: "Network failed"
-)
-// Invalid or ambiguous: loaded and failed.
-
-LoadState(
-    isLoading: true,
-    data: [1, 2, 3],
-    errorMessage: "Network failed"
-)
-// Invalid: all states at once.
-
-LoadState(
-    isLoading: false,
-    data: nil,
-    errorMessage: nil
-)
-// Ambiguous: idle, empty, not yet requested, or reset?
-```
-
-State diagram:
-
-```text
-Boolean/optional struct:
-
-isLoading: Bool     -> 2 states
-data: [Int]?        -> 2 states
-errorMessage: String? -> 2 states
-
-Total combinations: 2 × 2 × 2 = 8
-
-Domain probably wants:
-idle
-loading
-loaded(data)
-failed(message)
-
-Only 4 intended states.
-The other combinations are accidental states.
-```
-
-### Fix or redesign
-
-```swift
-enum LoadState: Equatable, Sendable {
-    case idle
-    case loading
-    case loaded([Int])
-    case failed(message: String)
-}
-```
-
-Usage:
-
-```swift
-func render(_ state: LoadState) {
+func leaseSerial(_ state: borrowing LeaseState) -> Int? {
     switch state {
-    case .idle:
-        print("Show empty placeholder")
+    case .empty: nil
+    case let .ready(lease): lease.serial
+    }
+}
 
-    case .loading:
-        print("Show spinner")
-
-    case .loaded(let values):
-        print("Show \(values.count) values")
-
-    case .failed(let message):
-        print("Show error: \(message)")
+func finishLease(_ state: consuming LeaseState) {
+    switch consume state {
+    case .empty: break
+    case let .ready(lease): lease.finish()
     }
 }
 ```
 
-### Why this fix is correct
+The same LeaseState can be borrowed repeatedly to inspect its serial. finishLease consumes the state and its Lease payload; the synthetic log records destruction once. The Lease is a lifetime teaching fixture, not an OS resource. Noncopyable support and borrowing/consuming rules predate 6.4 and remain relevant to this baseline. [SE-0390](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md), [SE-0427](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md)
 
-The enum encodes the invariant directly:
-
-```text
-LoadState is exactly one of:
-- idle
-- loading
-- loaded(data)
-- failed(message)
-```
-
-There is no value for “loading with data and an error.” If you want “loading while showing stale data,” model that explicitly:
+With the declarations above, this function is **intentionally rejected during ownership checking**:
 
 ```swift
-enum LoadState: Equatable, Sendable {
-    case idle
-    case loading(previous: [Int]?)
-    case loaded([Int])
-    case failed(message: String, previous: [Int]?)
+func invalidReuse(_ state: consuming LeaseState) -> Int? {
+    finishLease(consume state)
+    return leaseSerial(state)
 }
 ```
 
-That is the senior-level point: do not merely remove data from states. Preserve domain truth, but make it explicit.
+A containing enum with a Lease payload must also admit noncopyability. A generic parameter's default Copyable requirement does not disappear merely because its argument is an enum. C7/C8 contain the broader ownership rules, and B7 records a current noncopyable-enum synthesis limitation. Do not assume generalized protocol requirements imply every automatic conformance is synthesized.
 
-### Alternative fixes and tradeoffs
 
-|Option|When it is appropriate|Tradeoff|
-|---|---|---|
-|Simple enum|States are mutually exclusive and payloads are small|Best default; may need evolution as UX gets richer|
-|Enum with richer associated values|You need stale data, retry metadata, pagination, timestamps, or source info|More verbose but preserves correctness|
-|Struct with private storage and validated initializer|State is not truly exclusive, but invariants still matter|More boilerplate; weaker exhaustiveness than enum|
-|Separate reducer/action model|Complex state transitions need auditability and testability|More architecture; may be overkill for small screens|
+### Controlled cancellation and retry lifecycle — optional
 
----
-
-## 6. Exercise
-
-### Problem
-
-Model a request lifecycle with cancel/retry semantics as an enum and explain why it is safer than booleans.
-
-### Bad / naive version
+**Problem:** Model initial work, delayed retry, cancellation, replacement, and reset. Reject stale completions and timer events. Keep state mutation on MainActor and return explicit commands for the operation owner to execute. Retry attempts must increase within a limit; cancellation acknowledgment must retain the originally chosen reason.
 
 ```swift
-struct RequestState<Value> {
-    var isLoading = false
-    var isCancelling = false
-    var isRetrying = false
+import Foundation
 
-    var value: Value?
-    var errorMessage: String?
-
-    var attempt = 0
-    var canRetry = false
+final class RequestID: Hashable, Sendable {
+    fileprivate init() {}
+    static func == (lhs: RequestID, rhs: RequestID) -> Bool { lhs === rhs }
+    func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
 }
-```
 
-### What is wrong?
+struct RetryDelay: Equatable, Sendable {
+    let duration: Duration
+    init?(_ duration: Duration) {
+        guard duration >= .zero else { return nil }
+        self.duration = duration
+    }
+}
 
-```text
-This allows impossible or unclear combinations:
-
-- isLoading == true and isCancelling == true
-- isRetrying == true but attempt == 0
-- value != nil and errorMessage != nil
-- canRetry == true with no failure
-- isCancelling == true with no active request
-- isLoading == false, value == nil, errorMessage == nil, but unclear whether idle, cancelled, or reset
-```
-
-Every mutation site must manually maintain the invariant. That is fragile in async code, especially with cancellation, retries, stale responses, and multiple overlapping requests.
-
-### Improved version
-
-```swift
-struct RequestID: Hashable, Sendable {
-    let rawValue: Int
+enum Recovery: Equatable, Sendable {
+    case never
+    case retry(after: RetryDelay)
 }
 
 struct RequestFailure: Error, Equatable, Sendable {
     let message: String
-    let isRetryable: Bool
+    let recovery: Recovery
 }
 
 enum CancellationReason: Equatable, Sendable {
-    case userInitiated
-    case supersededByNewRequest
-    case viewDisappeared
+    case userInitiated, viewDisappeared
 }
 
 enum RetryPlan: Equatable, Sendable {
     case none
-    case immediate(nextAttempt: Int)
-    case afterDelay(nanoseconds: UInt64, nextAttempt: Int)
+    case available(nextAttempt: Int, delay: RetryDelay)
 }
 
 enum RequestLifecycle<Value: Sendable>: Sendable {
@@ -635,248 +260,157 @@ enum RequestLifecycle<Value: Sendable>: Sendable {
     case inFlight(requestID: RequestID, attempt: Int)
     case loaded(Value)
     case failed(RequestFailure, retryPlan: RetryPlan)
+    case waitingToRetry(ticket: RequestID, nextAttempt: Int)
     case cancelling(requestID: RequestID, reason: CancellationReason)
     case cancelled(reason: CancellationReason)
 }
-```
 
-Example transitions:
+enum RequestEffect: Equatable, Sendable {
+    case start(requestID: RequestID, attempt: Int)
+    case cancelRequest(RequestID)
+    case waitForRetry(ticket: RequestID, delay: RetryDelay)
+    case cancelRetry(RequestID)
+}
 
-```swift
-extension RequestLifecycle {
-    mutating func start(requestID: RequestID) {
-        self = .inFlight(requestID: requestID, attempt: 1)
+@MainActor
+final class RequestModel<Value: Sendable> {
+    private(set) var state: RequestLifecycle<Value> = .idle
+    private let maximumAttempts: Int
+
+    init(maximumAttempts: Int = 3) {
+        precondition(maximumAttempts > 0)
+        self.maximumAttempts = maximumAttempts
     }
 
-    mutating func beginRetry(requestID: RequestID, attempt: Int) {
-        self = .inFlight(requestID: requestID, attempt: attempt)
+    private func cancellationEffects() -> [RequestEffect] {
+        switch state {
+        case let .inFlight(id, _), let .cancelling(id, _): [.cancelRequest(id)]
+        case let .waitingToRetry(ticket, _): [.cancelRetry(ticket)]
+        case .idle, .loaded, .failed, .cancelled: []
+        }
     }
 
-    mutating func cancel(reason: CancellationReason) -> RequestID? {
-        switch self {
-        case .inFlight(let requestID, _):
-            self = .cancelling(requestID: requestID, reason: reason)
-            return requestID
+    func start() -> [RequestEffect] {
+        let cancel = cancellationEffects()
+        let id = RequestID()
+        state = .inFlight(requestID: id, attempt: 1)
+        return cancel + [.start(requestID: id, attempt: 1)]
+    }
 
+    func complete(requestID: RequestID, with value: Value) {
+        guard case let .inFlight(current, _) = state, current == requestID else { return }
+        state = .loaded(value)
+    }
+
+    func fail(requestID: RequestID, with failure: RequestFailure) {
+        guard case let .inFlight(current, attempt) = state, current == requestID else { return }
+        let plan: RetryPlan
+        if case let .retry(delay) = failure.recovery, attempt < maximumAttempts {
+            plan = .available(nextAttempt: attempt + 1, delay: delay)
+        } else {
+            plan = .none
+        }
+        state = .failed(failure, retryPlan: plan)
+    }
+
+    func retry() -> [RequestEffect] {
+        guard case let .failed(_, .available(nextAttempt, delay)) = state else { return [] }
+        let ticket = RequestID()
+        state = .waitingToRetry(ticket: ticket, nextAttempt: nextAttempt)
+        return [.waitForRetry(ticket: ticket, delay: delay)]
+    }
+
+    func retryDelayElapsed(ticket: RequestID) -> [RequestEffect] {
+        guard case let .waitingToRetry(current, attempt) = state, current == ticket else { return [] }
+        state = .inFlight(requestID: ticket, attempt: attempt)
+        return [.start(requestID: ticket, attempt: attempt)]
+    }
+
+    func cancel(reason: CancellationReason) -> [RequestEffect] {
+        switch state {
+        case let .inFlight(id, _):
+            state = .cancelling(requestID: id, reason: reason)
+            return [.cancelRequest(id)]
+        case let .waitingToRetry(ticket, _):
+            state = .cancelled(reason: reason)
+            return [.cancelRetry(ticket)]
         case .idle, .loaded, .failed, .cancelling, .cancelled:
-            return nil
+            return []
         }
     }
 
-    mutating func complete(requestID: RequestID, with value: Value) {
-        guard case .inFlight(let currentID, _) = self,
-              currentID == requestID
-        else {
-            return
-        }
-
-        self = .loaded(value)
+    func finishCancellation(requestID: RequestID) {
+        guard case let .cancelling(current, reason) = state, current == requestID else { return }
+        state = .cancelled(reason: reason)
     }
 
-    mutating func fail(
-        requestID: RequestID,
-        with failure: RequestFailure,
-        retryPlan: RetryPlan
-    ) {
-        guard case .inFlight(let currentID, _) = self,
-              currentID == requestID
-        else {
-            return
-        }
-
-        self = .failed(failure, retryPlan: retryPlan)
-    }
-
-    mutating func finishCancellation(
-        requestID: RequestID,
-        reason: CancellationReason
-    ) {
-        guard case .cancelling(let currentID, _) = self,
-              currentID == requestID
-        else {
-            return
-        }
-
-        self = .cancelled(reason: reason)
+    func reset() -> [RequestEffect] {
+        let effects = cancellationEffects()
+        state = .idle
+        return effects
     }
 }
 ```
 
-Example usage:
+RequestID uses a fresh object's identity for each initial request or retry ticket. Two models cannot accidentally accept each other's first integer generation, and an outstanding token keeps its identity alive. The tokens are local process identities, not durable IDs or serialized keys. Their private construction boundary and the model's private state setter prevent outside-file callers from supplying a new arbitrary state or attempt. The enum itself still allows independently constructed snapshots; its declaration is not a universal transition validator.
+
+RetryDelay rejects negative Duration values. The model derives nextAttempt from its current attempt and maximumAttempts; checking attempt < maximumAttempts also makes increment safe at Int.max. A new start begins a new retry budget at attempt 1. A failure with recovery never, or one that reaches the limit, has no retry plan. Retrying moves to waitingToRetry and emits a delay command even for a zero delay; it does not start a request until the matching timer completion is delivered.
+
+| Event | Accepted state and effect | What stale events do |
+| --- | --- | --- |
+| start | Any state; retire active work/timer and start a fresh identity at attempt 1 | Earlier results cannot match the new identity |
+| complete / fail | Matching inFlight identity only | Ignored during cancellation, waiting, after reset, or for another identity |
+| retry | Failed with an available plan; create one retry ticket | Repeated retry while waiting produces no command |
+| retryDelayElapsed | Matching waiting ticket; start that ticket's attempt | An old/repeated/cancelled timer event does nothing |
+| cancel | In-flight work enters cancelling; a waiting retry is retired | Repeated cancellation does not replace the stored reason |
+| finishCancellation | Matching cancelling request; use its stored reason | An older acknowledgment cannot cancel newer work |
+| reset | Retire current work/timer and return idle | Outstanding callbacks cannot leave idle |
+
+The operation owner must execute these effects: retain task/timer handles by token, cancel the identified work, deliver events on MainActor, and join work when its lifecycle requires completion. retryDelayElapsed is an acknowledgment from that owner that the requested wait completed; the model does not read a clock to prove it. finishCancellation must be delivered when the owner has observed that operation finish. A cancelled UI state alone is not proof that every command or scheduled task has finished. Returning cancelRetry retires the ticket immediately so a late timer cannot restart work.
+
+This complete state/effect model intentionally contains no hidden network or Task implementation. Its deterministic tests drive every event and inspect commands; D2/F1 cover actual task cancellation and joining. Retry eligibility and a finite attempt count do not establish request idempotency, server retry policy, or backoff/jitter requirements. Those belong to the operation contract.
+
+A short stale-completion probe, using the model above:
 
 ```swift
-var state = RequestLifecycle<[Int]>.idle
-
-let firstRequest = RequestID(rawValue: 1)
-state.start(requestID: firstRequest)
-
-let cancelledID = state.cancel(reason: .supersededByNewRequest)
-// Use cancelledID to cancel the underlying Task if non-nil.
-
-let secondRequest = RequestID(rawValue: 2)
-state.start(requestID: secondRequest)
-
-state.complete(requestID: firstRequest, with: [1, 2, 3])
-// Ignored because firstRequest is stale.
-
-state.complete(requestID: secondRequest, with: [4, 5, 6])
-// State becomes .loaded([4, 5, 6])
+@MainActor
+func lifecycleProbe() -> [Int]? {
+    let model = RequestModel<[Int]>()
+    guard case let .start(first, _)? = model.start().last else { return nil }
+    _ = model.cancel(reason: .userInitiated)
+    guard case let .start(second, _)? = model.start().last else { return nil }
+    model.complete(requestID: first, with: [1])
+    model.finishCancellation(requestID: first)
+    model.complete(requestID: second, with: [2])
+    guard case let .loaded(value) = model.state else { return nil }
+    return value
+}
 ```
 
-### Why this is better
+It returns [2]. Replacement yields a distinct token, and neither the first result nor its cancellation acknowledgment replaces the current request. The full fixture additionally tests delayed retries, attempt exhaustion, zero-delay eligibility, nonretryable failures, cancellation-reason preservation, cross-model tokens, late/duplicate timer events, and resets from every state shape.
 
-The enum makes the lifecycle explicit:
+## References
 
-```text
-idle
-  -> inFlight(requestID, attempt)
-  -> loaded(value)
+### Related guides
 
-idle
-  -> inFlight(requestID, attempt)
-  -> failed(failure, retryPlan)
-  -> inFlight(newRequestID, nextAttempt)
+- [[A1 — Value semantics, reference semantics, identity, and copy-on-write]]
+- [[A4 — Optionals and Nil Modeling]]
+- [[A5 — Pattern Matching and Exhaustive Control Flow]]
+- [[A13 — Error handling and typed throws]]
+- [[A15 — Type choices - struct, class, enum, protocol, and actor]]
+- [[B7 — Synthesized conformances and semantic correctness]]
+- [[B9 — Codable and Schema Evolution]]
+- [[B11 — Library Evolution and Resilience-Aware API Design]]
+- [[C7 — Ownership modifiers - `borrowing`, `consuming`, and `consume`]]
+- [[C8 — Copyable, noncopyable types, and `~Copyable`]]
+- [[D2 — Task Hierarchy, Cancellation, and Priorities]]
+- [[D7 — Actor Reentrancy and Logic Races]]
+- [[F1 — Testing Strategy in Modern Swift]]
 
-inFlight(requestID, attempt)
-  -> cancelling(requestID, reason)
-  -> cancelled(reason)
-```
+### Official sources
 
-The model prevents contradictory states by construction. You cannot have `.loaded` and `.failed` at the same time. You cannot be `.cancelling` without a `requestID`. You cannot have retry metadata unless the state is `.failed`.
-
-The `requestID` also protects against stale async completions. This is important in Swift concurrency code because an older task may complete after a newer request has already started. The enum does not magically cancel tasks, but it gives you a safe state machine for accepting or ignoring completions.
-
----
-
-## 7. Production guidance
-
-Use this in production when:
-
-```text
-- A value has a finite set of mutually exclusive states.
-- Different states require different data.
-- You want exhaustive switch handling.
-- You want to prevent invalid state combinations.
-- You are modeling UI state, request state, playback state, authentication state, onboarding state, routing, feature availability, or domain workflows.
-```
-
-Be careful when:
-
-```text
-- The state space is not actually mutually exclusive.
-- The enum grows into a giant god-state for an entire feature.
-- Associated values become large anonymous tuples.
-- Cases duplicate the same payload repeatedly.
-- Public enums are part of a library API and may need future evolution.
-- Recursive enums are used in hot paths without considering allocation/indirection costs.
-```
-
-Avoid when:
-
-```text
-- A simple Bool genuinely represents one independent binary fact.
-- The values are open-ended and owned by external systems.
-- You need identity, shared mutable state, or lifecycle semantics better modeled by a class or actor.
-- You are hiding complex behavior behind vague cases like .custom(Any).
-```
-
-Debugging checklist:
-
-```text
-- Can this type represent a state that should be impossible?
-- Are multiple booleans trying to encode one state machine?
-- Are optionals independent, or are they really case-specific payloads?
-- Are associated values labeled and semantic?
-- Does every switch intentionally handle all cases?
-- Did someone add default and accidentally hide future enum cases?
-- Are stale async completions guarded by request identity?
-- Is retry/cancel behavior represented in the state, or scattered across flags?
-- Is the enum public? If yes, what happens when a new case is added?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> Enums are useful when you have multiple cases, like loading, success, and failure.
-
-### Senior answer
-
-> Enums are useful for modeling mutually exclusive states. Associated values let each state carry only the data valid for that state, which avoids invalid combinations caused by booleans and optionals. I avoid catch-all switches for internal enums because exhaustiveness is a major safety feature.
-
-### Staff-level answer
-
-> I use enums to encode domain invariants into the type system. For UI and async state, I prefer enum state machines over scattered booleans because they make illegal combinations unrepresentable and make transitions testable. I also think about evolution: internal enums should usually be switched exhaustively, public SDK enums require resilience planning, associated values should be semantic and labeled, and recursive enums should be reserved for genuinely recursive domains because `indirect` has runtime costs.
-
-Staff-level questions to ask:
-
-```text
-Which states are truly mutually exclusive?
-Which data is valid only in a specific state?
-Can stale async completions corrupt this state?
-Should transitions be centralized in methods/reducers instead of spread across call sites?
-Is this enum internal app state or public API that needs evolution planning?
-```
-
----
-
-## 9. Interview-ready summary
-
-Enums are one of Swift’s best tools for domain modeling because they represent a closed set of mutually exclusive cases. Associated values let each case carry exactly the data that is valid for that state, which makes many invalid combinations impossible to express. This is much safer than modeling state with independent booleans and optionals, where every call site has to manually preserve invariants. For recursive data structures, Swift requires `indirect` so the compiler can insert a level of indirection and produce a finite memory layout. In production, I use enums for UI state, request lifecycles, routing, errors, and finite workflows, but I keep payloads semantic, avoid vague cases, and think carefully about public API evolution.
-
----
-
-## 10. Flashcards
-
-Q: Why are enums better than multiple booleans for state modeling?  
-A: Because enum cases are mutually exclusive, while booleans can combine into invalid states.
-
-Q: What is an associated value?  
-A: Data stored with a specific enum case, valid only when the enum is in that case.
-
-Q: What is the main smell in `isLoading`, `data?`, and `error?` state?  
-A: The model allows contradictory states like loading with both data and an error.
-
-Q: When do you need `indirect`?  
-A: When an enum case directly stores another instance of the same enum type.
-
-Q: What runtime implication does `indirect` have?  
-A: It adds a level of indirection, which can mean pointer chasing and allocation overhead.
-
-Q: Should associated values be labeled?  
-A: Usually yes when the meaning is not obvious from the case name and type.
-
-Q: Why is `default` often bad in switches over internal enums?  
-A: It hides newly added cases and weakens exhaustiveness checking.
-
-Q: What should you do if loading can show stale data?  
-A: Model it explicitly, for example `.loading(previous: Value?)`, rather than storing separate flags.
-
-Q: Does an enum automatically make a state machine correct?  
-A: No. It prevents invalid representations only if the cases and payloads accurately encode the domain.
-
-Q: Why might public enums require extra care?  
-A: Adding or changing cases can affect source compatibility and client switch exhaustiveness.
-
----
-
-## 11. Related sections
-
-- [[A4 — Optionals and nil modeling]]
-- [[A5 — Pattern matching and exhaustive control flow]]
-- [[A15 — Type choices: struct, class, enum, protocol, and actor]]
-- [[B11 — Library evolution and resilience-aware API design]]
-- [[D2 — Task hierarchy, cancellation, and priorities]]
-- [[D7 — Actor reentrancy and logic races]]
-
----
-
-## 12. Sources
-
-- "Swift Senior/Staff Rubric." A9 enum-based state modeling and code probe.
-- Swift.org. "Enumerations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/
-- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/
-- Swift.org. "Structures and Classes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/
-- Swift.org. "API Design Guidelines." Swift.org Documentation. https://swift.org/documentation/api-design-guidelines/
+- [Enumerations](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/)
+- [Recursive enumerations](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/enumerations/#Recursive-Enumerations)
+- [SE-0390](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md)
+- [SE-0427](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md)
+- [SE-0487: Nonexhaustive enums](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md)

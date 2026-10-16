@@ -6,920 +6,223 @@ tags:
   - core-semantics
   - optionals
 ---
+
 # A4 — Optionals and Nil Modeling
 
-## 0. Rubric snapshot
+**Goal:** Preserve absence and empty-text semantics while checking lazy fallback evaluation.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Understand `Optional` as an enum, optional chaining, `map` vs `flatMap`, `guard let`, `if let`, implicitly unwrapped optionals, pattern matching, and when `nil` is a domain concept versus a modeling smell.
+## Mental model
 
-**Caveats**
+Optional represents either a wrapped value or absence. It does not by itself distinguish failure, an omitted field, an explicitly cleared field, or a loading state. Define nil at the boundary before choosing a transform or fallback. A present empty string is still present. [The Basics: optionals](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/)
 
-Force unwraps in infrastructure code often hide design problems. Nested optionals are sometimes valid, but usually signal poor modeling. `!` should almost never be treated as ordinary control flow.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Preserve distinctions the caller needs
 
-- What is the difference between `foo?.bar()` and `foo!.bar()` beyond syntax?
-- When is `T?` the right model, and when should you use an enum instead?
-- What are implicitly unwrapped optionals actually for, and why are they usually a legacy interop or lifecycle tool rather than a preferred model?
+Use binding for control flow, map to wrap a transform result, and flatMap only when merging the transform's absence with missing input is intended. Nil coalescing evaluates its fallback lazily and should supply a meaningful default.
 
-**You should be able to do**
+**Common pitfall:** Converting every error with try? or replacing an identifier with an empty string discards information. Preserve throwing errors or a named outcome when callers need recovery, and reject missing required identifiers explicitly.
 
-- Refactor a view model that uses multiple booleans and optionals into a single enum-based state machine.
+### Make force-unwrapping an invariant
 
----
+A force unwrap asserts presence and traps if the assertion is wrong. An implicitly unwrapped optional still has optional storage; context decides whether a use forces it.
 
-## 1. Core mental model
+**Common pitfall:** Assuming assignment from an IUO always unwraps it obscures inferred optional values. Prefer fully initialized non-optional dependencies when construction is under your control. Use explicit binding at genuine absence boundaries.
 
-`Optional<Wrapped>` is not magic storage. It is a type that represents one of two states: there is a wrapped value, or there is no value. In Swift’s model, `nil` is only valid for optional types; it is not a universal null pointer that can infect every reference. The Swift book describes optional values as values that either contain something or contain `nil` to indicate absence. ([Swift.org, "A Swift Tour"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/guidedtour/))
+## Interview questions
 
-Conceptually:
+### How do foo?.bar() and foo!.bar() differ, including whether call arguments or assignment work run?
+
+Chaining skips the operation when foo is nil and returns an optional result. Arguments or assignment work behind the failed chain are skipped. Forcing traps on nil before the call; it asserts rather than handles absence. A chained Void result can reveal whether the operation occurred.
+
+### When does map preserve a distinction that flatMap merges? Why does try? behave differently for an already optional result?
+
+With an optional-returning transform, map distinguishes missing input from present input whose transform returns nil by adding a layer. flatMap merges those cases. Since Swift 5, try? does not add another layer to an already optional result, so it can merge a thrown error with an ordinary nil result.
+
+### How do dictionary lookup, nil assignment, and .some(nil) distinguish absent keys from stored nil?
+
+Looking up a dictionary with optional values yields another optional: absent key, present nil, and present value are distinct. Assigning nil through the subscript removes the key; assigning .some(nil) stores a nil value. A named field-state enum can make the same contract clearer.
+
+### When does an IUO remain optional through inference, and when is it implicitly forced?
+
+Inference can preserve the IUO's Optional type when no non-optional result is required. A non-optional contextual use can force it and trap. IUO spelling grants implicit forcing at use sites; it is not a distinct wrapper with guaranteed initialization.
+
+### How do some P? and any P? relate to the parenthesized spellings? Why does a composition still need parentheses?
+
+Swift 6.4 permits some P? and any P? as alternatives to the parenthesized optional forms; opaque identity and existential behavior remain unchanged. A protocol composition still needs grouping, such as any (P & Q)?. This is a syntax change, not runtime type selection for some.
+
+### Why can Token? store a noncopyable value while this SDK's public map rejects Token as its input payload?
+
+Storage support does not imply every operation accepts noncopyable payloads. This SDK's public map input retains a Copyable constraint, while Token? can store a noncopyable Token and transfer it with take(). Check each declaration. The proposed Optional reference-access APIs are not present in the selected SDK.
+
+## Focused exercise
+
+**Task:** Model an optional profile name with a lazy default. Check absence, empty text, and whether the default expression runs.
+
+**Acceptance checks:**
+
+- Nil invokes the fallback once.
+- Present empty text is preserved and does not invoke the fallback.
+- A present nonempty name also skips the fallback.
+
+**Solution:**
+
+Standalone lazy-default check:
 
 ```swift
-enum Optional<Wrapped> {
-    case none
-    case some(Wrapped)
+func display(_ name: String?, fallback: () -> String) -> String {
+    name ?? fallback()
 }
-```
-
-The important design question is not “can this be nil?” The real question is “what does absence mean in this domain?” If absence has exactly one obvious meaning, `T?` is usually fine. If absence competes with other states like loading, failed, unauthorized, stale, unavailable, redacted, or not yet requested, then `T?` is probably too weak.
-
-The key idea:
-
-```text
-Optional means “zero or one value”; it does not mean “all possible states of my feature.”
-```
-
-This is why optionals are great for things like dictionary lookup, optional configuration, missing profile photo, or a value that genuinely may not exist. They are bad as a dumping ground for state machines.
-
----
-
-## 2. Essential mechanics
-
-### `Optional` is a real type
-
-`String?` is shorthand for `Optional<String>`. You can reason about it like an enum:
-
-```swift
-let name: String? = "Aykut"
-
-switch name {
-case .some(let value):
-    print("Name:", value)
-case .none:
-    print("No name")
+func probe() {
+    var calls = 0
+    func fallback() -> String { calls += 1; return "Guest" }
+    precondition(display("", fallback: fallback) == "")
+    precondition(calls == 0)
+    precondition(display("Ada", fallback: fallback) == "Ada")
+    precondition(calls == 0)
+    precondition(display(nil, fallback: fallback) == "Guest")
+    precondition(calls == 1)
 }
+probe()
 ```
 
-Swift also supports optional pattern syntax:
+**Reasoning:** The fallback expression appears inside ??'s lazy path. Passing a closure keeps this observable at the helper boundary; passing an already evaluated String would move work before the function call. If empty text should also fall back, make that a separate domain rule.
+
+For a refresh state that retains previous data while rejecting stale completions, see [[A9 — Enums, Associated Values, Recursive Enums, and State Modeling#Controlled cancellation and retry lifecycle — optional]].
+
+## In practice
+
+**Choose it when:** Use Optional for one absence dimension; use named states for workflows or distinct failures.
+
+**Investigate by:** Test nil, present-empty, malformed, and present-valid inputs separately.
+
+**Strong evidence:** Explain the information each transformation retains and check the selected SDK's ownership constraints.
+
+### Optional protocol spelling and ownership — optional
+
+#### Swift 6.4: optional opaque and existential spelling
+
+These new spellings mean the same optional types as their parenthesized forms:
+
+| Swift 6.4 spelling | Equivalent existing spelling |
+| --- | --- |
+| `some P?` | `(some P)?` |
+| `any P?` | `(any P)?` |
+| `any P??` | `(any P)??` |
+| `any P!`, where IUO declarations are permitted | `(any P)!` |
+| `some (P & Q)?` | `(some P & Q)?` |
+| `any (P & Q)?` | `(any P & Q)?` |
+
+This is a parsing improvement, not new existential conformance or permission for an opaque result to vary its underlying type. Older parenthesized spellings remain valid and are useful when supporting older compilers. [SE-0521](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0521-improved-optional-opaque-and-any.md)
 
 ```swift
-if case let value? = name {
-    print(value)
+protocol Named {
+    var name: String { get }
 }
-```
 
-That pattern matches `.some(value)`. The Swift reference describes optional patterns as matching values wrapped in the `.some(Wrapped)` case of `Optional<Wrapped>`. ([Swift.org, "Patterns"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/))
-
-### Optional binding: `if let` vs `guard let`
-
-Use `if let` when the unwrapped value is needed only inside a branch:
-
-```swift
-if let imageURL = user.avatarURL {
-    loadImage(from: imageURL)
-} else {
-    showPlaceholder()
+protocol Identified {
+    var id: Int { get }
 }
-```
 
-Use `guard let` when absence is an early-exit condition and the rest of the scope requires the value:
-
-```swift
-func submit(email: String?) {
-    guard let email else {
-        showValidationError()
-        return
-    }
-
-    sendConfirmation(to: email)
-}
-```
-
-`guard let` is usually better for production code when it removes nesting and makes the “happy path” explicit.
-
-### Optional chaining
-
-Optional chaining lets you access members on an optional without manually unwrapping:
-
-```swift
-let city = user.profile?.address?.city
-```
-
-If any link in the chain is `nil`, the entire chain evaluates to `nil`. The Swift documentation describes optional chaining as querying or calling properties, methods, and subscripts on an optional that might be `nil`, where the chain fails gracefully if a link is missing. ([Swift.org, "Optional Chaining"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/optionalchaining/))
-
-Important: optional chaining wraps the result in an optional even if the accessed member itself is non-optional.
-
-```swift
-struct Profile {
+struct Label: Named, Identified {
     let name: String
+    let id: Int
 }
 
-let profile: Profile? = Profile(name: "Aykut")
-let name = profile?.name
-// name is String?, not String
+func maybeOpaque(_ present: Bool) -> some Named? {
+    present ? Label(name: "Ada", id: 7) : nil
+}
+
+func maybeExistential(_ present: Bool) -> any Named? {
+    present ? Label(name: "Ada", id: 7) : nil
+}
+
+func combined() -> any (Named & Identified)? {
+    Label(name: "Ada", id: 7)
+}
 ```
 
-### Force unwrapping
-
-Force unwrapping says: “I assert this optional is non-nil right now.”
+The hidden wrapped type of `maybeOpaque` is still Label for both the present and absent cases. Returning only an untyped nil leaves that wrapped type unknown. This additional function fails when compiled with `Named`:
 
 ```swift
-let value = optional!
+func missingOpaqueType() -> some Named? {
+    nil
+}
 ```
 
-If the optional is `nil`, the program traps at runtime.
-
-This can be acceptable at hard invariant boundaries:
+A protocol composition still needs grouping. Reusing `Named` and `Identified`, this is intentionally rejected:
 
 ```swift
-let url = URL(string: "https://example.com")!
-// Usually acceptable for static literals in tests or fixtures.
+func ambiguous() -> any Named & Identified? {
+    nil
+}
 ```
 
-It is usually bad in app flow or infrastructure code:
+Use `any (Named & Identified)?` instead. B2 develops opaque identity, existential opening, and generic relationships.
+
+#### Noncopyable payloads: verify each operation
+
+Optional can hold a noncopyable value. `take()` transfers its contents and leaves the source nil:
 
 ```swift
-let token = authService.currentToken!
-request.addAuthorization(token)
-```
+struct Token: ~Copyable {
+    let id: Int
+}
 
-That code does not model the unauthenticated state. It crashes instead of making the state explicit.
-
-### `map` vs `flatMap` on optionals
-
-`map` transforms the wrapped value if it exists:
-
-```swift
-let text: String? = "42"
-
-let number = text.map { Int($0) }
-// number is Int?? because Int($0) returns Int?
-```
-
-`flatMap` transforms the wrapped value and flattens one optional layer:
-
-```swift
-let number = text.flatMap { Int($0) }
-// number is Int?
-```
-
-Use `map` when the transform returns a non-optional value:
-
-```swift
-let uppercased = text.map { $0.uppercased() }
-// String?
-```
-
-Use `flatMap` when the transform itself can fail:
-
-```swift
-let parsed = text.flatMap(Int.init)
-// Int?
-```
-
-### Nil coalescing
-
-`??` unwraps an optional or provides a fallback:
-
-```swift
-let displayName = user.nickname ?? user.fullName
-```
-
-This is good when a fallback is semantically correct. It is bad when it hides a missing required value:
-
-```swift
-let userID = response.userID ?? ""
-// Usually bad. Empty string is not a real user ID.
-```
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: Treating `nil` as a universal error model
-
-Bad:
-
-```swift
-func loadProfile() async -> Profile? {
-    do {
-        return try await api.profile()
-    } catch {
-        return nil
+func takeToken() -> Int {
+    var slot: Token? = Token(id: 7)
+    let taken = slot.take()
+    precondition(slot == nil)
+    switch consume taken {
+    case .some(let token): return token.id
+    case .none: return 0
     }
 }
 ```
 
-This collapses all failure information. Network offline, unauthorized, decoding failure, cancellation, and server error all become “no profile.”
+This returns 7. Presence comparisons with nil do not require the payload itself to be Equatable.
 
-Better:
+The public `map` overload in this SDK requires a Copyable input payload, even though its output may be noncopyable. Reusing `Token`, this succeeds:
 
 ```swift
-func loadProfile() async throws -> Profile {
-    try await api.profile()
+func makeToken(_ id: Int?) -> Token? {
+    id.map { Token(id: $0) }
 }
 ```
 
-Or, if state matters at the UI boundary:
+This instead fails for the noncopyable input:
 
 ```swift
-enum ProfileState {
-    case idle
-    case loading
-    case loaded(Profile)
-    case failed(ProfileError)
+func readToken(_ token: borrowing Token?) -> Int? {
+    token.map { $0.id }
 }
 ```
 
-### Trap 2: Multiple optionals encode invalid states
+Use supported ownership operations/patterns from C7/C8 instead of assuming every Optional method accepts the same constraints. The selected SDK has no `Optional.ref`, `mutableRef`, or `put`. SE-0532's proposal/status and the release overview disagree; the roadmap and validation record keep these operations outside the verified shipped baseline.
 
-Bad:
+## References
 
-```swift
-struct ViewModelState {
-    var isLoading = false
-    var profile: Profile?
-    var errorMessage: String?
-}
-```
+### Related guides
 
-This allows nonsense:
-
-```text
-isLoading == true, profile != nil, errorMessage != nil
-```
-
-That says the screen is loading, loaded, and failed at the same time.
-
-Better:
-
-```swift
-enum ViewModelState {
-    case idle
-    case loading
-    case loaded(Profile)
-    case failed(String)
-}
-```
-
-Now impossible states are unrepresentable.
-
-### Trap 3: Using `!` as normal control flow
-
-Bad:
-
-```swift
-func didTapBuy() {
-    checkout(cart: cart!)
-}
-```
-
-Better:
-
-```swift
-func didTapBuy() {
-    guard let cart else {
-        showEmptyCartMessage()
-        return
-    }
-
-    checkout(cart: cart)
-}
-```
-
-Force unwraps are not validation. They are runtime assertions.
-
-### Trap 4: Nested optionals without a clear domain reason
-
-```swift
-let value: String?? = .some(nil)
-```
-
-This can be meaningful if you truly need to distinguish:
-
-```text
-.none        -> key was absent
-.some(nil)   -> key was present but value was null
-.some(value) -> key was present with a value
-```
-
-But if your teammates need a truth table to understand the state, use a named enum.
-
-```swift
-enum FieldPresence<Value> {
-    case missing
-    case null
-    case value(Value)
-}
-```
-
-### Trap 5: Overusing implicitly unwrapped optionals
-
-Bad:
-
-```swift
-final class SessionViewModel {
-    var session: Session!
-
-    func refresh() {
-        session.refresh()
-    }
-}
-```
-
-Better:
-
-```swift
-final class SessionViewModel {
-    private let session: Session
-
-    init(session: Session) {
-        self.session = session
-    }
-
-    func refresh() {
-        session.refresh()
-    }
-}
-```
-
-If a dependency is required, inject it as non-optional.
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What is the difference between `foo?.bar()` and `foo!.bar()` beyond syntax?
-
-`foo?.bar()` safely calls `bar()` only if `foo` is non-nil, and returns an optional result. `foo!.bar()` asserts that `foo` is non-nil and traps at runtime if that assertion is false.
-
-```swift
-final class Service {
-    func refresh() -> Int { 42 }
-}
-
-let service: Service? = nil
-
-let safe = service?.refresh()
-// safe is Int?, value is nil
-
-let unsafe = service!.refresh()
-// runtime trap
-```
-
-The deeper difference is semantic. Optional chaining models absence as part of the program’s control flow. Force unwrapping models non-nil as an invariant. The Swift book explicitly describes implicitly unwrapped optional access as having the same runtime failure behavior as force unwrapping a normal optional when it contains no value. ([Swift.org, "The Basics"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/))
-
-Interview version:
-
-> `foo?.bar()` means “if `foo` exists, call `bar`; otherwise produce nil.” `foo!.bar()` means “I guarantee `foo` exists; crash if I’m wrong.” Optional chaining is normal absence-aware control flow. Force unwrap is an invariant assertion and should be rare outside tests, literals, lifecycle boundaries, or places where failure should genuinely be programmer error.
-
-### Q2. When is `T?` the right model, and when should you use an enum instead?
-
-Use `T?` when there are exactly two meaningful states:
-
-```text
-value exists
-value does not exist
-```
-
-Good optional examples:
-
-```swift
-struct User {
-    var avatarURL: URL?
-    var middleName: String?
-}
-```
-
-A user may or may not have an avatar. A person may or may not have a middle name. `nil` has one clear meaning.
-
-Use an enum when there are multiple meaningful states:
-
-```swift
-enum RemoteData<Value> {
-    case idle
-    case loading
-    case loaded(Value)
-    case failed(Error)
-}
-```
-
-A network-loaded value is not merely “present or absent.” It can be not requested, loading, loaded, failed, refreshing, stale, or unauthorized.
-
-Bad:
-
-```swift
-struct ArticleViewModel {
-    var isLoading: Bool
-    var article: Article?
-    var error: Error?
-}
-```
-
-Better:
-
-```swift
-enum ArticleState {
-    case idle
-    case loading
-    case loaded(Article)
-    case failed(Error)
-}
-```
-
-Interview version:
-
-> `T?` is right when absence has one obvious domain meaning. If the domain has multiple states, use a named enum. Optionals are good for “zero or one value”; enums are better for finite state machines because they make invalid combinations unrepresentable.
-
-### Q3. What are implicitly unwrapped optionals actually for, and why are they usually a legacy interop or lifecycle tool rather than a preferred model?
-
-An implicitly unwrapped optional, written `T!`, is still an optional. It can contain `nil`. The difference is that Swift allows it to be used as if it were non-optional in many contexts, inserting an implicit force unwrap.
-
-```swift
-var label: UILabel!
-
-label.text = "Hello"
-// behaves like label!.text = "Hello"
-```
-
-This is useful mainly when a value cannot be initialized immediately but is expected to exist before normal use. Classic examples include Interface Builder outlets, Objective-C interop, and framework-controlled lifecycle setup.
-
-```swift
-final class ProfileViewController: UIViewController {
-    @IBOutlet private var nameLabel: UILabel!
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        nameLabel.text = "Aykut"
-    }
-}
-```
-
-The danger is that `T!` weakens the type system. A property that is required for correct behavior looks non-optional at call sites but can still be `nil` at runtime.
-
-Preferred modern design:
-
-```swift
-final class ProfilePresenter {
-    private let service: ProfileService
-
-    init(service: ProfileService) {
-        self.service = service
-    }
-}
-```
-
-Use real initialization when you control construction. Use `T?` when absence is expected. Use `T!` only when external lifecycle or interop forces delayed setup and you can document the invariant.
-
-Interview version:
-
-> An implicitly unwrapped optional is an optional with automatic force-unwrapping behavior. It is useful for values that are nil during construction but guaranteed to exist before use, such as some IBOutlet or Objective-C lifecycle cases. It is not a preferred modeling tool because it hides nilability from call sites and turns a modeling problem into a runtime crash.
-
----
-
-## 5. No rubric code probe: focused examples
-
-A4 has no code probe in the rubric, so use these as probes.
-
-### Minimal example
-
-```swift
-let raw: String? = "42"
-
-let withMap = raw.map { Int($0) }
-let withFlatMap = raw.flatMap { Int($0) }
-
-print(type(of: withMap))
-print(type(of: withFlatMap))
-print(withMap as Any)
-print(withFlatMap as Any)
-```
-
-Output shape:
-
-```text
-Optional<Optional<Int>>
-Optional<Int>
-Optional(Optional(42))
-Optional(42)
-```
-
-Why:
-
-```text
-raw: String?
-
-map:
-  String -> Int?
-  Optional.map wraps transform result
-  result: Int??
-
-flatMap:
-  String -> Int?
-  Optional.flatMap flattens one optional layer
-  result: Int?
-```
-
-### Counterexample: optional where enum is better
-
-Bad:
-
-```swift
-struct SearchViewModel {
-    var query = ""
-    var isLoading = false
-    var results: [SearchResult]?
-    var errorMessage: String?
-}
-```
-
-Invalid states:
-
-```text
-isLoading == true and results != nil
-isLoading == true and errorMessage != nil
-results != nil and errorMessage != nil
-query.isEmpty and results != nil
-```
-
-Better:
-
-```swift
-enum SearchState: Equatable {
-    case idle
-    case typing(query: String)
-    case loading(query: String)
-    case results(query: String, items: [SearchResult])
-    case empty(query: String)
-    case failed(query: String, message: String)
-}
-```
-
-### Production example
-
-```swift
-@MainActor
-final class SearchViewModel: ObservableObject {
-    @Published private(set) var state: SearchState = .idle
-
-    private let service: SearchService
-
-    init(service: SearchService) {
-        self.service = service
-    }
-
-    func search(query: String) async {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !trimmedQuery.isEmpty else {
-            state = .idle
-            return
-        }
-
-        state = .loading(query: trimmedQuery)
-
-        do {
-            let results = try await service.search(trimmedQuery)
-
-            state = results.isEmpty
-                ? .empty(query: trimmedQuery)
-                : .results(query: trimmedQuery, items: results)
-        } catch {
-            state = .failed(query: trimmedQuery, message: error.localizedDescription)
-        }
-    }
-}
-```
-
-This model makes UI rendering straightforward:
-
-```swift
-switch viewModel.state {
-case .idle:
-    EmptyStateView()
-
-case .typing(let query):
-    SuggestionsView(query: query)
-
-case .loading:
-    ProgressView()
-
-case .results(_, let items):
-    ResultsList(items: items)
-
-case .empty(let query):
-    EmptyResultsView(query: query)
-
-case .failed(_, let message):
-    ErrorView(message: message)
-}
-```
-
----
-
-## 6. Exercise
-
-### Problem
-
-Refactor a view model that uses multiple booleans and optionals into a single enum-based state machine.
-
-### Bad / naive version
-
-```swift
-struct UserProfile {
-    let id: String
-    let name: String
-}
-
-@MainActor
-final class ProfileViewModel: ObservableObject {
-    @Published var isLoading = false
-    @Published var profile: UserProfile?
-    @Published var errorMessage: String?
-    @Published var isRefreshing = false
-
-    private let service: ProfileService
-
-    init(service: ProfileService) {
-        self.service = service
-    }
-
-    func load(userID: String) async {
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            profile = try await service.profile(id: userID)
-            isLoading = false
-        } catch {
-            errorMessage = error.localizedDescription
-            isLoading = false
-        }
-    }
-
-    func refresh(userID: String) async {
-        isRefreshing = true
-
-        do {
-            profile = try await service.profile(id: userID)
-            isRefreshing = false
-        } catch {
-            errorMessage = error.localizedDescription
-            isRefreshing = false
-        }
-    }
-}
-```
-
-### What is wrong?
-
-```text
-The model allows invalid state combinations:
-
-- isLoading == true while profile != nil
-- isLoading == true while errorMessage != nil
-- isRefreshing == true while profile == nil
-- profile != nil while errorMessage != nil
-- isLoading == false, profile == nil, errorMessage == nil, but the screen meaning is unclear
-
-The booleans and optionals are not independent facts. Together, they encode one state machine.
-```
-
-### Improved version
-
-```swift
-struct UserProfile: Equatable {
-    let id: String
-    let name: String
-}
-
-enum ProfileState: Equatable {
-    case idle
-    case loading
-    case loaded(UserProfile)
-    case refreshing(UserProfile)
-    case failed(message: String)
-}
-
-@MainActor
-final class ProfileViewModel: ObservableObject {
-    @Published private(set) var state: ProfileState = .idle
-
-    private let service: ProfileService
-
-    init(service: ProfileService) {
-        self.service = service
-    }
-
-    func load(userID: String) async {
-        state = .loading
-
-        do {
-            let profile = try await service.profile(id: userID)
-            state = .loaded(profile)
-        } catch {
-            state = .failed(message: error.localizedDescription)
-        }
-    }
-
-    func refresh(userID: String) async {
-        guard case .loaded(let currentProfile) = state else {
-            await load(userID: userID)
-            return
-        }
-
-        state = .refreshing(currentProfile)
-
-        do {
-            let refreshedProfile = try await service.profile(id: userID)
-            state = .loaded(refreshedProfile)
-        } catch {
-            state = .loaded(currentProfile)
-            // Alternative: use .loaded(currentProfile, warning: ...)
-            // if the UI needs to surface non-blocking refresh failure.
-        }
-    }
-}
-```
-
-### Why this is better
-
-The enum makes the state transitions explicit:
-
-```text
-idle -> loading -> loaded
-idle -> loading -> failed
-loaded -> refreshing(previous profile) -> loaded(new profile)
-loaded -> refreshing(previous profile) -> loaded(previous profile)
-```
-
-The UI no longer has to infer meaning from a pile of partially related flags. Each case describes exactly one valid screen state. This is safer, easier to test, and easier to evolve.
-
-If refresh failure must be visible without throwing away existing data, make that a domain state:
-
-```swift
-enum ProfileState: Equatable {
-    case idle
-    case loading
-    case loaded(UserProfile)
-    case refreshing(UserProfile)
-    case loadedWithRefreshError(UserProfile, message: String)
-    case failed(message: String)
-}
-```
-
-That is better than reintroducing an unrelated `errorMessage: String?`.
-
----
-
-## 7. Production guidance
-
-Use `Optional` in production when:
-
-```text
-- A value genuinely may or may not exist.
-- Absence has exactly one obvious meaning.
-- You are modeling lookup failure, optional configuration, optional user input, or optional metadata.
-- The nil case is expected and recoverable.
-```
-
-Be careful when:
-
-```text
-- Multiple optionals describe one feature state.
-- You have optional booleans, such as Bool?.
-- You use nil to mean several different things.
-- You see T?? without a clear domain reason.
-- You erase errors with try?.
-- You use ?? with fake defaults like empty strings, zero IDs, or empty dates.
-```
-
-Avoid when:
-
-```text
-- You need to distinguish loading, failed, loaded, empty, unauthorized, stale, or cancelled.
-- The value is required for the object to be valid.
-- nil would represent a programmer error rather than a domain state.
-- You are tempted to write many force unwraps.
-```
-
-Debugging checklist:
-
-```text
-- What does nil mean here?
-- Is there exactly one absence state, or several?
-- Is this optional hiding an error?
-- Is this optional hiding initialization order problems?
-- Would a named enum make states clearer?
-- Are force unwraps asserting true invariants, or masking weak modeling?
-- Are nested optionals intentional, or accidental from map/try?/dictionary access?
-- Does a fallback value preserve correctness, or hide missing data?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> Optionals let a value be nil. Use `if let` or `guard let` to unwrap them. Avoid force unwraps because they can crash.
-
-### Senior answer
-
-> `Optional` is an enum representing either `.some(value)` or `.none`. I use optionals when absence is a real two-state domain concept. I avoid using several optionals and booleans to encode a state machine because that creates invalid combinations. I treat force unwraps as invariant assertions, not normal control flow.
-
-### Staff-level answer
-
-> Optionals are a local absence model, not a general state-management model. At API boundaries, I want nil semantics to be explicit: missing lookup value, optional configuration, deferred framework lifecycle, or domain absence. If the domain has multiple states, I use enums with associated values so invalid states are unrepresentable. In production architecture, this matters because optional-heavy models make UI behavior, testing, concurrency, and schema evolution harder. I also review force unwraps in infrastructure code as design smells unless they are constrained to literals, tests, or documented lifecycle invariants.
-
-Staff-level questions to ask:
-
-```text
-What does nil mean in this API?
-Can nil represent more than one failure or state?
-Would an enum make invalid states unrepresentable?
-Is force unwrap being used as an invariant assertion or as lazy error handling?
-Should this be optional, throwing, Result, or a domain enum?
-Does this optional leak framework lifecycle constraints into domain code?
-Are we preserving enough error information for observability and debugging?
-```
-
----
-
-## 9. Interview-ready summary
-
-`Optional` is Swift’s type-safe way to model “zero or one value.” It is essentially an enum with `.some(Wrapped)` and `.none`, surfaced through syntax like `T?`, `nil`, optional binding, optional chaining, and nil coalescing. I use `T?` when absence has one clear meaning. If there are multiple states, such as loading, loaded, empty, failed, refreshing, or unauthorized, I use an enum with associated values. `foo?.bar()` is absence-aware control flow; `foo!.bar()` is a runtime assertion. Implicitly unwrapped optionals are still optionals and are mainly justified for framework lifecycle or interop cases, not normal domain modeling.
-
----
-
-## 10. Flashcards
-
-Q: What is `String?` shorthand for?  
-A: `Optional<String>`.
-
-Q: What are the conceptual cases of `Optional<Wrapped>`?  
-A: `.some(Wrapped)` and `.none`.
-
-Q: What is the difference between `foo?.bar()` and `foo!.bar()`?  
-A: `foo?.bar()` returns `nil` if `foo` is nil; `foo!.bar()` traps if `foo` is nil.
-
-Q: When is `T?` a good model?  
-A: When absence has exactly one clear domain meaning.
-
-Q: When should you prefer an enum over multiple optionals?  
-A: When the values collectively represent a finite state machine.
-
-Q: Why are multiple booleans and optionals dangerous in view state?  
-A: They allow invalid combinations like loading, loaded, and failed simultaneously.
-
-Q: What does `Optional.map` do?  
-A: It transforms a wrapped value if present and preserves optionality.
-
-Q: What does `Optional.flatMap` do?  
-A: It transforms a wrapped value with a function that returns an optional and flattens one optional layer.
-
-Q: Why can `map` produce nested optionals?  
-A: Because if the transform returns `U?`, `map` wraps that result inside another optional, producing `U??`.
-
-Q: What is an implicitly unwrapped optional?  
-A: An optional that Swift may automatically force unwrap at use sites.
-
-Q: Why is `T!` dangerous?  
-A: It looks non-optional at call sites but can still be nil and crash at runtime.
-
-Q: When is `T!` justified?  
-A: Mostly for framework lifecycle or interop cases where the value cannot be initialized immediately but is guaranteed before normal use.
-
----
-
-## 11. Related sections
-
-- [[A5 — Pattern matching and exhaustive control flow]]
-- [[A9 — Enums, associated values, recursive enums, and state modeling]]
+- [[A5 — Pattern Matching and Exhaustive Control Flow]]
+- [[A9 — Enums, Associated Values, Recursive Enums, and State Modeling]]
 - [[A13 — Error handling and typed throws]]
-- [[B9 — Codable and schema evolution]]
+- [[B2 — Existentials (`any`) vs Opaque Types (`some`)]]
+- [[B9 — Codable and Schema Evolution]]
+- [[C7 — Ownership modifiers - `borrowing`, `consuming`, and `consume`]]
+- [[C8 — Copyable, noncopyable types, and `~Copyable`]]
 - [[D5 — Global Actors and `@MainActor`]]
+- [[D7 — Actor Reentrancy and Logic Races]]
 - [[F6 — Observation, property wrappers, and language-adjacent state tools]]
 
+### Official sources
 
----
-
-## 12. Sources
-
-- "Swift Senior/Staff Rubric and Prioritized Study Checklist."
-- Swift.org. "The Basics." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/
-- Swift.org. "Optional Chaining." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/optionalchaining/
-- Swift.org. "Patterns." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/
-- Swift.org. "A Swift Tour." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/guidedtour/
+- [The Basics: optionals](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics/)
+- [SE-0521](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0521-improved-optional-opaque-and-any.md)
+- [Optional Chaining](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/optionalchaining/)
+- [Patterns](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/)
+- [SE-0054 — IUO type representation and contextual forcing](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0054-abolish-iuo.md)
+- [SE-0230 — try? optional flattening](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0230-flatten-optional-try.md)
+- [SE-0532 — Proposed Optional noncopyable improvements](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0532-optional-noncopyable-improvements.md)

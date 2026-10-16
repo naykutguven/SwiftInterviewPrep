@@ -8,1123 +8,380 @@ tags:
   - runtime
   - api-design
 ---
+
 # E1 — Objective-C Interoperability
 
-## 0. Rubric snapshot
+**Goal:** Export a Swift operation, inspect its generated Objective-C selector, and invoke it from a native client.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Understand `@objc`, `dynamic`, selector-based APIs, `NSObject` constraints, `NSError` bridging, and which Swift features do not map cleanly to Objective-C. The rubric frames this as a senior-level interop, modules, and distribution topic.
+## Mental model
 
-**Caveats**
+Objective-C clients consume representable classes, selectors, blocks, nullable object references, and NSError conventions. Keep richer Swift generic/value/actor implementation behind a deliberate facade. @objc exposes a supported declaration; @objc dynamic selects Objective-C runtime dispatch; NSObject supplies framework integration without exposing every member or synchronizing state. [Using Swift from Objective-C](https://developer.apple.com/documentation/swift/importing-swift-into-objective-c)
 
-Opting into Objective-C runtime behavior affects:
+## Rules and pitfalls
 
-- dispatch
-- reflection
-- selectors
-- KVC/KVO
-- runtime names
-- API shape
-- binary size and optimization opportunities
+### Inspect the generated surface
 
-**You should be able to answer**
+Give external clients public construction and representable methods, then generate the header and compile a real Objective-C client. Swift-only generic or value signatures can disappear or require adaptation; Swift effects can export through completion/error conventions.
 
-- When do you need `@objc` or `dynamic`, and what are the tradeoffs?
-- Why do some Swift language features not export cleanly to Objective-C?
+**Common pitfall:** Guessing a selector or assuming every NSObject member is exported can leave a facade unusable. Treat the generated header as evidence and test native invocation.
 
-**You should be able to do**
+### Document contracts the header cannot express
 
-- Expose a Swift API to Objective-C.
-- Identify what must change about its signature and types.
+State calling context, callback delivery, invocation count, cancellation, and token lifetime. The checked Objective-C header does not carry all Swift MainActor/Sendable callback guarantees.
 
----
+**Common pitfall:** A native caller can violate an actor context the Swift compiler enforces for Swift clients. Require the documented context or implement a deliberate asynchronous hop. Dropping a token and cancelling it are distinct unless the API explicitly ties them.
 
-## 1. Core mental model
+## Interview questions
 
-Objective-C interoperability is not “Swift with a different syntax.” It is Swift crossing into a different runtime model.
+### Why can a Swift struct have a dynamic method while KVO uses @objc dynamic?
 
-Swift’s native model is strongly typed, generic, value-semantics-friendly, statically optimized, and increasingly concurrency-aware. Objective-C’s model is class/object based, selector based, dynamically dispatched through the Objective-C runtime, nullable by convention, and centered around `NSObject`, `id`, `SEL`, blocks, `NSError`, KVC/KVO, and runtime metadata.
+Native Swift dynamic replacement is a separate mechanism and can apply to a struct method. KVO relies on Objective-C runtime interception, so the observed supported property needs the Objective-C dynamic path. Neither dynamic spelling alone establishes thread safety or observation lifetime.
 
-The key distinction:
+### Which Swift types/signatures disappear or change in the exported header, and what proves the native client can call it?
 
-```text
-@objc = expose Swift declaration to Objective-C/runtime metadata
-dynamic = force Objective-C runtime dispatch for that declaration
-```
+Unsupported Swift-only types or generic signatures cannot simply appear as native declarations; async/error forms can be adapted to blocks and NSError conventions. Only inspecting the emitted header and compiling/invoking an ordinary Objective-C client proves that specific exported surface is usable.
 
-`@objc` makes a declaration visible to Objective-C when it can be represented there. Swift’s reference manual says `@objc` applies only to declarations representable in Objective-C, such as nonnested classes, protocols, nongeneric integer-backed enums, class/protocol methods and properties, initializers, and subscripts. It also notes that the compiler can infer `@objc` in cases such as overriding Objective-C declarations, satisfying `@objc` protocol requirements, and Interface Builder annotations like `IBAction`/`IBOutlet`. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
+### When does this profile facade complete, where does it deliver, and what happens when the token is cancelled or dropped?
 
-`dynamic` goes further: it forces access through Objective-C runtime dispatch, meaning the compiler must not inline or devirtualize the access. Swift’s reference manual explicitly says `dynamic` members are always dynamically dispatched through the Objective-C runtime and therefore must also be `@objc`. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
+It returns a token synchronously and delivers one terminal completion asynchronously on MainActor, including invalid-ID failure. Dropping the token does not cancel. cancel requests cooperation: cancellation observed before loading avoids the load; cancellation observed after loading rejects its result. A loader that never finishes can prevent delivery. The task retains its dependencies, weakly references the token, and clears the token's task reference on completion.
 
-Use Objective-C interop deliberately. It is necessary for UIKit/AppKit target-action, Interface Builder, some delegate patterns, KVC/KVO, runtime reflection, old SDK surfaces, mixed Swift/Objective-C codebases, and SDKs that must serve Objective-C clients. It is not a general-purpose API design style for new Swift-only code.
+## Focused exercise
 
----
+**Task:** Expose one Swift operation to an Objective-C client. Inspect its selector and types, invoke it, and document the required calling context.
 
-## 2. Essential mechanics
+**Acceptance checks:**
 
-### `@objc`: Objective-C visibility and runtime name
+- The header exposes the intended class, initializer, greet: selector, and NSString types.
+- The Objective-C executable invokes the Swift implementation successfully.
+- Calling context and mutable-state assumptions are documented separately from header types.
 
-`@objc` tells the compiler to expose a compatible Swift declaration to Objective-C.
+**Solution:**
+
+Two-source macOS fixture using Foundation; no UI state or special actor context is required for this stateless synchronous method.
 
 ```swift
-import UIKit
-
-final class SearchButtonController: NSObject {
-    @objc private func didTapSearchButton(_ sender: UIButton) {
-        print("Search tapped")
-    }
-
-    func connect(_ button: UIButton) {
-        button.addTarget(
-            self,
-            action: #selector(didTapSearchButton(_:)),
-            for: .touchUpInside
-        )
-    }
+// Greeting.swift, module GreetingSDK
+import Foundation
+@objc(Greeting) public final class Greeting: NSObject {
+    @objc public override init() { super.init() }
+    @objc public func greet(_ name: String) -> String { "Hello, \(name)" }
 }
 ```
 
-Why `@objc` is needed here:
-
-```text
-UIButton target-action stores a selector.
-A selector names an Objective-C runtime method.
-Swift-only private methods are not selector-addressable unless exposed to ObjC.
-```
-
-`@objc(SomeName)` can also control the Objective-C name and runtime name. Swift’s reference manual notes that the `@objc` attribute accepts a name argument, and that this name is used both in Objective-C code and as the runtime name for APIs like `NSClassFromString`. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
-
-Example:
-
-```swift
-@objc(ACMUserSession)
-public final class UserSessionObjC: NSObject {
-    @objc public let identifier: String
-
-    @objc(initWithIdentifier:)
-    public init(identifier: String) {
-        self.identifier = identifier
+```objective-c
+// Client.m; imports the emitted header from GreetingSDK
+#import <Foundation/Foundation.h>
+#import "GreetingSDK-Swift.h"
+int main(void) {
+    @autoreleasepool {
+        Greeting *service = [[Greeting alloc] init];
+        NSCAssert([[service greet:@"Ada"] isEqualToString:@"Hello, Ada"], @"bridge failed");
     }
+    return 0;
 }
 ```
 
-Objective-C sees roughly:
+Emit the Swift library/module with -emit-objc-header-path GreetingSDK-Swift.h, inspect greet:, then compile Client.m against that header and link the Swift library. Use F5's baseline flags.
+
+**Reasoning:** This minimal facade uses representable Foundation values and ordinary synchronous execution. It establishes export and invocation, not KVO, callback cancellation, or UI delivery; the extended facade retains those distinct lessons.
+
+## In practice
+
+**Choose it when:** A native client requires a stable representable facade rather than the entire Swift implementation surface.
+
+**Investigate by:** Inspect generated headers, native calls, and callback lifetime/context.
+
+**Strong evidence:** Verify selector/types and the actual cancellation, error, isolation, and ownership contracts from both languages.
+
+### Native async facade and callback ownership — optional
+
+#### Compile the native declarations, not a guessed Swift signature
+
+Temporary E1Legacy.h defines a synchronous NSError-out API and a one-shot completion API. The two C entry points are validation shims that make real Objective-C calls into the Swift facades.
 
 ```objc
-@interface ACMUserSession : NSObject
-- (instancetype)initWithIdentifier:(NSString *)identifier;
-@property (nonatomic, readonly) NSString *identifier;
+#import <Foundation/Foundation.h>
+
+NS_ASSUME_NONNULL_BEGIN
+@interface E1LegacyNames : NSObject
+- (nullable NSString *)readNameForIdentifier:(NSString *)identifier
+                                     error:(NSError * _Nullable * _Nullable)error
+    NS_SWIFT_NAME(readName(for:));
+- (void)loadNameForIdentifier:(NSString *)identifier
+           completionHandler:(void (^)(NSString * _Nullable, NSError * _Nullable))completionHandler
+    NS_SWIFT_NAME(loadName(for:completionHandler:));
 @end
+
+FOUNDATION_EXPORT id E1BeginProfile(id service, NSString *identifier,
+    void (^completion)(id _Nullable, NSError * _Nullable));
+FOUNDATION_EXPORT void E1CallAsyncNames(id service, NSString *identifier,
+    void (^completion)(NSString * _Nullable, NSError * _Nullable));
+NS_ASSUME_NONNULL_END
 ```
 
-### `dynamic`: force Objective-C dispatch
+Temporary module.modulemap makes that header importable by Swift:
 
-`@objc` exposes the symbol. It does not necessarily mean every Swift call site must use `objc_msgSend`.
+> module E1Legacy {
+>     header "E1Legacy.h"
+>     export *
+> }
 
-`dynamic` forces dynamic runtime dispatch:
+The checked Swift imports are:
 
 ```swift
-final class ObservableDownload: NSObject {
-    @objc dynamic var progress: Double = 0
+import Foundation
+import E1Legacy
+
+func importedSyncName(_ identifier: String) throws -> String {
+    try E1LegacyNames().readName(for: identifier)
+}
+
+func importedAsyncName(_ identifier: String) async throws -> String {
+    try await E1LegacyNames().loadName(for: identifier)
 }
 ```
 
-This is common for KVO-style observation because KVO depends on Objective-C runtime behavior.
+Both functions return Ada for "known" and throw NSError domain com.acme.legacy/code 7 for another identifier. The completion form imports as async throws because it follows the applicable conventions; not every block-taking method qualifies. A one-shot contract and valid result/error combinations remain the native implementer's responsibility. Swift Error bridging can preserve NSError identity information; CustomNSError lets a Swift error supply deliberate domain, code, and userInfo. [SE-0297](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md), [SE-0112](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0112-nserror-bridging.md)
 
-```text
-@objc dynamic var progress
-
-means:
-
-- expose property to Objective-C
-- use Objective-C runtime dispatch
-- do not inline/devirtualize access
-- make it compatible with runtime observation mechanisms
-```
-
-Tradeoff: you give up some Swift compiler optimization freedom. Dynamic dispatch is also less explicit in call graphs and can make behavior depend on runtime features such as swizzling, KVO, or `responds(to:)`.
-
-### `@objcMembers`: broad exposure
-
-`@objcMembers` implicitly applies `@objc` to compatible members of a class, its extensions, subclasses, and their extensions.
+#### Export async work to an Objective-C completion method
 
 ```swift
-@objcMembers
-public final class LegacyUser: NSObject {
-    public let id: String
-    public var displayName: String
+import Foundation
 
-    public init(id: String, displayName: String) {
-        self.id = id
-        self.displayName = displayName
+@objc(ACMAsyncNames)
+public final class AsyncNamesObjC: NSObject, Sendable {
+    @objc public func name(for identifier: String) async throws -> String {
+        guard identifier == "known" else {
+            throw NSError(domain: "com.acme.names", code: 7,
+                          userInfo: [NSLocalizedDescriptionKey: "Unknown identifier."])
+        }
+        return "Ada"
     }
 }
 ```
 
-Use this sparingly. Swift’s reference manual says most code should use `@objc` directly and expose only what is needed; `@objcMembers` is mainly a convenience for libraries that heavily use Objective-C runtime introspection, and unnecessary `@objc` exposure can increase binary size and hurt performance. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
+The generated E1Bridge-Swift.h exposes nameFor:completionHandler: with nullable NSString result and nullable NSError. The checked native client invokes it for success and failure. This compiler-generated entry does not expose the custom cancellation token of the next exercise, and this example does not promise MainActor completion delivery. The driver resumes a continuation without touching actor-owned mutable state. [SE-0297](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md)
 
-Better default:
+#### The actual Objective-C implementation/client
 
-```swift
-public final class LegacyUser: NSObject {
-    @objc public let id: String
-    @objc public var displayName: String
-
-    public init(id: String, displayName: String) {
-        self.id = id
-        self.displayName = displayName
-    }
-}
-```
-
-### `@nonobjc`: suppress accidental exposure
-
-If a class or extension has implicit Objective-C exposure, use `@nonobjc` to keep Swift-only overloads or helpers out of Objective-C.
-
-```swift
-@objcMembers
-final class FormatterBridge: NSObject {
-    func format(_ value: NSNumber) -> NSString {
-        "\(value)" as NSString
-    }
-
-    @nonobjc
-    func format(_ value: Int) -> String {
-        "\(value)"
-    }
-}
-```
-
-Swift’s reference manual describes `@nonobjc` as a way to suppress an implicit `@objc` attribute and make a declaration unavailable to Objective-C even if it could otherwise be represented there. It is also useful for resolving overload/circularity issues in `@objc` classes. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
-
-### `NSError` bridging
-
-Objective-C conventionally reports errors through `NSError **` out parameters or completion-handler parameters. Swift maps many of these APIs to `throws`.
-
-Objective-C:
+Temporary E1Legacy.m imports the compiler-generated header. Compile this after emitting E1Bridge-Swift.h from the async class and the complete exercise below. E1BeginProfile receives the concrete facade supplied by the Swift fixture; its id parameters do not constitute runtime validation of an arbitrary foreign object.
 
 ```objc
-- (nullable NSURL *)replaceItemAtURL:(NSURL *)url
-                             options:(NSFileVersionReplacingOptions)options
-                               error:(NSError **)error;
-```
+#import "E1Legacy.h"
+#import "E1Bridge-Swift.h"
 
-Swift import:
-
-```swift
-func replaceItem(at url: URL, options: ReplacingOptions = []) throws -> URL
-```
-
-Swift Evolution SE-0112 describes this direct interoperability: Objective-C methods with `NSError **` parameters import as throwing Swift methods, and Swift `Error`-conforming values bridge to `NSError`. ([GitHub, "Improved NSError Bridging"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0112-nserror-bridging.md))
-
-For Swift errors that must cross Objective-C boundaries, prefer:
-
-```swift
-enum PaymentError: Int, Error, CustomNSError {
-    case declined
-    case networkUnavailable
-
-    static var errorDomain: String {
-        "com.acme.payment"
+@implementation E1LegacyNames
+- (NSString *)readNameForIdentifier:(NSString *)identifier error:(NSError **)error {
+    if ([identifier isEqualToString:@"known"]) { return @"Ada"; }
+    if (error != NULL) {
+        *error = [NSError errorWithDomain:@"com.acme.legacy" code:7
+            userInfo:@{NSLocalizedDescriptionKey: @"Unknown identifier."}];
     }
+    return nil;
+}
+- (void)loadNameForIdentifier:(NSString *)identifier
+           completionHandler:(void (^)(NSString *, NSError *))completionHandler {
+    NSError *error = nil;
+    NSString *name = [self readNameForIdentifier:identifier error:&error];
+    completionHandler(name, error);
+}
+@end
 
-    var errorCode: Int {
-        rawValue
-    }
+id E1BeginProfile(id service, NSString *identifier,
+                 void (^completion)(id, NSError *)) {
+    ACMProfileService *typed = service;
+    return [typed loadProfileWithUserID:identifier
+                    completionHandler:^(ACMProfile *profile, NSError *error) {
+        completion(profile, error);
+    }];
+}
 
-    var errorUserInfo: [String: Any] {
-        switch self {
-        case .declined:
-            [NSLocalizedDescriptionKey: "The payment was declined."]
-        case .networkUnavailable:
-            [NSLocalizedDescriptionKey: "The network is unavailable."]
-        }
-    }
+void E1CallAsyncNames(id service, NSString *identifier,
+                     void (^completion)(NSString *, NSError *)) {
+    ACMAsyncNames *typed = service;
+    [typed nameFor:identifier completionHandler:completion];
 }
 ```
 
-This preserves an Objective-C-friendly domain/code/userInfo shape while keeping a Swift-native error model internally.
+The header, implementation, module map, imported Swift calls, and exported Swift classes belong to the same temporary mixed-language fixture. The native source compiles with ARC, modules, Wall/Wextra/Werror. The validation record describes SDK/target/module-cache commands and observed header checks.
 
-### Objective-C completion handlers and Swift concurrency
 
-Objective-C does not have Swift’s native `async`/`await` language model, but Swift has interop rules for completion-handler APIs. SE-0297 says Objective-C completion-handler methods can be translated into Swift `async` methods, and Swift `async @objc` methods can be exported to Objective-C as completion-handler methods. ([GitHub, "Concurrency Interoperability with Objective-C"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md))
+### Profile facade and cancellation ownership — optional
 
-Swift:
+**Contract:** Expose an asynchronous Swift profile loader to Objective-C while keeping the Swift core value-oriented. A Swift composition root constructs the loader and service, then passes the service object to Objective-C. Objective-C clients are not given an initializer that accepts the Swift-only protocol.
+
+Required contract:
+
+1. A MainActor caller supplies a UUID string and receives a request token synchronously. Invalid syntax is an invalid-ID error, not a missing-profile result.
+2. A terminal completion is delivered asynchronously on MainActor, including validation failure; success has a profile and no error, failure has an error and no profile.
+3. cancel requests cooperative cancellation. Cancellation observed before loading avoids starting the loader; cancellation observed after loading rejects its result. A loader that never finishes can prevent terminal delivery.
+4. Dropping the token does not cancel. Avoid a token/task retain cycle, retain work dependencies until completion, and release the token's task reference when finished.
+5. NSError has a stable domain/code contract, and unexpected loader failures retain their underlying error. Cancellation takes precedence when the task is cancelled or the loader throws CancellationError.
+6. Exported profile objects are final immutable snapshots with checked Sendable conformance. Do not generalize that property to arbitrary NSObject subclasses.
+
+A complete reference implementation follows. waitForCompletion is a Swift-only validation/lifecycle helper; the generated Objective-C token exposes cancel. The String/URL properties bridge to readonly NSString/NSURL properties. The integer enum describes error codes; the associated-value Swift error stays behind the boundary.
 
 ```swift
-@objc
-func perform(operation: String) async -> Int {
-    operation.count
-}
-```
+import Foundation
 
-Objective-C sees a completion-handler-shaped method roughly like:
-
-```objc
-- (void)performWithOperation:(NSString *)operation
-           completionHandler:(void (^)(NSInteger result))completionHandler;
-```
-
-For `async throws`, Objective-C completion handlers receive an `NSError *` parameter. SE-0297 also states that the synthesized Objective-C implementation creates a detached task to call the Swift async method and forward the result to the completion handler. ([GitHub, "Concurrency Interoperability with Objective-C"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md))
-
-Production caveat: this bridge is useful, but it is not a full Objective-C model of Swift structured concurrency. Be careful with cancellation, actor isolation, Sendable assumptions, and callback threading.
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: Thinking `@objc` means dynamic dispatch
-
-Bad mental model:
-
-```text
-@objc means this method is always dynamically dispatched.
-```
-
-Better mental model:
-
-```text
-@objc exposes a declaration to Objective-C.
-dynamic forces Objective-C runtime dispatch.
-```
-
-Bad:
-
-```swift
-final class Model: NSObject {
-    @objc var title: String = ""
-}
-```
-
-If the reason is KVO or runtime interception, this is usually insufficient.
-
-Better:
-
-```swift
-final class Model: NSObject {
-    @objc dynamic var title: String = ""
-}
-```
-
-### Trap 2: Sprinkling `@objcMembers` everywhere
-
-Bad:
-
-```swift
-@objcMembers
-final class AccountManager: NSObject {
-    var cache: [String: Account] = [:]
-    var retryPolicy: RetryPolicy = .default
-    var debugDescription: String { "..." }
-
-    func loadAccount(id: String) async throws -> Account {
-        // ...
-    }
-
-    func resetInternalStateForTests() {
-        // ...
-    }
-}
-```
-
-Problems:
-
-```text
-- Exposes too much implementation detail.
-- Some members cannot be represented anyway.
-- Increases runtime metadata surface.
-- Can create accidental Objective-C API compatibility promises.
-- Can make refactoring harder.
-```
-
-Better:
-
-```swift
-final class AccountManagerObjC: NSObject {
-    private let manager: AccountManager
-
-    init(manager: AccountManager) {
-        self.manager = manager
-    }
-
-    @objc(loadAccountWithID:completionHandler:)
-    func loadAccount(
-        id: String,
-        completionHandler: @escaping (AccountObjC?, NSError?) -> Void
-    ) {
-        Task {
-            do {
-                let account = try await manager.loadAccount(id: id)
-                completionHandler(AccountObjC(account), nil)
-            } catch {
-                completionHandler(nil, error as NSError)
-            }
-        }
-    }
-}
-```
-
-### Trap 3: Exposing Swift-native domain models directly
-
-Bad:
-
-```swift
-public struct Account: Sendable {
-    public let id: UUID
-    public let status: AccountStatus
-}
-
-public enum AccountStatus: Sendable {
-    case active
-    case suspended(reason: String)
-    case deleted(at: Date)
-}
-```
-
-This is good Swift, but poor Objective-C API surface. Objective-C cannot naturally represent Swift structs, associated-value enums, `Sendable`, or strong generic relationships.
-
-Better:
-
-```swift
-@objc(ACMAccountStatus)
-public enum AccountStatusObjC: Int {
-    case active
-    case suspended
-    case deleted
-}
-
-@objc(ACMAccount)
-public final class AccountObjC: NSObject {
-    @objc public let identifier: String
-    @objc public let status: AccountStatusObjC
-    @objc public let suspensionReason: String?
-    @objc public let deletionDate: Date?
-
-    init(_ account: Account) {
-        identifier = account.id.uuidString
-
-        switch account.status {
-        case .active:
-            status = .active
-            suspensionReason = nil
-            deletionDate = nil
-
-        case .suspended(let reason):
-            status = .suspended
-            suspensionReason = reason
-            deletionDate = nil
-
-        case .deleted(let date):
-            status = .deleted
-            suspensionReason = nil
-            deletionDate = date
-        }
-    }
-}
-```
-
-This is less elegant than the Swift model, but more honest for Objective-C.
-
-### Trap 4: Forgetting that Objective-C names are API
-
-Swift overloading and labels often do not survive as-is across Objective-C.
-
-Bad:
-
-```swift
-@objcMembers
-final class ImageLoader: NSObject {
-    func load(_ url: URL) { }
-    func load(_ url: URL, cachePolicy: CachePolicy) { } // CachePolicy is Swift-only
-}
-```
-
-Better:
-
-```swift
-final class ImageLoaderObjC: NSObject {
-    @objc(loadImageWithURL:)
-    func loadImage(url: URL) { }
-
-    @objc(loadImageWithURL:cachePolicy:)
-    func loadImage(url: URL, cachePolicy: Int) { }
-}
-```
-
-When designing Objective-C-visible Swift APIs, explicitly choose the selector name. Do not rely on accidental generated names for public SDK boundaries.
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. When do you need `@objc` or `dynamic`, and what are the tradeoffs?
-
-You need `@objc` when Swift declarations must be visible to Objective-C code or Objective-C runtime mechanisms.
-
-Typical cases:
-
-```text
-- UIKit/AppKit target-action
-- #selector(...)
-- Interface Builder: IBOutlet, IBAction, IBInspectable, IBDesignable
-- Objective-C delegates or protocols
-- KVC/KVO
-- NSNotification selector observers
-- Timer selector APIs
-- Objective-C clients of a mixed SDK
-- Runtime lookup with NSClassFromString / responds(to:) / perform(...)
-```
-
-Example:
-
-```swift
-final class LoginViewController: UIViewController {
-    override func viewDidLoad() {
-        super.viewDidLoad()
-
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "Login",
-            style: .done,
-            target: self,
-            action: #selector(loginButtonTapped)
-        )
-    }
-
-    @objc private func loginButtonTapped() {
-        print("Login")
-    }
-}
-```
-
-You need `dynamic` when you specifically require Objective-C runtime dispatch, not just Objective-C visibility.
-
-Typical cases:
-
-```text
-- KVO-observable properties
-- method swizzling/interception
-- Objective-C runtime replacement behavior
-- cases where Swift devirtualization would break runtime expectations
-```
-
-Example:
-
-```swift
-final class PlayerState: NSObject {
-    @objc dynamic var isPlaying = false
-}
-```
-
-Tradeoffs:
-
-|Choice|Meaning|Tradeoff|
-|---|---|---|
-|`@objc`|Expose compatible Swift declaration to ObjC/runtime|More runtime metadata, more API surface, ObjC-compatible type restrictions|
-|`dynamic`|Force ObjC runtime dispatch|Prevents inlining/devirtualization; slower and more dynamic|
-|`@objcMembers`|Broadly expose compatible members|Convenient but easy to overexpose; can increase binary size/perf cost|
-|`@nonobjc`|Hide a declaration from ObjC|Useful for overloads/helpers but creates split Swift/ObjC API behavior|
-
-Interview version:
-
-> I use `@objc` when a Swift declaration must participate in Objective-C runtime mechanisms: selectors, target-action, KVC/KVO, Interface Builder, Objective-C protocols, or Objective-C clients. I use `dynamic` only when runtime dispatch itself is required, for example KVO or swizzling. `@objc` is visibility; `dynamic` is dispatch. The tradeoff is that Objective-C exposure constrains the API to Objective-C-representable types and adds runtime metadata, while `dynamic` also prevents Swift from optimizing the call through inlining or devirtualization.
-
-### Q2. Why do some Swift language features not export cleanly to Objective-C?
-
-Because Objective-C and Swift have different type systems and runtime models.
-
-Objective-C understands:
-
-```text
-- classes and objects
-- selectors
-- protocols
-- blocks
-- pointers and nullability annotations
-- NSObject / id / NSError
-- integer-backed NS_ENUM-like enums
-- NSArray / NSDictionary / NSString / NSNumber / NSData-style object graphs
-```
-
-Swift has features Objective-C cannot directly express:
-
-```text
-- structs with value semantics
-- enums with associated values
-- generic functions and generic value types
-- protocols with associated types or Self requirements
-- opaque result types: some P
-- existential spelling and type relationships
-- tuples
-- nested types
-- async/await as a language-level effect
-- actors and actor isolation
-- Sendable
-- typed throws
-- property wrappers / result builders / macros as Swift source features
-```
-
-Some of these can be adapted. For example:
-
-```swift
-enum Status {
-    case active
-    case suspended(reason: String)
-}
-```
-
-can become:
-
-```swift
-@objc enum StatusObjC: Int {
-    case active
-    case suspended
-}
-
-final class StatusPayloadObjC: NSObject {
-    @objc let status: StatusObjC
-    @objc let reason: String?
-}
-```
-
-But this is a lossy mapping. You have moved from a Swift enum that makes impossible states unrepresentable to an Objective-C-compatible object where invalid combinations can exist unless you enforce invariants manually.
-
-Interview version:
-
-> Some Swift features do not export cleanly because Objective-C does not have equivalent concepts. Swift structs, associated-value enums, generics, protocols with associated types, actors, `Sendable`, tuples, and opaque result types encode static type relationships that Objective-C cannot represent. When exposing Swift to Objective-C, I usually keep the Swift-native model internally and build a narrow Objective-C adapter layer using `NSObject` classes, `@objc` integer enums, `NSString`/`NSNumber`/Foundation types, blocks, and `NSError`.
-
----
-
-## 5. Code examples
-
-E1 has no rubric code probe, so here are a minimal example, a counterexample, and a production-style example.
-
-### Minimal example: selector-based API
-
-```swift
-import UIKit
-
-final class SearchController: NSObject {
-    @objc private func didTapSearch(_ sender: UIButton) {
-        print("Search tapped")
-    }
-
-    func wire(_ button: UIButton) {
-        button.addTarget(
-            self,
-            action: #selector(didTapSearch(_:)),
-            for: .touchUpInside
-        )
-    }
-}
-```
-
-What happens:
-
-```text
-No output immediately.
-
-When the button is tapped:
-Search tapped
-```
-
-Why:
-
-```text
-UIButton stores a target and Objective-C selector.
-#selector type-checks that didTapSearch(_:) exists and is ObjC-visible.
-@objc exposes the Swift method to the Objective-C runtime.
-```
-
-### Counterexample: Swift-only method used as selector
-
-```swift
-import UIKit
-
-final class SearchController {
-    private func didTapSearch(_ sender: UIButton) {
-        print("Search tapped")
-    }
-
-    func wire(_ button: UIButton) {
-        button.addTarget(
-            self,
-            action: #selector(didTapSearch(_:)),
-            for: .touchUpInside
-        )
-    }
-}
-```
-
-Problem:
-
-```text
-The selector cannot refer to a pure Swift private method.
-The method must be exposed to the Objective-C runtime.
-```
-
-Fix:
-
-```swift
-final class SearchController: NSObject {
-    @objc private func didTapSearch(_ sender: UIButton) {
-        print("Search tapped")
-    }
-}
-```
-
-### Production example: Swift-first API with Objective-C adapter
-
-Swift-native core:
-
-```swift
-public struct PaymentRequest: Sendable {
-    public let amount: Decimal
-    public let currencyCode: String
-}
-
-public struct PaymentReceipt: Sendable {
-    public let id: UUID
-    public let amount: Decimal
-    public let currencyCode: String
-}
-
-public enum PaymentProcessorError: Error, Sendable {
-    case declined(reason: String)
-    case networkUnavailable
-}
-
-public protocol PaymentProcessing: Sendable {
-    func charge(_ request: PaymentRequest) async throws -> PaymentReceipt
-}
-```
-
-Objective-C-compatible DTO:
-
-```swift
-@objc(ACMPaymentReceipt)
-public final class PaymentReceiptObjC: NSObject {
-    @objc public let identifier: String
-    @objc public let amount: NSDecimalNumber
-    @objc public let currencyCode: String
-
-    init(_ receipt: PaymentReceipt) {
-        self.identifier = receipt.id.uuidString
-        self.amount = NSDecimalNumber(decimal: receipt.amount)
-        self.currencyCode = receipt.currencyCode
-    }
-}
-```
-
-Objective-C-compatible wrapper:
-
-```swift
-@objc(ACMPaymentProcessor)
-public final class PaymentProcessorObjC: NSObject {
-    private let processor: PaymentProcessing
-
-    public init(processor: PaymentProcessing) {
-        self.processor = processor
-    }
-
-    @objc(chargeAmount:currencyCode:completionHandler:)
-    public func charge(
-        amount: NSDecimalNumber,
-        currencyCode: String,
-        completionHandler: @escaping (PaymentReceiptObjC?, NSError?) -> Void
-    ) {
-        let request = PaymentRequest(
-            amount: amount.decimalValue,
-            currencyCode: currencyCode
-        )
-
-        Task {
-            do {
-                let receipt = try await processor.charge(request)
-                completionHandler(PaymentReceiptObjC(receipt), nil)
-            } catch {
-                completionHandler(nil, error as NSError)
-            }
-        }
-    }
-}
-```
-
-Objective-C sees a conventional API:
-
-```objc
-ACMPaymentProcessor *processor = ...;
-
-[processor chargeAmount:amount
-           currencyCode:@"EUR"
-      completionHandler:^(ACMPaymentReceipt *receipt, NSError *error) {
-          if (error != nil) {
-              // Handle error.
-              return;
-          }
-
-          NSLog(@"%@", receipt.identifier);
-      }];
-```
-
-Important design choice:
-
-```text
-Swift API remains Swift-native.
-Objective-C API is a narrow adapter.
-The adapter maps:
-- Swift struct -> NSObject DTO
-- Swift Decimal -> NSDecimalNumber
-- Swift UUID -> NSString
-- Swift async throws -> completion handler with NSError
-- Swift associated-value error -> NSError-compatible representation
-```
-
----
-
-## 6. Exercise
-
-### Problem
-
-Expose a Swift API to Objective-C and identify what must change about its signature and types.
-
-### Bad / naive version
-
-```swift
 public struct Profile: Sendable {
     public let id: UUID
     public let name: String
     public let avatarURL: URL?
-}
-
-public enum ProfileState: Sendable {
-    case loaded(Profile)
-    case failed(ProfileLoadError)
-}
-
-public enum ProfileLoadError: Error, Sendable {
-    case missingUserID
-    case transport(Error)
-    case decodingFailed(reason: String)
-}
-
-public final class ProfileService {
-    public func loadProfile(userID: UUID) async throws -> Profile {
-        fatalError("Implementation omitted")
+    public init(id: UUID, name: String, avatarURL: URL?) {
+        self.id = id
+        self.name = name
+        self.avatarURL = avatarURL
     }
-}
-```
-
-### What is wrong for Objective-C?
-
-```text
-Profile is a Swift struct.
-UUID is not the natural Objective-C surface; use NSString or NSUUID.
-ProfileState has associated values.
-ProfileLoadError has associated values and nested Error payloads.
-async/await is not native Objective-C syntax.
-throws needs NSError bridging.
-Sendable is Swift-only.
-The class has no ObjC-facing name or NSObject-style surface.
-```
-
-### Improved Objective-C-facing version
-
-Keep the Swift-native implementation:
-
-```swift
-public struct Profile: Sendable {
-    public let id: UUID
-    public let name: String
-    public let avatarURL: URL?
 }
 
 public protocol ProfileLoading: Sendable {
     func loadProfile(userID: UUID) async throws -> Profile
 }
-```
 
-Add an Objective-C DTO:
-
-```swift
 @objc(ACMProfile)
-public final class ProfileObjC: NSObject {
+public final class ProfileObjC: NSObject, Sendable {
     @objc public let identifier: String
     @objc public let name: String
     @objc public let avatarURL: URL?
 
-    init(_ profile: Profile) {
-        self.identifier = profile.id.uuidString
-        self.name = profile.name
-        self.avatarURL = profile.avatarURL
+    public init(_ profile: Profile) {
+        identifier = profile.id.uuidString
+        name = profile.name
+        avatarURL = profile.avatarURL
+        super.init()
     }
 }
-```
 
-Add an Objective-C error shape:
-
-```swift
 @objc(ACMProfileErrorCode)
 public enum ProfileErrorCodeObjC: Int {
-    case missingUserID = 1
-    case transport = 2
-    case decodingFailed = 3
+    case invalidUserID = 1
+    case cancelled = 2
+    case failed = 3
 }
 
-enum ProfileLoadError: Error, CustomNSError {
-    case missingUserID
-    case transport(Error)
-    case decodingFailed(reason: String)
+public enum ProfileLoadError: Error, CustomNSError {
+    case invalidUserID
+    case cancelled
+    case failed(any Error)
 
-    static let errorDomain = "com.acme.profile"
-
-    var errorCode: Int {
+    public static var errorDomain: String { "com.acme.profile" }
+    public var errorCode: Int {
         switch self {
-        case .missingUserID:
-            ProfileErrorCodeObjC.missingUserID.rawValue
-        case .transport:
-            ProfileErrorCodeObjC.transport.rawValue
-        case .decodingFailed:
-            ProfileErrorCodeObjC.decodingFailed.rawValue
+        case .invalidUserID: ProfileErrorCodeObjC.invalidUserID.rawValue
+        case .cancelled: ProfileErrorCodeObjC.cancelled.rawValue
+        case .failed: ProfileErrorCodeObjC.failed.rawValue
         }
     }
-
-    var errorUserInfo: [String: Any] {
+    public var errorUserInfo: [String: Any] {
         switch self {
-        case .missingUserID:
-            [
-                NSLocalizedDescriptionKey: "The user ID is missing."
-            ]
-
-        case .transport(let underlying):
-            [
-                NSLocalizedDescriptionKey: "The profile request failed.",
-                NSUnderlyingErrorKey: underlying
-            ]
-
-        case .decodingFailed(let reason):
-            [
-                NSLocalizedDescriptionKey: "The profile response could not be decoded.",
-                "reason": reason
-            ]
+        case .invalidUserID: [NSLocalizedDescriptionKey: "The user ID is invalid."]
+        case .cancelled: [NSLocalizedDescriptionKey: "The request was cancelled."]
+        case let .failed(underlying):
+            [NSLocalizedDescriptionKey: "The profile request failed.",
+             NSUnderlyingErrorKey: underlying as NSError]
         }
     }
 }
-```
 
-Add the Objective-C adapter:
+@MainActor
+@objc(ACMProfileRequest)
+public final class ProfileRequestObjC: NSObject {
+    private var task: Task<Void, Never>?
+    fileprivate override init() { super.init() }
+    fileprivate func attach(_ task: Task<Void, Never>) { self.task = task }
+    fileprivate func finish() { task = nil }
+    @objc public func cancel() { task?.cancel() }
+    public func waitForCompletion() async { await task?.value }
+}
 
-```swift
+@MainActor
 @objc(ACMProfileService)
 public final class ProfileServiceObjC: NSObject {
-    private let loader: ProfileLoading
-
-    public init(loader: ProfileLoading) {
+    private let loader: any ProfileLoading
+    public init(loader: any ProfileLoading) {
         self.loader = loader
+        super.init()
     }
 
     @objc(loadProfileWithUserID:completionHandler:)
     public func loadProfile(
         userID: String,
-        completionHandler: @escaping (ProfileObjC?, NSError?) -> Void
-    ) {
-        guard let uuid = UUID(uuidString: userID) else {
-            completionHandler(
-                nil,
-                ProfileLoadError.missingUserID as NSError
-            )
-            return
-        }
-
-        Task {
+        completionHandler: @escaping @MainActor @Sendable (ProfileObjC?, NSError?) -> Void
+    ) -> ProfileRequestObjC {
+        let request = ProfileRequestObjC()
+        let task = Task { [loader, weak request] in
+            defer { request?.finish() }
             do {
-                let profile = try await loader.loadProfile(userID: uuid)
+                try Task.checkCancellation()
+                guard let id = UUID(uuidString: userID) else {
+                    throw ProfileLoadError.invalidUserID
+                }
+                let profile = try await loader.loadProfile(userID: id)
+                try Task.checkCancellation()
                 completionHandler(ProfileObjC(profile), nil)
             } catch {
-                completionHandler(nil, error as NSError)
+                let failure: ProfileLoadError
+                if Task.isCancelled || error is CancellationError {
+                    failure = .cancelled
+                } else if let known = error as? ProfileLoadError {
+                    failure = known
+                } else {
+                    failure = .failed(error)
+                }
+                completionHandler(nil, failure as NSError)
             }
         }
+        request.attach(task)
+        return request
     }
 }
 ```
 
-### Why this is better
+The inherited MainActor Task begins after this synchronous method yields, so attach completes before its body can finish and the caller can store the returned token before callback delivery. The Task retains loader and completion; weak request prevents the token→task→token cycle. It is unstructured work with an explicit owner handle, not a child automatically cancelled when a caller's task ends. Cancellation is a request, does not roll back effects, and does not by itself choose which of several requests is freshest.
 
-```text
-The Swift API stays expressive and type-safe.
-The ObjC API is explicit and stable.
-Swift-only concepts do not leak into Objective-C.
-Error information survives through NSError.
-The selector name is chosen deliberately.
-The adapter localizes interop ugliness instead of contaminating the domain model.
+Objective-C must call both service entry and cancel on the main actor's compatible execution context; the generated header does not enforce that contract. Swift rejects the following synchronous nonisolated call when compiled with the reference implementation:
+
+```swift
+func cancelFromWrongContext(_ request: ProfileRequestObjC) {
+    request.cancel() // Expected error: MainActor-isolated call in a synchronous nonisolated context.
+}
 ```
 
-### What changed?
+The fixture uses MainActor-isolated orchestration and checks callback isolation where MainActor.preconditionIsolated is available. Its Objective-C callback re-enters Swift using assumeIsolated only because this specific adapter supplies the established contract. Do not copy that assertion into an arbitrary callback API; it validates a promise rather than scheduling a hop.
 
-|Swift-native API|Objective-C-facing API|Reason|
-|---|---|---|
-|`struct Profile`|`NSObject` DTO|ObjC consumes objects, not Swift value types|
-|`UUID`|`String` or `NSUUID`|Better ObjC representation|
-|associated-value enum|integer `@objc enum` + fields/userInfo|ObjC cannot model associated values|
-|`async throws`|completion handler with `(Result?, NSError?)`|ObjC has no native async/throws syntax|
-|Swift `Error` enum|`CustomNSError`|Preserve domain/code/userInfo|
-|Swift protocol abstraction|adapter stores Swift dependency|Avoid leaking generic/Sendable/protocol details|
-|inferred names|explicit `@objc(...)` selector|Stable public ObjC API|
+**Acceptance cases:** success and readonly DTO fields; invalid UUID; immediate cancellation before load starts; cancellation after start even if the loader returns success; ordinary failure with underlying domain/code/userInfo preserved; loader CancellationError; repeated/late cancellation without duplicate delivery; successful delivery after the token deallocates; actual Objective-C invocation through the generated header. Use a controlled actor loader and continuations to choose event order, not timing sleeps. Compare a negative Swift caller and rejected representability examples with their expected diagnostics.
 
----
+**Discussion:** If production requires cancellation to complete immediately even when the dependency ignores it, introduce an explicit one-shot terminal state and a cancellation/dependency race policy. If multiple requests update one UI, track request identity in the UI owner. Neither policy can be inferred from this small adapter or from adding @Sendable to a callback.
 
-## 7. Production guidance
+## References
 
-Use Objective-C interop in production when:
+### Related guides
 
-```text
-- You are integrating with existing Objective-C app code.
-- You are exposing a Swift SDK to Objective-C clients.
-- You need UIKit/AppKit target-action or Interface Builder.
-- You need Objective-C delegates/protocols.
-- You need KVC/KVO or runtime lookup.
-- You are gradually migrating a legacy Objective-C codebase to Swift.
-```
-
-Be careful when:
-
-```text
-- Marking large classes @objcMembers.
-- Exposing Swift domain models directly.
-- Using dynamic dispatch in hot paths.
-- Relying on KVC/KVO instead of explicit Swift state flow.
-- Bridging Swift concurrency to Objective-C completion handlers.
-- Exposing Objective-C APIs from multiple modules or binary frameworks.
-```
-
-Avoid when:
-
-```text
-- The API is Swift-only.
-- You can use closures, protocols, async/await, or observation directly.
-- You are only adding @objc to silence compiler errors without understanding why.
-- You are exposing internal implementation details to Objective-C clients.
-- You need Swift-only type guarantees like associated values, Sendable, actors, or generic constraints.
-```
-
-Debugging checklist:
-
-```text
-1. Is the member actually visible to Objective-C?
-2. Is the selector name what you think it is?
-3. Is the method private/fileprivate/internal/public in a way that affects exposure?
-4. Is the type representable in Objective-C?
-5. Does the class need NSObject or NSObjectProtocol conformance for this API?
-6. Is KVO involved, requiring @objc dynamic?
-7. Is the Swift name different from the Objective-C selector?
-8. Are errors being bridged as NSError with useful domain/code/userInfo?
-9. Are nullability and optionality represented correctly?
-10. Is @objcMembers exposing more than intended?
-11. Does Swift concurrency introduce actor/thread/cancellation assumptions that ObjC callers do not know about?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> `@objc` lets Objective-C call Swift code, and `dynamic` makes dispatch dynamic.
-
-### Senior answer
-
-> `@objc` exposes compatible Swift declarations to Objective-C runtime metadata, which is required for selectors, target-action, KVC/KVO, Interface Builder, Objective-C protocols, and Objective-C clients. `dynamic` is separate: it forces Objective-C runtime dispatch and prevents inlining/devirtualization. I avoid broad `@objcMembers` exposure and prefer narrow adapter layers.
-
-### Staff-level answer
-
-> I treat Objective-C interop as a boundary design problem, not an annotation problem. The Swift side should remain Swift-native: value types, associated-value enums, async/await, actors, and strong type relationships where appropriate. The Objective-C boundary should be explicit: `NSObject` DTOs, integer `@objc` enums, Foundation types, blocks, and `NSError`. I design selectors deliberately, preserve error information through `CustomNSError`, minimize runtime exposure, and isolate migration risk so Objective-C compatibility does not pollute the core architecture.
-
-Staff-level questions to ask:
-
-```text
-Who are the Objective-C clients, and how long must we support them?
-Is this a public SDK boundary or only an internal migration bridge?
-Can we keep Swift-native models internally and expose ObjC adapters externally?
-Are selector names stable and documented?
-Are errors localizable and inspectable from Objective-C?
-Are we overusing @objcMembers?
-Does this API need dynamic dispatch, or only Objective-C visibility?
-Does KVO/KVC actually belong here, or should state flow be explicit?
-How does this interop boundary interact with Swift 6 strict concurrency?
-Will this Objective-C surface become binary/source compatibility debt?
-```
-
----
-
-## 9. Interview-ready summary
-
-Objective-C interop is a boundary between Swift’s static, generic, value-oriented type system and Objective-C’s dynamic, selector-based object runtime. `@objc` exposes compatible Swift declarations to Objective-C; `dynamic` forces Objective-C runtime dispatch and prevents some Swift optimizations. I use `@objc` for selectors, Interface Builder, KVC/KVO, Objective-C protocols, and mixed SDKs, and I reserve `dynamic` for cases that truly require runtime dispatch. Swift features like structs, associated-value enums, generics, actors, `Sendable`, tuples, and opaque types do not map cleanly to Objective-C, so the best production design is usually a Swift-native core plus a narrow Objective-C adapter using `NSObject`, Foundation types, integer `@objc` enums, blocks, and `NSError`.
-
----
-
-## 10. Flashcards
-
-Q: What does `@objc` do?
-
-A: It exposes a compatible Swift declaration to Objective-C code and Objective-C runtime metadata.
-
-Q: What does `dynamic` do?
-
-A: It forces Objective-C runtime dispatch and prevents the compiler from inlining or devirtualizing that member access.
-
-Q: Is `@objc` the same as dynamic dispatch?
-
-A: No. `@objc` is visibility/runtime metadata. `dynamic` is dispatch behavior.
-
-Q: When do you commonly need `@objc` in UIKit?
-
-A: Target-action, `#selector`, `IBAction`, `IBOutlet`, Objective-C delegates, KVC/KVO, timers, and selector-based notification observers.
-
-Q: What is the risk of `@objcMembers`?
-
-A: It exposes many compatible members automatically, increasing runtime/API surface and potentially hurting binary size and performance.
-
-Q: Why do Swift associated-value enums not export cleanly to Objective-C?
-
-A: Objective-C enums are integer constants; they cannot carry per-case payloads.
-
-Q: How should a Swift struct be exposed to Objective-C?
-
-A: Usually through an `NSObject` DTO/wrapper class.
-
-Q: How does `NSError **` commonly import into Swift?
-
-A: As a throwing Swift method.
-
-Q: How should Swift errors be made useful to Objective-C clients?
-
-A: Use `CustomNSError`, `LocalizedError`, stable domains/codes, and meaningful `userInfo`.
-
-Q: What is the production pattern for mixed Swift/Objective-C APIs?
-
-A: Keep a Swift-native core and expose a narrow Objective-C adapter layer.
-
----
-
-## 11. Related sections
-
-- [[B4 — Dispatch model]]
-- [[B6 — Any, AnyObject, metatypes, and runtime type information]]
-- [[B10 — API design guidelines and Swift-native surface design]]
-- [[B11 — Library evolution and resilience-aware API design]]
+- [[A8 — Closures, Escaping, and Capture Semantics]]
+- [[A12 — Availability and Conditional Compilation]]
+- [[A13 — Error handling and typed throws]]
+- [[B4 — Dispatch Model - Static, Class Virtual, Witness-Table, and Protocol Extension Dispatch]]
+- [[B6 — Any, AnyObject, Metatypes, and Runtime Type Information]]
+- [[B10 — API Design Guidelines and Swift-Native Surface Design]]
+- [[B11 — Library Evolution and Resilience-Aware API Design]]
 - [[C1 — ARC fundamentals]]
+- [[D5 — Global Actors and `@MainActor`]]
 - [[D6 — `Sendable`, `@Sendable`, and `sending`]]
-- [[D13 — Swift 6 strict concurrency migration]]
-- [[E2 — Foundation and Objective-C bridging behavior]]
-- [[E3 — C interoperability and unsafe boundaries]]
-- [[E7 — Resilience, ABI, and module stability]]
+- [[D9 — Continuations and Bridging Callback APIs]]
+- [[D13 — Swift 6 Strict Concurrency Migration]]
+- [[E2 — Foundation and Objective-C Bridging Behavior]]
+- [[E3 — C Interoperability and Unsafe Boundaries]]
+- [[E4 — C++ interoperability]]
+- [[E6 — Import Visibility and Dependency Leakage]]
+- [[F6 — Observation, property wrappers, and language-adjacent state tools]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E1 — Objective-C interoperability.
-- Swift.org. "Attributes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/
-- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/
-- GitHub. "Improved NSError Bridging." Swift Evolution SE-0112. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0112-nserror-bridging.md
-- GitHub. "Concurrency Interoperability with Objective-C." Swift Evolution SE-0297. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md
+- [Using Swift from Objective-C](https://developer.apple.com/documentation/swift/importing-swift-into-objective-c)
+- [SE-0297](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0297-concurrency-objc.md)
+- [SE-0112](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0112-nserror-bridging.md)
+- [Swift Evolution SE-0160: limiting Objective-C inference](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0160-objc-inference.md)
+- [Compiler-team explanation of native Swift dynamic support](https://forums.swift.org/t/how-does-the-hot-reloading-work-in-xcode11/25312/5)

@@ -9,970 +9,285 @@ tags:
   - swiftui
   - macros
 ---
+
 # F6 — Observation, Property Wrappers, and Language-Adjacent State Tools
 
-## 0. Rubric snapshot
+**Goal:** Track one observable property and distinguish tracked, unrelated, ignored, and re-registered changes.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Modern Apple-platform Swift uses a lot of macro- and property-wrapper-driven patterns. You should understand the generated semantics instead of treating `@Observable`, `@State`, `@Bindable`, `@Environment`, `@AppStorage`, etc. as magic.
+## Mental model
 
-**Caveats**
+Observation records property reads executed inside a tracking scope. Dependencies follow actual branches and nested accesses, not a computed property's name. @Observable generates registrar/accessor/storage support; it does not add synchronization, persistence, view identity, or lossless event delivery. UI-owned models still need explicit MainActor under this collection's nonisolated defaults. [SE-0395](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md)
 
-Observation tools are convenient, but they do **not** suspend Swift’s normal rules. Generated code still obeys ownership, isolation, mutation, access control, initialization, and concurrency rules.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Keep dependency reads on every valid path
 
-- What kinds of hidden coupling or update behavior can property-wrapper or observation-heavy code create?
-- Why is understanding generated semantics important even when a framework makes the syntax look trivial?
+An ignored cache can hide the source property's read after the first computation. Cache hits must still register the dependency, and external storage needs explicit access/mutation instrumentation where automatic backing storage is absent.
 
-**You should be able to do**
+**Common pitfall:** The first read works while later cache-hit scopes observe no source read and fail to invalidate. Reestablish the source dependency on every path or move the cache behind an appropriately instrumented boundary.
 
-- Review an observable model with thread-sensitive state and explain where language-level isolation still needs to be explicit.
+### Separate model identity, binding, and isolation
 
----
+State retains a SwiftUI model according to view identity; Bindable creates projections and can retain its model. Neither wrapper makes arbitrary state thread-safe. Keep callback/task/token lifetime explicit and use a unique request identity for asynchronous publication.
 
-## 1. Core mental model
+**Common pitfall:** Cancelling an old search and comparing query text can still permit a repeated-query stale result or error. Guard success, error, and cleanup by the current operation identity.
 
-Observation and property wrappers are **syntax compression**, not semantic escape hatches.
+## Interview questions
 
-A property wrapper changes the storage/access pattern of a property. Swift synthesizes backing storage and computed accessors around `wrappedValue`; if the wrapper exposes `projectedValue`, the `$property` projection becomes available. SE-0258 defines wrappers as types marked with `@propertyWrapper` that must provide `wrappedValue`, and explains that applying a wrapper makes the source property computed while introducing synthesized storage. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
+### Why can an ignored cache work on its first read but fail to invalidate after a cache-hit read?
 
-`@Observable` is an attached macro. Apple’s docs describe `Observable()` as a macro that adds observation support and conforms a type to `Observable`; SwiftUI’s model-data guidance says the macro generates code at compile time. ([Apple Developer, "Observable()"](https://developer.apple.com/documentation/observation/observable%28%29))
+The first getter call reads the tracked source while filling its ignored cache. A cache-hit branch can return without reading that source, so the new tracking scope has no dependency to invalidate. Register or read the source on hits too, and invalidate cached data consistently when it changes.
 
-The important part is what the macro expands into. SE-0395 says `@Observable` synthesizes `Observable` conformance, an observation registrar, helper methods for tracking access/mutation, and transforms stored properties into tracked computed properties backed by underscored storage. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
+### Which actor runs a synchronous change callback versus a continuous callback, and what owns the observation's lifetime?
 
-The key idea:
+A synchronous change callback runs in the mutation's execution context, but its Sendable type does not grant actor-isolated access to the model. A continuous callback uses its inherited registration isolation and is scheduled under that API's contract. The subscription owner retains and cancels/releases its token or task; callback delivery alone is not lifecycle ownership.
 
-```text
-@Observable / @State / @Bindable reduce boilerplate;
-they do not decide ownership, isolation, lifetime, or domain invariants for you.
+### Why can cancelling the older task and comparing query text still publish a stale search result?
+
+Cancellation is cooperative and query strings can repeat across distinct operations. An older service can return or throw after a newer identical query began. A unique operation identity must authorize each publication and cleanup; MainActor serializes access without selecting the intended winner.
+
+## Focused exercise
+
+**Task:** Track one observable property. Check unrelated and ignored writes, explain one-shot registration, and state the model's required isolation.
+
+**Acceptance checks:**
+
+- Only the actually read count triggers the original registration.
+- Unrelated and ignored writes do not trigger it.
+- The original callback is one-shot; a new scope observes a later change without reading actor state in the callback.
+
+**Solution:**
+
+Standalone executable: Observation requires macOS 14 / iOS 17; this synchronized callback counter additionally requires macOS 15 / iOS 18. The model is explicitly UI-owned.
+
+```swift
+import Observation
+import Synchronization
+@available(macOS 15, iOS 18, *)
+final class ChangeLog: Sendable {
+    private let value = Mutex(0)
+    func record() { value.withLock { $0 += 1 } }
+    func count() -> Int { value.withLock { $0 } }
+}
+@MainActor @Observable final class Model {
+    var count = 0
+    var unrelated = 0
+    @ObservationIgnored var bookkeeping = 0
+}
+@main struct Probe {
+    @MainActor static func main() {
+        if #available(macOS 15, iOS 18, *) {
+            let model = Model()
+            let log = ChangeLog()
+            _ = withObservationTracking { model.count } onChange: { log.record() }
+            model.unrelated = 1
+            model.bookkeeping = 1
+            precondition(log.count() == 0)
+            model.count = 1
+            model.count = 2
+            precondition(log.count() == 1)
+            _ = withObservationTracking { model.count } onChange: { log.record() }
+            model.count = 3
+            precondition(log.count() == 2)
+        }
+    }
+}
 ```
 
-Observation tracks **property access** and invalidates dependents when accessed properties change. That is a very different model from “notify the whole world whenever anything changes.” SE-0395 describes `withObservationTracking` as capturing tracked-property accesses in a scope and calling `onChange` when one of those accessed properties changes. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
+**Reasoning:** The log has its own synchronization, while Model has MainActor ownership. This separates callback capture safety from observation dependency tracking. The newer options/events/tokens require OS 27 in this SDK; Observations requires OS 26. They do not turn state invalidation into an ordered event log.
 
-For iOS 18+ SwiftUI code, the default mental model should be:
+## In practice
 
-```text
-@State owns local view state.
-@Observable makes reference models observable.
-@Bindable creates bindings into mutable observable models.
-@Environment injects shared context.
-@MainActor / actors / Sendable still define concurrency correctness.
-```
+**Choose it when:** Observe current state through a model with explicit identity, lifetime, and isolation.
 
----
+**Investigate by:** Trace actual getter reads, cache-hit paths, token ownership, and request publication.
 
-## 2. Essential mechanics
+**Strong evidence:** Validate dependency coverage and teardown across synchronous, continuous, and async surfaces without assuming observation supplies synchronization.
 
-### Mechanic 1: `@Observable` turns stored properties into tracked computed properties
+### Cached and external storage; advanced observation — optional
 
-Conceptually:
+#### Cached getters must register dependencies on a cache hit
+
+The old cache example returned ignored cached storage before reading `posts`. A tracking scope entered after the cache warmed therefore had no dependency on the source array. Fix that path too:
 
 ```swift
 import Observation
 
-@Observable
-final class SearchModel {
-    var query = ""
-    var results: [String] = []
-}
-```
-
-is closer to:
-
-```swift
-final class SearchModel: Observable {
-    private let registrar = ObservationRegistrar()
-
-    private var _query = ""
-
-    var query: String {
-        get {
-            registrar.access(self, keyPath: \.query)
-            return _query
-        }
-        set {
-            registrar.withMutation(of: self, keyPath: \.query) {
-                _query = newValue
-            }
-        }
-    }
-
-    private var _results: [String] = []
-
-    var results: [String] {
-        get {
-            registrar.access(self, keyPath: \.results)
-            return _results
-        }
-        set {
-            registrar.withMutation(of: self, keyPath: \.results) {
-                _results = newValue
-            }
-        }
-    }
-}
-```
-
-That is not exact public source code, but it is the right mental model. The proposal explicitly says the macro adds registrar storage, helper methods, and converts each stored property to a computed property with underscored ignored storage. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
-
-### Mechanic 2: SwiftUI observes what the view reads
-
-```swift
-@Observable
-final class Library {
-    var books: [Book] = []
-    var searchText = ""
-
-    var filteredBooks: [Book] {
-        books.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-    }
+struct Post: Equatable, Sendable {
+    let id: Int
+    let rank: Int
 }
 
-struct LibraryView: View {
-    @State private var library = Library()
-
-    var body: some View {
-        List(library.filteredBooks) { book in
-            Text(book.title)
-        }
-    }
-}
-```
-
-The view reads `library.filteredBooks`, and that computed property reads `books` and `searchText`. The dependency is therefore broader than it looks at the call site.
-
-SE-0395 explicitly states that computed properties deriving from stored properties are automatically tracked because they rely on tracked properties. It also says computed properties backed by remote storage or other indirection require manual tracking through generated access/mutation helpers. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
-
-### Mechanic 3: `@Bindable` creates bindings into an observable model; it does not own the model
-
-```swift
-@Observable
-final class Book {
-    var title = ""
-    var isFavorite = false
-}
-
-struct BookEditor: View {
-    @Bindable var book: Book
-
-    var body: some View {
-        Form {
-            TextField("Title", text: $book.title)
-            Toggle("Favorite", isOn: $book.isFavorite)
-        }
-    }
-}
-```
-
-Apple’s `Bindable` documentation says it creates bindings to mutable properties of a data model object that conforms to `Observable`. ([Apple Developer, "Bindable"](https://developer.apple.com/documentation/swiftui/bindable))
-
-That means:
-
-```text
-@Bindable is not ownership.
-@Bindable is not synchronization.
-@Bindable is a binding projection into an observable object.
-```
-
-### Mechanic 4: `@State` can own observable reference models in modern SwiftUI
-
-```swift
-struct SearchScreen: View {
-    @State private var model = SearchModel()
-
-    var body: some View {
-        SearchContent(model: model)
-    }
-}
-```
-
-Apple’s `State` documentation says `@State` can store observable objects created with the `Observable()` macro. ([Apple Developer, "State()"](https://developer.apple.com/documentation/SwiftUI/State%28%29))
-
-For iOS 18+ code, this is the normal replacement for many old `@StateObject` / `ObservableObject` patterns when using the new Observation framework.
-
-### Mechanic 5: `@ObservationIgnored` opts a property out of observation
-
-```swift
-@MainActor
-@Observable
-final class SearchModel {
-    var query = ""
-    var results: [String] = []
-
-    @ObservationIgnored
-    private var currentTask: Task<Void, Never>?
-}
-```
-
-Use this for implementation detail that should not trigger UI updates: tasks, caches, loggers, services, formatters, dependencies, locks, and other plumbing.
-
-Apple documents `ObservationIgnored()` as disabling observation tracking for a property. SE-0395 also explains that developers can apply it to stored properties that should not participate in tracking. ([Apple Developer, "ObservationIgnored()"](https://developer.apple.com/documentation/Observation/ObservationIgnored%28%29))
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: “`@Observable` makes my model thread-safe”
-
-It does not.
-
-Bad:
-
-```swift
-import Observation
-
-@Observable
-final class SearchModel {
-    var results: [String] = []
-
-    func refresh() {
-        Task.detached {
-            self.results = ["A", "B", "C"]
-        }
-    }
-}
-```
-
-This mixes UI-observed state with detached background mutation. Observation can register access/mutation; it does not decide which executor owns the state.
-
-Better:
-
-```swift
-import Observation
-
-@MainActor
-@Observable
-final class SearchModel {
-    private(set) var results: [String] = []
-
-    func refresh(using service: SearchService) {
-        Task {
-            let loaded = await service.search()
-            results = loaded
-        }
-    }
-}
-```
-
-If the model drives SwiftUI state, make that isolation explicit with `@MainActor`.
-
-### Trap 2: Hiding global state behind property wrappers
-
-Bad:
-
-```swift
-struct SettingsView: View {
-    @AppStorage("showExperimentalUI") private var showExperimentalUI = false
-
-    var body: some View {
-        Toggle("Experimental UI", isOn: $showExperimentalUI)
-    }
-}
-```
-
-This is fine for a small local preference. It becomes a problem when business-critical app behavior is scattered across many views through implicit storage keys.
-
-Better:
-
-```swift
-@MainActor
-@Observable
-final class SettingsModel {
-    var showExperimentalUI: Bool {
-        get { settingsStore.showExperimentalUI }
-        set { settingsStore.showExperimentalUI = newValue }
-    }
-
-    @ObservationIgnored
-    private let settingsStore: SettingsStore
-
-    init(settingsStore: SettingsStore) {
-        self.settingsStore = settingsStore
-    }
-}
-```
-
-Centralize policy. Keep wrappers at the edge.
-
-### Trap 3: Assuming computed properties are “free”
-
-```swift
-@Observable
-final class FeedModel {
-    var posts: [Post] = []
-
-    var sortedPosts: [Post] {
-        posts.sorted { $0.date > $1.date }
-    }
-}
-```
-
-Every view read of `sortedPosts` may do real work. Observation tracks dependencies; it does not memoize expensive computation for you.
-
-Better options:
-
-```swift
-@Observable
-final class FeedModel {
-    private(set) var sortedPosts: [Post] = []
-
-    func updatePosts(_ posts: [Post]) {
-        sortedPosts = posts.sorted { $0.date > $1.date }
-    }
-}
-```
-
-or use a carefully invalidated cache:
-
-```swift
-@Observable
+@MainActor @Observable
 final class FeedModel {
     var posts: [Post] = [] {
-        didSet {
-            cachedSortedPosts = nil
-        }
+        didSet { cachedSortedPosts = nil }
     }
 
-    @ObservationIgnored
-    private var cachedSortedPosts: [Post]?
+    @ObservationIgnored private var cachedSortedPosts: [Post]?
 
     var sortedPosts: [Post] {
-        if let cachedSortedPosts {
-            return cachedSortedPosts
+        let source = posts // Register the dependency even on a cache hit.
+        if let cachedSortedPosts { return cachedSortedPosts }
+        let result = source.sorted {
+            $0.rank == $1.rank ? $0.id < $1.id : $0.rank > $1.rank
         }
-
-        let sorted = posts.sorted { $0.date > $1.date }
-        cachedSortedPosts = sorted
-        return sorted
+        cachedSortedPosts = result
+        return result
     }
 }
 ```
 
-Be careful: caching inside an observable type is now mutation. If this model is UI-bound, isolate it.
+This cache is main-actor-confined and contains value-type posts. Mutating nested reference objects would require a separate invalidation design. Another reasonable design computes a stored `sortedPosts` when inputs change. Neither approach proves a performance improvement without measurement.
 
-### Trap 4: Treating wrappers as harmless decoration
+#### External storage requires an observation boundary
 
-```swift
-@propertyWrapper
-struct Locked<Value> {
-    private var value: Value
-
-    var wrappedValue: Value {
-        get { value }
-        set { value = newValue }
-    }
-
-    init(wrappedValue: Value) {
-        self.value = wrappedValue
-    }
-}
-```
-
-The name suggests synchronization, but this wrapper does nothing thread-safe. Worse, even a real lock wrapper often cannot safely support compound operations like:
-
-```swift
-counter += 1
-```
-
-because that can become a separate get and set. SE-0258’s historical notes explicitly call out that atomic property-wrapper examples can encourage races because useful atomic operations cannot be built from independent load/store wrappers. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What kinds of hidden coupling or update behavior can property-wrapper or observation-heavy code create?
-
-Observation-heavy code can hide coupling through implicit read tracking, computed-property dependencies, environment injection, wrapper projections, and global storage.
-
-A view might look like it depends on one property:
-
-```swift
-Text(model.summary)
-```
-
-but `summary` might read:
-
-```swift
-var summary: String {
-    "\(user.name) — \(cart.items.count) — \(featureFlags.currentVariant)"
-}
-```
-
-Now the view update behavior is coupled to `user.name`, `cart.items`, and `featureFlags.currentVariant`.
-
-Common hidden couplings:
-
-```text
-Computed property reads
-Environment values
-@AppStorage / SceneStorage keys
-@Bindable mutations from child views
-Wrapper-provided projected values
-Shared observable reference models
-Observable arrays/nested reference models
-ObservationIgnored implementation details
-```
-
-The coupling is not always bad. It is often the point of declarative UI. The staff-level skill is knowing when the coupling is intentional, local, and testable versus implicit, global, and hard to reason about.
-
-Interview version:
-
-> Observation tracks what code reads, not what the type author had in mind. A view can become coupled to a model through computed properties, environment values, bindings, and wrapper projections. That is powerful because it reduces boilerplate, but it can create surprising invalidation, hidden global dependencies, or under-updates if state is hidden behind `@ObservationIgnored` or external storage. I treat wrappers and macros as generated code with ownership and isolation implications, not as decoration.
-
-### Q2. Why is understanding generated semantics important even when a framework makes the syntax look trivial?
-
-Because the generated code affects storage, access control, initialization, mutation, observation, performance, actor isolation, and public API compatibility.
-
-`@Observable` looks like one line:
-
-```swift
-@Observable
-final class Model {
-    var count = 0
-}
-```
-
-But it changes the shape of the type. Stored properties become tracked computed properties with backing storage and registrar calls. SE-0395 also notes that changing a type to `@Observable` has the same ABI impact as changing a property from stored to computed, and removing `@Observable` removes a conformance, which is ABI breaking. ([GitHub, "Observation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md))
-
-Property wrappers are similar. A simple wrapper:
-
-```swift
-@Clamped var score = 120
-```
-
-is not “a stored `Int` with decoration.” It is wrapper storage plus synthesized accessors around `wrappedValue`. SE-0258 explains that property wrappers introduce stored wrapper storage and make the source property computed. ([GitHub, "Property Wrappers"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md))
-
-Interview version:
-
-> The syntax is intentionally small, but the generated semantics are not small. A wrapper changes storage and accessors; `@Observable` adds a registrar and turns stored properties into tracked computed properties. That matters for initialization, performance, public API resilience, debugging, `Sendable`, actor isolation, and view invalidation. If I do not understand the expansion, I cannot reliably debug why a view updates, why it does not update, or why Swift 6 reports an isolation problem.
-
----
-
-## 5. Code probe replacement
-
-The F6 rubric has no code probe. This section uses a minimal example, a counterexample with a Swift 6.2 diagnostic, and a production-oriented redesign.
-
-### Minimal example
-
-```swift
-import Observation
-import SwiftUI
-
-@MainActor
-@Observable
-final class CounterModel {
-    var count = 0
-
-    func increment() {
-        count += 1
-    }
-}
-
-struct CounterView: View {
-    @State private var model = CounterModel()
-
-    var body: some View {
-        Button("Count: \(model.count)") {
-            model.increment()
-        }
-    }
-}
-```
-
-### What happens?
-
-```text
-The view reads model.count.
-SwiftUI tracks that read.
-When increment() mutates count, Observation reports the mutation.
-SwiftUI invalidates the dependent view.
-```
-
-### Why?
-
-```text
-CounterView.body
-    reads model.count
-        -> access is tracked
-
-Button action
-    calls model.increment()
-        -> mutates model.count
-        -> mutation is reported
-        -> body can be recomputed
-```
-
-`@MainActor` is not for observation. It is for isolation: this model is UI state, so mutation belongs on the main actor.
-
-### Counterexample
-
-```swift
-@MainActor
-final class SearchModel {
-    var results: [String] = []
-
-    func refresh() {
-        Task.detached {
-            self.results = ["A"]
-        }
-    }
-}
-```
-
-### Swift 6.2 compiler error
-
-```text
-error: main actor-isolated property 'results' can not be mutated from a nonisolated context
-note: mutation of this property is only permitted within the actor
-note: consider declaring an isolated method on 'MainActor' to perform the mutation
-```
-
-### Why?
-
-```text
-SearchModel is MainActor-isolated.
-Task.detached does not inherit MainActor isolation.
-The closure runs in a nonisolated context.
-Mutating self.results crosses the actor boundary incorrectly.
-```
-
-`@Observable` would not fix this. Observation reports changes; it does not grant permission to mutate actor-isolated state from the wrong executor.
-
-### Fix or redesign
-
-```swift
-@MainActor
-@Observable
-final class SearchModel {
-    private(set) var results: [String] = []
-
-    func refresh(using service: SearchService) {
-        Task {
-            let loaded = await service.search()
-            results = loaded
-        }
-    }
-}
-
-struct SearchService: Sendable {
-    func search() async -> [String] {
-        ["A"]
-    }
-}
-```
-
-### Why this fix is correct
-
-`Task {}` created from a main-actor-isolated context preserves the actor context for accesses to `self`. The asynchronous service work can suspend, but mutation of `results` is still performed through the model’s main-actor isolation.
-
-### Alternative fixes and tradeoffs
-
-|Option|When it is appropriate|Tradeoff|
-|---|---|---|
-|`@MainActor @Observable` model|UI-facing view model/state object|Easy to reason about, but don’t put heavy work on the main actor|
-|Actor-backed store + main-actor observable adapter|Shared mutable cache, database, token store, cross-feature state|More boilerplate, clearer isolation boundary|
-|Lock/mutex around a small value|Very small synchronous shared state, hot path, no async suspension needed|Requires disciplined invariants; easy to misuse|
-|`Task.detached` + explicit `await MainActor.run`|Rare boundary to fully detached work|Easy to lose cancellation, priority, task-local values, and lifecycle semantics|
-
----
-
-## 6. Exercise
-
-### Problem
-
-Review an observable model with thread-sensitive state and explain where language-level isolation still needs to be explicit.
-
-### Bad / naive version
-
-```swift
-import Observation
-
-@Observable
-final class SearchViewModel {
-    var query = ""
-    var results: [SearchResult] = []
-    var isLoading = false
-    var errorMessage: String?
-
-    private let service: SearchService
-    private var currentTask: Task<Void, Never>?
-
-    init(service: SearchService) {
-        self.service = service
-    }
-
-    func search() {
-        currentTask?.cancel()
-
-        currentTask = Task.detached {
-            self.isLoading = true
-            self.errorMessage = nil
-
-            do {
-                let results = try await self.service.search(self.query)
-                self.results = results
-                self.isLoading = false
-            } catch {
-                self.errorMessage = error.localizedDescription
-                self.isLoading = false
-            }
-        }
-    }
-}
-
-struct SearchResult: Identifiable {
-    let id: UUID
-    let title: String
-}
-
-struct SearchService {
-    func search(_ query: String) async throws -> [SearchResult] {
-        []
-    }
-}
-```
-
-### What is wrong?
-
-```text
-1. @Observable does not make the model thread-safe.
-2. Task.detached loses actor context.
-3. UI-facing mutable state has no explicit @MainActor isolation.
-4. Multiple properties allow invalid intermediate states:
-   - isLoading == true with stale results
-   - errorMessage != nil while results are non-empty
-   - query changes while old request completes
-5. currentTask is implementation detail but is observable by default unless ignored.
-6. service crosses concurrency boundaries without an explicit Sendable story.
-7. Stale-result suppression is not modeled.
-```
-
-### Improved version
+Forwarding a computed property to an unobservable store does not automatically register that property. This in-memory adapter manually instruments reads and writes:
 
 ```swift
 import Observation
 
 @MainActor
-@Observable
-final class SearchViewModel {
-    enum State: Equatable {
-        case idle
-        case loading(query: String)
-        case loaded(query: String, results: [SearchResult])
-        case failed(query: String, message: String)
-    }
+final class SettingsStore {
+    var enabled: Bool
+    init(enabled: Bool) { self.enabled = enabled }
+}
 
-    var query = ""
-    private(set) var state: State = .idle
+@MainActor @Observable
+final class SettingsModel {
+    private let store: SettingsStore
 
-    @ObservationIgnored
-    private let service: SearchService
+    init(enabled: Bool) { store = SettingsStore(enabled: enabled) }
 
-    @ObservationIgnored
-    private var currentTask: Task<Void, Never>?
-
-    init(service: SearchService) {
-        self.service = service
-    }
-
-    func search() {
-        let submittedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !submittedQuery.isEmpty else {
-            currentTask?.cancel()
-            state = .idle
-            return
+    var enabled: Bool {
+        get {
+            access(keyPath: \.enabled)
+            return store.enabled
         }
-
-        currentTask?.cancel()
-        state = .loading(query: submittedQuery)
-
-        currentTask = Task { [service] in
-            do {
-                let results = try await service.search(submittedQuery)
-                try Task.checkCancellation()
-
-                guard query == submittedQuery else {
-                    return
-                }
-
-                state = .loaded(query: submittedQuery, results: results)
-            } catch is CancellationError {
-                // Keep current state or let the next search replace it.
-            } catch {
-                guard query == submittedQuery else {
-                    return
-                }
-
-                state = .failed(
-                    query: submittedQuery,
-                    message: error.localizedDescription
-                )
+        set {
+            withMutation(keyPath: \.enabled) {
+                store.enabled = newValue
             }
         }
     }
 
-    deinit {
-        currentTask?.cancel()
-    }
-}
-
-struct SearchResult: Identifiable, Equatable, Sendable {
-    let id: UUID
-    let title: String
-}
-
-struct SearchService: Sendable {
-    var search: @Sendable (String) async throws -> [SearchResult]
+    func applyExternalValue(_ value: Bool) { enabled = value }
 }
 ```
 
-### Why this is better
+All updates in this sample enter through the adapter. It is not a `UserDefaults` observer, disk store, or cross-process notification bridge. A real external writer must notify this boundary; merely adding `@ObservationIgnored` to a dependency does not supply notifications. Likewise, ignored caches are safe only when their public results still depend on correctly tracked inputs.
 
-```text
-UI state is explicitly MainActor-isolated.
-Observation drives view invalidation.
-Concurrency isolation drives mutation correctness.
-State enum prevents invalid UI states.
-Task storage is ignored by observation.
-Service and result values have a Sendable story.
-Cancellation and stale-result suppression are explicit.
-```
+#### Synchronous advanced events and matching
 
-This is the core F6 lesson: `@Observable` handles dependency tracking, but actor isolation, cancellation, sendability, and state modeling remain your job.
-
-### Production version with a background actor
-
-For shared cache or thread-sensitive storage, keep the observable model as a UI adapter and move cross-task mutable state behind an actor:
+The model below is explicitly nonisolated, confined to this synchronous function, and never sent to the callback. The callback captures only a synchronized log and reads event metadata. It demonstrates matching without claiming that an actor-isolated property's key path can be formed in an arbitrary callback.
 
 ```swift
-actor SearchCache {
-    private var values: [String: [SearchResult]] = [:]
+import Observation
+import Synchronization
 
-    func results(for query: String) -> [SearchResult]? {
-        values[query]
-    }
-
-    func store(_ results: [SearchResult], for query: String) {
-        values[query] = results
-    }
+@available(anyAppleOS 27.0, *)
+@Observable final class Gauge {
+    var value = 0
+    var other = 0
 }
 
+@available(anyAppleOS 27.0, *)
+func eventProbe(cancelOnWill: Bool = false) -> [String] {
+    let gauge = Gauge()
+    let log = Mutex<[String]>([])
+    _ = withObservationTracking(options: [.willSet, .didSet]) {
+        gauge.value + gauge.other
+    } onChange: { event in
+        let phase = event.kind == .willSet ? "will" : "did"
+        let row = "\(phase):\(event.matches(\Gauge.value)):\(event.matches(\Gauge.other))"
+        log.withLock { $0.append(row) }
+        if cancelOnWill && event.kind == .willSet { event.cancel() }
+    }
+    gauge.value = 1
+    gauge.value = 2
+    return log.withLock { $0 }
+}
+```
+
+The checked ordinary result is `["will:true:false", "did:true:false"]`; cancelling in the first event yields only `["will:true:false"]`. The second assignment does not cause this dependency expression to be re-observed. A separate timing probe confirms old/new stored values for the two phases. The options overload also passes a focused check returning a noncopyable value and propagating a typed failure. Do not infer the ordering of different observers from one run.
+
+`Event.Kind` is a struct with known static values, not an exhaustive four-case enum. Handle unknown kinds when branching. For deallocation events, `matches` does not identify a changed property. Do not capture an object strongly merely to observe its eventual destruction, or assume a deallocation notification proves every destructor side effect has completed.
+
+**Runtime/source discrepancy:** In the checked distribution, a combined `[.willSet, .didSet, .deinit]` registration emits the first mutation pair and then no deallocation callback. A separate deinit-only registration does fire. SE-0506 illustrates a later deallocation callback after that pair; the local result differs. Do not make resource cleanup depend on receiving all three events from one one-shot registration.
+
+#### Continuous callback adapter
+
+This fence reuses `Model` and targets Apple OS 27. The initial callback is scheduled; construction does not synchronously render. Later callbacks execute on the inherited main actor and read current state.
+
+```swift
+import Observation
+
+@available(anyAppleOS 27.0, *)
 @MainActor
-@Observable
-final class SearchViewModel {
-    enum State: Equatable {
-        case idle
-        case loading(query: String)
-        case loaded(query: String, results: [SearchResult])
-        case failed(query: String, message: String)
-    }
+final class CounterBinding {
+    private var token: ObservationTracking.Token?
 
-    var query = ""
-    private(set) var state: State = .idle
-
-    @ObservationIgnored private let service: SearchService
-    @ObservationIgnored private let cache: SearchCache
-    @ObservationIgnored private var currentTask: Task<Void, Never>?
-
-    init(service: SearchService, cache: SearchCache) {
-        self.service = service
-        self.cache = cache
-    }
-
-    func search() {
-        let submittedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        currentTask?.cancel()
-        state = .loading(query: submittedQuery)
-
-        currentTask = Task { [service, cache] in
-            do {
-                if let cached = await cache.results(for: submittedQuery) {
-                    guard query == submittedQuery else { return }
-                    state = .loaded(query: submittedQuery, results: cached)
-                    return
-                }
-
-                let loaded = try await service.search(submittedQuery)
-                try Task.checkCancellation()
-
-                await cache.store(loaded, for: submittedQuery)
-
-                guard query == submittedQuery else { return }
-                state = .loaded(query: submittedQuery, results: loaded)
-            } catch is CancellationError {
-                // No-op.
-            } catch {
-                guard query == submittedQuery else { return }
-                state = .failed(
-                    query: submittedQuery,
-                    message: error.localizedDescription
-                )
+    init(
+        model: Model,
+        render: @escaping @MainActor @Sendable (Int) -> Void
+    ) {
+        token = withContinuousObservation(options: [.didSet, .deinit]) { [weak model] event in
+            guard let model else {
+                event.cancel()
+                return
             }
+            render(model.count)
         }
     }
+
+    func stop() { token = nil }
 }
 ```
 
-Isolation split:
+The owner retains `CounterBinding` for the desired lifetime. `stop()` drops its token; token destruction unregisters the observation. A directly held token can instead be consumed with `token.cancel()`. The weak model capture prevents this adapter from prolonging the model's life, but a `render` closure that strongly captures the binding's owner can still form a cycle. Already executed UI work is not undone by cancellation.
 
-```text
-SearchViewModel
-    @MainActor
-    owns UI-facing observable state
+For async snapshot consumers, the following earlier API is often sufficient. It also reuses `Model`; it requires Apple OS 26:
 
-SearchCache
-    actor
-    owns shared mutable background state
+```swift
+import Observation
 
-SearchService
-    Sendable
-    can cross concurrency boundaries
-
-Observation
-    updates views when tracked UI-facing properties change
+@available(anyAppleOS 26.0, *)
+@MainActor
+func counterValues(_ model: Model) -> Observations<Int, Never> {
+    Observations { model.count }
+}
 ```
 
----
+Consume it in a task whose lifetime you own, and cancel that task when observation should end. This closure strongly captures `model` for the sequence's lifetime. Validation uses explicit initial/update handshakes to check coalescing; a fixed number of `Task.yield()` calls is not a reliable synchronization test. Async sequence cancellation/termination is covered in D10.
 
-## 7. Production guidance
+## References
 
-Use this in production when:
+### Related guides
 
-```text
-You target iOS 17+ / iOS 18+ and use SwiftUI.
-A reference model naturally owns UI state.
-You want fine-grained view invalidation based on property reads.
-You want less boilerplate than ObservableObject + @Published.
-You can clearly define ownership and isolation boundaries.
-```
-
-Be careful when:
-
-```text
-The observable model contains mutable shared state.
-The model is used from both UI and background code.
-Computed properties do expensive work.
-The model stores tasks, services, locks, caches, or formatters.
-State is spread across @AppStorage, @Environment, @State, and observable references.
-Nested reference models or arrays make update behavior less obvious.
-```
-
-Avoid when:
-
-```text
-You need a domain model that should remain UI-framework independent.
-You are using @Observable as a substitute for actor isolation.
-You are hiding business-critical global state in wrappers.
-You are building a public SDK where generated API shape/resilience matters.
-You cannot explain what owns the state and which executor may mutate it.
-```
-
-Debugging checklist:
-
-```text
-Which view read caused the dependency?
-Is this property actually tracked?
-Is any field marked @ObservationIgnored incorrectly?
-Is this a computed property that reads more state than expected?
-Is expensive work happening inside body via a computed property?
-Who owns this observable object?
-Is mutation isolated to @MainActor or another actor?
-Did a Task.detached lose actor context?
-Are service/result types Sendable where they cross concurrency boundaries?
-Is there stale-result suppression after await?
-Is state modeled as one enum or many inconsistent booleans/optionals?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> `@Observable` updates SwiftUI when properties change. Property wrappers like `@State` and `@Bindable` help manage state.
-
-### Senior answer
-
-> `@Observable` is a macro that generates observation support. It tracks property access and reports mutations, so SwiftUI can invalidate views that depend on specific properties. But it does not solve ownership, state modeling, thread safety, actor isolation, or cancellation. I still need `@MainActor`, actors, `Sendable`, and clear source-of-truth rules.
-
-### Staff-level answer
-
-> I treat Observation and property wrappers as generated code with architectural consequences. `@Observable` changes property storage/access semantics and can become part of a public API contract. SwiftUI’s read tracking can create implicit coupling through computed properties and environment values. In a production architecture, I keep UI-facing observable state main-actor-isolated, move shared mutable state into actors or disciplined synchronization, keep implementation details `@ObservationIgnored`, model UI state as enums, and make state ownership explicit at feature boundaries. I also check macro expansion or compiler diagnostics when behavior is unclear instead of guessing.
-
-Staff-level questions to ask:
-
-```text
-What owns this observable object?
-Which actor is allowed to mutate it?
-Which properties should be observable and which should be ignored?
-Are computed properties hiding expensive work or extra dependencies?
-Is this state local, feature-scoped, app-scoped, or persistent?
-Does a child view need @Bindable, or should mutation flow through methods?
-Are we exposing generated observable API in a public module?
-Can tests prove cancellation, stale-result suppression, and isolation?
-```
-
----
-
-## 9. Interview-ready summary
-
-Observation and property wrappers are powerful because they compress boilerplate, but they do not remove Swift’s semantics. A property wrapper synthesizes backing storage and accessors around `wrappedValue`; `@Observable` is a macro that adds observation support, registrar storage, and tracked access/mutation around properties. SwiftUI uses that tracking to update views based on what the view reads. The risk is hidden coupling through computed properties, environment values, bindings, and wrapper projections. For production SwiftUI, I use `@Observable` for UI-facing state, `@State` for ownership, `@Bindable` for child mutation, `@ObservationIgnored` for implementation detail, and explicit `@MainActor`, actors, and `Sendable` for concurrency correctness.
-
----
-
-## 10. Flashcards
-
-Q: What does `@Observable` do at a high level?  
-A: It is an attached macro that adds observation support to a type, including `Observable` conformance and tracked access/mutation for properties.
-
-Q: Does `@Observable` make a model thread-safe?  
-A: No. Observation tracks changes; actor isolation, locks, immutability, and `Sendable` handle concurrency correctness.
-
-Q: What is the difference between `@State` and `@Bindable` with observable models?  
-A: `@State` owns local view state; `@Bindable` creates bindings into mutable properties of an existing observable model.
-
-Q: When should you use `@ObservationIgnored`?  
-A: For implementation details that should not trigger observation: tasks, services, caches, locks, loggers, formatters, and derived storage.
-
-Q: Why can computed properties create hidden observation coupling?  
-A: A computed property can read multiple tracked properties, so a view that reads one computed value may become dependent on all underlying reads.
-
-Q: Why is `Task.detached` dangerous in an observable view model?  
-A: It loses actor context and structured task inheritance, so mutating UI-observed state from it can violate isolation.
-
-Q: What does a property wrapper synthesize?  
-A: Backing wrapper storage plus computed accessors that read/write `wrappedValue`; optionally a `$property` projection from `projectedValue`.
-
-Q: What is the staff-level view of Observation?  
-A: Use it as a UI invalidation mechanism, not as an architecture. Keep source of truth, isolation, state modeling, and public API boundaries explicit.
-
----
-
-## 11. Related sections
-
-- [[B13 — Property wrappers and generated storage semantics]]
-- [[F4 — Macros and compile-time code generation]]
-- [[F5 — Language mode, build settings, and migration flags]]
+- [[A8 — Closures, Escaping, and Capture Semantics]]
+- [[A9 — Enums, Associated Values, Recursive Enums, and State Modeling]]
+- [[A15 — Type choices - struct, class, enum, protocol, and actor]]
+- [[B5 — Key paths and strongly typed indirection]]
+- [[B11 — Library Evolution and Resilience-Aware API Design]]
+- [[B13 — Property Wrappers and Generated Storage Semantics]]
 - [[D5 — Global Actors and `@MainActor`]]
 - [[D6 — `Sendable`, `@Sendable`, and `sending`]]
-- [[D7 — Actor reentrancy and logic races]]
-- [[D11 — Detached tasks, task inheritance, and isolation loss]]
-- [[A9 — Enums, associated values, recursive enums, and state modeling]]
+- [[D7 — Actor Reentrancy and Logic Races]]
+- [[D10 — `AsyncSequence`, Streams, and Backpressure-Aware Design]]
+- [[D12 — Synchronization Library, Mutexes, and Choosing Between Actors and Locks]]
+- [[D14 — Approachable Concurrency and Default Isolation]]
+- [[F4 — Macros and compile-time code generation]]
+- [[F5 — Language mode, build settings, and migration flags]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — F6 expectation, caveats, questions, and exercise.
-- Apple Developer. "Observation." Apple Developer Documentation. https://developer.apple.com/documentation/observation
-- Apple Developer. "Observable()." Apple Developer Documentation. https://developer.apple.com/documentation/observation/observable%28%29
-- Apple Developer. "Managing model data in your app." Apple Developer Documentation. https://developer.apple.com/documentation/swiftui/managing-model-data-in-your-app
-- Apple Developer. "Bindable." Apple Developer Documentation. https://developer.apple.com/documentation/swiftui/bindable
-- Apple Developer. "State()." Apple Developer Documentation. https://developer.apple.com/documentation/SwiftUI/State%28%29
-- Apple Developer. "ObservationIgnored()." Apple Developer Documentation. https://developer.apple.com/documentation/Observation/ObservationIgnored%28%29
-- GitHub. "Observation." Swift Evolution SE-0395. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md
-- GitHub. "Property Wrappers." Swift Evolution SE-0258. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md
+- [SE-0395](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0395-observability.md)
+- [Swift 6.4 release](https://www.swift.org/blog/swift-6.4-released/)
+- [SE-0506 — Advanced observation tracking](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0506-advanced-observation-tracking.md)
+- [Apple — Observation](https://developer.apple.com/documentation/observation)
+- [Apple — Managing model data](https://developer.apple.com/documentation/swiftui/managing-model-data-in-your-app)
+- [Apple — Bindable](https://developer.apple.com/documentation/swiftui/bindable)
+- [State](https://developer.apple.com/documentation/swiftui/state)
+- [SE-0258 — Property wrappers](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0258-property-wrappers.md)

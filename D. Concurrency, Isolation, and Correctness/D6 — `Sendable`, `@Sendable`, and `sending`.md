@@ -7,107 +7,155 @@ tags:
   - sendable
   - strict-concurrency
 ---
+
 # D6 — `Sendable`, `@Sendable`, and `sending`
 
-## 0. Rubric snapshot
+**Goal:** Repair shared mutable service access with an actor and validate sendable callback capture.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Understand `Sendable`, `@Sendable`, generic sendability constraints, and `sending` parameters/results for value types, classes, actors, closures, and generic APIs. The rubric's D6 probe focuses on why capturing a mutable class instance in a `@Sendable` async closure is unsafe under Swift 6 strict concurrency, and why a `sending` handoff requires safe value transfer.
+## Mental model
 
-**Caveats**
+Sendable is a checked promise about safe value transfer/sharing, not a method that copies or locks data. @Sendable applies capture requirements to a function value. Sending describes a particular handoff of a region that must no longer be accessed through invalidating aliases. Execution isolation determines where work runs. These contracts interact but answer different questions. [SE-0302](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md)
 
-- `@unchecked Sendable` is a proof obligation, not a compiler silencer.
-- Sendability is about safe cross-isolation transfer, not merely “thread use.”
-- `@Sendable` closures restrict captured values because they may be transferred to another concurrency domain or invoked concurrently.
-- `sending` is value-transfer semantics at a parameter/result boundary, not `Sendable` conformance, not `@Sendable` closure checking, and not move-only ownership.
-- A class being `final` is not enough; its stored state and mutation model matter.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Choose sharing or handoff explicitly
 
-- Why can a final immutable class sometimes be `Sendable`, and why are many mutable classes not?
-- What does `@Sendable` require of captured values?
-- How is `sending T` different from `T: Sendable` and `@Sendable`?
-- Why can `sending` sometimes allow transfer of a non-`Sendable` value?
+Use independent values, actors, immutable checked classes, or audited synchronized storage for sharing. A final class with let Mutex storage can support checked Sendable under the relevant SDK. Use sending for a genuine disconnected handoff rather than claiming an unsafe type is universally shareable.
 
-**You should be able to do**
+**Common pitfall:** Let and capture lists copy a reference, not its mutable object. They do not repair cross-task mutation. @unchecked Sendable also adds no synchronization; audit the whole type and every escape before choosing it.
 
-- Take a non-sendable service type used in async code and propose the safest fix among actorization, value modeling, or unchecked conformance.
-- Given an API that accepts a `sending` parameter or returns a `sending` result, explain what ownership/aliasing assumptions the compiler is enforcing and what would make the transfer unsafe.
-- Explain the code probe’s Swift 6 compiler error and redesign it safely.
+### Preserve explicit boundary contracts
 
----
+Caller-isolated async avoids an implicit send under the baseline, but explicit sending still imposes its transfer requirement. A Task operation's sending closure can permit a one-time disconnected handoff; an explicit @Sendable callback promises a different sharing contract.
 
-## 1. Core mental model
+**Common pitfall:** Removing a diagnostic with an annotation without checking later alias use can leave the model wrong. Compile both the accepted handoff and a later use that must reject.
 
-Swift’s concurrency model protects against **data races** by tracking when values cross concurrency domains: tasks, actors, global actors, and `@Sendable` closures. A type is `Sendable` when values of that type can be safely transferred across such boundaries. The Swift Book describes a sendable type as one that can be shared from one concurrency domain to another. ([Swift.org, "Concurrency"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/))
+## Interview questions
 
-`Sendable` is a **marker protocol**. It does not add methods. It communicates a semantic guarantee to the compiler: “values of this type can safely cross isolation boundaries.” SE-0302 introduced `Sendable` and `@Sendable` to type-check value passing between structured concurrency constructs and actor messages. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
+### How do omitted conformance, ~Sendable, conditional Sendable, and @unchecked Sendable differ? What does -Wwarning ExplicitSendable audit?
 
-`@Sendable` is not a protocol conformance on a nominal type. It is an attribute on a **function type**. A `@Sendable` closure is safe to pass across concurrency domains, so Swift checks what it captures. The key rule: captured values must be safe to share. SE-0302 states that a `@Sendable` function’s captures must conform to `Sendable`, and mutable captured variables need explicit by-value capture if appropriate. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
+Omitted conformance leaves inference rules applicable; ~Sendable suppresses relevant inference without a negative runtime conformance. Conditional conformance provides the promise only under constraints; unchecked claims a manually audited promise. ExplicitSendable warns about public API decisions under its supported rules, not every possible unsafe access.
 
-`sending T` is different again. It is a **value-level transfer** annotation on a parameter or result at a specific isolation boundary. SE-0430 added `sending` so Swift can allow safe transfer of some non-`Sendable` values when the value is disconnected from other aliases that could keep using it concurrently. ([GitHub, "Transferring Parameters and Results"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0430-transferring-parameters-and-results.md))
+### Why does a direct MainActor class with ~Sendable differ from removing an inherited conformance?
 
-That does not mean the type is generally `Sendable`. A mutable class can be passed as `sending Cache` at one boundary if the compiler can prove the value is safely handed off there, but `Cache` has not become safe to share between arbitrary tasks. It also does not mean move-only ownership. Ordinary copyable Swift values can participate in a `sending` transfer; the compiler is reasoning about isolation regions and aliases, not saying the type is `~Copyable`.
+Direct explicit ~Sendable can suppress inference associated with that declaration under the current rules. It cannot erase an inherited conformance already established by a superclass. Model direct inference and inherited protocol commitments separately instead of using suppression as an inheritance opt-out.
 
-`nonsending` is the opposite default: arguments and results are not sent across an isolation boundary. This matters most in Swift 6.2 discussions of `nonisolated(nonsending)`, where a nonisolated async function can run in the caller's isolation context and does not force arguments/results to be transferred away by default.
+### Why does let or a capture list fail to protect a mutable referenced object?
 
-The key idea:
+Both retain the same reference, so other aliases can still mutate the object. Immutable binding does not establish immutable reachable state. Use independent value data or a defined isolation/synchronization owner; copying a reference into a capture list does not add one.
 
-```text
-Sendable = safe value transfer across isolation boundaries
-@Sendable = safe function/closure transfer across isolation boundaries
-sending T = this value is transferred at this parameter/result boundary
-nonsending = arguments/results stay in the caller's isolation context by default
-```
+### Why is a Task's sending operation closure not the same API as an explicit @Sendable callback?
 
-`Sendable` does **not** mean “this thing is always immutable.” It means the public behavior of the value is safe to use after being sent across concurrency domains. Value-semantic structs often satisfy this naturally. Actors satisfy it because actor state is isolated. Mutable classes usually do not, because the same reference identity can be accessed concurrently from multiple domains.
+A sending closure can transfer one disconnected captured region into task ownership when later aliases do not invalidate the transfer. @Sendable is a reusable function-value sharing promise with capture checks. Both can be safe under different conditions; neither by itself specifies the actor used for execution.
 
----
+### When can a non-Sendable region be transferred, and which later alias uses invalidate it?
 
-## 2. Essential mechanics
+When the region is disconnected from concurrently accessible state and the transfer contract prevents later conflicting use. Access through a retained alias after sending, or returning mutable state still retained by an actor, can invalidate that proof. Sendable values remain reusable because their type already supports safe sharing.
 
-### Value types are usually the easiest Sendable types
+### How do weak let storage and ImmutableWeakCaptures affect lifetime and sendability?
 
-Structs and enums can conform to `Sendable` when their stored properties or associated values are also `Sendable`. Many standard-library value types, such as `Int`, `String`, `Array<Element>` where `Element: Sendable`, and `Dictionary<Key, Value>` where both generic arguments are `Sendable`, are sendable.
+Weak let permits a fixed weak target to become unobservable after destruction. ImmutableWeakCaptures separately controls weak capture mutability. The referent's type and isolation still determine Sendable safety; weak lifetime observation does not make an unsynchronized mutable service safe.
 
-```swift
-struct UserID: Sendable {
-    let rawValue: String
-}
+## Focused exercise
 
-struct Profile: Sendable {
-    let id: UserID
-    let displayName: String
-}
-```
+**Task:** Repair an unsafe shared service with a value, actor, or checked Mutex-backed owner. Explain capture versus transfer and check the chosen boundary.
 
-A struct is not magically sendable if it contains a non-sendable reference:
+**Acceptance checks:**
+
+- The explicit sendable closure safely captures an actor reference.
+- Concurrent calls produce exactly one and two, with no required association to first/second.
+- Replacing the actor with an unsynchronized mutable ordinary class must reject the same sendable-capture design.
+
+**Solution:**
+
+Standalone actor-backed service and explicit sendable callback:
 
 ```swift
-final class ImageCache {
-    var storage: [String: Data] = [:]
+actor Service {
+    private var count = 0
+    func next() -> Int { count += 1; return count }
 }
-
-struct LoaderState: Sendable {
-    let cache: ImageCache
-    // Error in Swift 6:
-    // stored property 'cache' of 'Sendable'-conforming struct
-    // has non-sendable type 'ImageCache'
+func callback(for service: Service) -> @Sendable () async -> Int {
+    { await service.next() }
+}
+@main struct Probe {
+    static func main() async {
+        let service = Service()
+        let operation = callback(for: service)
+        async let first = operation()
+        async let second = operation()
+        let results = await [first, second]
+        precondition(results.sorted() == [1, 2])
+    }
 }
 ```
 
-The compiler can structurally check structs and enums because it can inspect their stored data. SE-0302 specifies that structs and enums can be checked for `Sendable` conformance based on whether their members are sendable. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
+**Reasoning:** The service owns shared state, while the callback's capture is shareable because actor access remains isolated. No disconnected one-time region transfer is needed. Sorting test results avoids inventing actor FIFO ordering among independent child callers.
 
----
+## In practice
 
-### Classes are Sendable only under stricter conditions
+**Choose it when:** Define whether a boundary shares a value or relinquishes access to one region.
 
-A class reference points to shared identity. If two tasks hold the same class instance, they can potentially read and mutate the same storage concurrently.
+**Investigate by:** Follow aliases before and after transfer and inspect the closure's actual function type.
 
-This can be checked safely in a narrow case:
+**Strong evidence:** Compare actor, value, and checked synchronization designs under explicit caller and lifecycle requirements.
+
+### Explicit suppression, synchronized storage, and transfers — optional
+
+#### Swift 6.4: explicit non-sendability
+
+`~Sendable` is a declaration-level audit decision for a struct, enum, or class. It is not a generic negative constraint, an extension annotation, or a synchronization guarantee. Actors do not accept the suppression syntax, and it cannot remove an inherited Sendable conformance, including one supplied by a global-actor base class. A base class using it does not permanently prohibit a separately justified Sendable subclass. [SE-0518](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0518-tilde-sendable.md)
+
+This fails even though the stored `Int` is Sendable:
 
 ```swift
+struct Local: ~Sendable { let value: Int }
+func requireSendable<T: Sendable>(_ value: T) {}
+
+func demo() {
+    requireSendable(Local(value: 1)) // Expected conformance error.
+}
+```
+
+A conditional conformance can still state when a container supports transfer:
+
+```swift
+struct Container<Value>: ~Sendable {
+    let value: Value
+}
+
+extension Container: Sendable where Value: Sendable {}
+```
+
+A particular transfer can be valid without conformance:
+
+```swift
+struct Local: ~Sendable { let value: Int }
+
+actor Sink {
+    func accept(_ value: sending Local) -> Int { value.value }
+}
+
+@concurrent
+func deliver(to sink: Sink) async -> Int {
+    let value = Local(value: 1)
+    return await sink.accept(value)
+}
+```
+
+A direct global-actor annotation is a distinct case: the checked compiler accepts `@MainActor final class Local: ~Sendable {}` and rejects passing it to a generic Sendable requirement. Its members still obey MainActor isolation. Do not generalize the inherited-conformance restriction into a claim that every directly actor-isolated class rejects suppression.
+
+For public API audits, Swift 6.4's opt-in `-Wwarning ExplicitSendable` diagnostic group reports declarations that have not stated their sendability decision. Use checked `Sendable` or deliberate suppression after reviewing the contract; an unchecked annotation is not an appropriate automatic fix. No experimental flag is needed for the `~Sendable` examples here.
+
+#### Checked classes and synchronized storage
+
+A final class can have immutable Sendable storage:
+
+```swift
+import Foundation
+
 final class APIConfiguration: Sendable {
     let baseURL: URL
     let timeout: Duration
@@ -119,231 +167,85 @@ final class APIConfiguration: Sendable {
 }
 ```
 
-Why this is acceptable:
-
-```text
-final class
-+ immutable let storage
-+ all stored properties are Sendable
-= no subclass can add unsafe mutable state
-= no exposed mutable shared state to race on
-```
-
-This is not acceptable:
+An ordinary mutable stored property fails checked class conformance:
 
 ```swift
 final class Cache: Sendable {
-    var store: [String: Int] = [:]
-    // Error: mutable stored property in a Sendable class
+    var store: [String: Int] = [:] // Expected mutable-storage error.
 }
 ```
 
-A mutable class can still be safely shareable if it uses internal synchronization, but the compiler generally cannot prove that. That is when `@unchecked Sendable` may be justified. SE-0302 explicitly treats `@unchecked Sendable` as the escape hatch for classes whose memory safety is provided by access control and internal synchronization. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
+Mutable behavior can instead be contained in an immutable, Sendable synchronization object. This class uses **checked** conformance:
 
 ```swift
 import Synchronization
 
-final class LockedCache: @unchecked Sendable {
+final class LockedCache: Sendable {
     private let store = Mutex<[String: Int]>([:])
 
     func set(_ key: String, value: Int) {
-        store.withLock { dictionary in
-            dictionary[key] = value
-        }
+        store.withLock { $0[key] = value }
     }
 
     func value(for key: String) -> Int? {
-        store.withLock { dictionary in
-            dictionary[key]
-        }
+        store.withLock { $0[key] }
     }
 }
 ```
 
-The danger is not the syntax. The danger is lying to the compiler.
+`Mutex` itself supplies a synchronization-backed Sendable contract; its owner does not need `@unchecked` just because its methods mutate protected state. Keep all accesses inside the lock, return safe snapshots, and preserve invariants in one critical section. Checked conformance does not excuse leaking a retained mutable reference from the lock; D12 records a compiler-accepted escape and explains why encapsulation still needs review.
 
----
+Legacy classes using separately locked mutable stored properties may need `@unchecked Sendable` when the compiler cannot verify their discipline. That author-supplied promise covers every property and access path, not just the method that triggered a diagnostic.
 
-### Actors are implicitly Sendable
+#### `sending` parameters, results, and aliases
 
-Actor references are safe to transfer because their mutable state is protected by actor isolation.
-
-```swift
-actor Cache {
-    private var store: [String: Int] = [:]
-
-    func set(_ key: String, value: Int) {
-        store[key] = value
-    }
-
-    func value(for key: String) -> Int? {
-        store[key]
-    }
-}
-```
-
-You can send the actor reference across tasks, but you cannot directly touch its isolated state from outside:
-
-```swift
-let cache = Cache()
-
-Task {
-    await cache.set("a", value: 1)
-}
-```
-
-Actor references are sendable because access to actor-isolated mutable state requires actor hops. SE-0302 notes that actor types provide their own internal synchronization and implicitly conform to `Sendable`. ([GitHub, "Sendable and @Sendable Closures"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md))
-
----
-
-### `@Sendable` constrains closure captures
-
-A closure passed to an API like this:
-
-```swift
-func run(_ operation: @Sendable @escaping () async -> Void) {}
-```
-
-is allowed to escape and be run from another concurrency domain. Therefore, Swift checks its captures.
-
-Safe:
-
-```swift
-let id = "user-1"
-
-run {
-    print(id)
-}
-```
-
-`String` is `Sendable`, and `id` is an immutable capture.
-
-Unsafe:
-
-```swift
-final class Counter {
-    var value = 0
-}
-
-let counter = Counter()
-
-run {
-    counter.value += 1
-}
-```
-
-The closure captures a non-sendable reference type and mutates shared state. Swift 6 rejects this because the closure could run concurrently with other code that also has access to the same `counter`.
-
-Mutable local captures are also restricted:
-
-```swift
-var total = 0
-
-run {
-    total += 1
-    // Error: mutation of captured var in concurrently-executing code
-}
-```
-
-A capture list can create a by-value snapshot, but that only helps if the captured value itself is `Sendable`:
-
-```swift
-var suffix = "!"
-
-run { [suffix] in
-    print("Done\(suffix)")
-}
-```
-
----
-
-### Generic APIs need explicit Sendable constraints when values cross isolation
-
-If a generic value is stored, sent to a task, returned across an actor boundary, or captured by a `@Sendable` closure, the generic parameter often needs a `Sendable` constraint.
-
-Bad:
-
-```swift
-func process<T>(_ value: T) {
-    Task {
-        print(value)
-    }
-}
-```
-
-Better:
-
-```swift
-func process<T: Sendable>(_ value: T) {
-    Task {
-        print(value)
-    }
-}
-```
-
-For a generic container:
-
-```swift
-struct Box<Value: Sendable>: Sendable {
-    let value: Value
-}
-```
-
-Do not add `T: Sendable` everywhere by reflex. Add it where the API’s semantics actually require values to cross concurrency domains.
-
----
-
-### `sending` transfers a value at one boundary
-
-`sending` belongs to a parameter or result, not to the type declaration. It says the value being passed or returned must be safe to transfer at that boundary.
-
-Start with a non-`Sendable` mutable class:
+The following declarations form one complete example:
 
 ```swift
 final class ScratchBuffer {
     var bytes: [UInt8] = []
 }
-```
 
-This type is not generally safe to share across tasks. But a fresh, unaliased instance can be handed off:
-
-```swift
 @MainActor
-func consumeOnMain(_ buffer: sending ScratchBuffer) {
+func consumeOnMain(_ buffer: sending ScratchBuffer) -> Int {
     buffer.bytes.append(1)
+    return buffer.bytes.count
 }
 
-func buildAndSend() async {
-    let buffer = ScratchBuffer()
-    buffer.bytes.append(0)
-
-    await consumeOnMain(buffer)
-}
-```
-
-The point is not that `ScratchBuffer` became `Sendable`. The point is that this particular value is transferred away at this call boundary.
-
-### `sending` results must be disconnected from the callee
-
-A function returning `sending T` promises the result can be safely transferred to the caller.
-
-Good:
-
-```swift
 @MainActor
 func makeBuffer() -> sending ScratchBuffer {
     ScratchBuffer()
 }
 
-func useBuffer() async {
+@concurrent
+func buildAndSend() async -> Int {
+    let buffer = ScratchBuffer()
+    buffer.bytes.append(0)
+    return await consumeOnMain(buffer)
+}
+
+@concurrent
+func useBuffer() async -> Int {
     let buffer = await makeBuffer()
-    await consumeOnMain(buffer)
+    return await consumeOnMain(buffer)
 }
 ```
 
-The returned buffer is newly created, so it is not still stored in the main actor's state.
+`buildAndSend` returns 2; `useBuffer` returns 1. The returned object is disconnected from the factory's state. Existing aliases that are no longer used need not invalidate a transfer; later conflicting uses do.
 
-Invalid transfer shape:
+This additional function fails when compiled with the preceding declarations:
+
+```swift
+@concurrent
+func unsafeAlias() async {
+    let buffer = ScratchBuffer()
+    let alias = buffer
+    _ = await consumeOnMain(buffer)
+    alias.bytes.append(2) // Later source-side use invalidates transfer.
+}
+```
+
+A result still retained in actor-isolated state is not disconnected. Reusing `ScratchBuffer`:
 
 ```swift
 @MainActor
@@ -351,1014 +253,52 @@ final class BufferStore {
     private let cached = ScratchBuffer()
 
     func current() -> sending ScratchBuffer {
-        cached
-        // Not a disconnected result: the store still owns this object.
+        cached // Expected sending-result data-race diagnostic.
     }
 }
 ```
 
-Returning `cached` as `sending` would let the caller use the same non-`Sendable` object while the main actor can also keep using it. SE-0430 models this as an invalid `sending` result; current compiler diagnostics can lag on some region-isolation edge cases, so the semantic rule matters more than one exact diagnostic.
-
-### Unsafe aliases make a transfer invalid
-
-Swift may reject a `sending` transfer when another alias can still use the same non-`Sendable` object after the handoff.
-
-```swift
-func unsafeAlias() async {
-    let buffer = ScratchBuffer()
-    let alias = buffer
-
-    await consumeOnMain(buffer)
-
-    alias.bytes.append(2)
-    // Unsafe: later use through 'alias' could race with the transferred value.
-}
-```
-
-The compiler is not being picky about variable names. `buffer` and `alias` point to the same object:
-
-```text
-caller alias ─┐
-              ├── same ScratchBuffer instance
-sending arg ──┘
-```
-
-If the callee can keep or merge the value into another isolation region, later mutation through `alias` would be concurrent access to non-`Sendable` shared state.
-
-### `nonsending` keeps values in the caller's isolation context
-
-`nonsending` means arguments and results are not sent across an isolation boundary by default. In Swift 6.2 discussions, this appears most often as `nonisolated(nonsending)` for async functions.
-
-```swift
-nonisolated(nonsending) func renderTitle(_ title: String) async -> String {
-    title.lowercased()
-}
-```
-
-The important distinction is conceptual:
-
-```text
-nonisolated / isolated = where code executes
-sending / nonsending   = whether values transfer across an isolation boundary
-```
-
-Do not use `nonsending` as a performance model. It describes value transfer. If the work must leave the caller's actor, that is a D14 `@concurrent` question.
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: Treating `@unchecked Sendable` as a migration shortcut
-
-Bad:
-
-```swift
-final class ImagePipeline: @unchecked Sendable {
-    var cache: [URL: UIImage] = [:]
-}
-```
-
-This compiles, but it is still unsafe. Multiple tasks can mutate `cache` concurrently.
-
-Better:
-
-```swift
-actor ImagePipeline {
-    private var cache: [URL: UIImage] = [:]
-
-    func image(for url: URL) async throws -> UIImage {
-        if let cached = cache[url] {
-            return cached
-        }
-
-        let image = try await loadImage(from: url)
-        cache[url] = image
-        return image
-    }
-
-    private func loadImage(from url: URL) async throws -> UIImage {
-        // Network + decode work.
-        UIImage()
-    }
-}
-```
-
-Use `@unchecked Sendable` only when the type has a real synchronization invariant that you can document and test.
-
----
-
-### Trap 2: Thinking `let` makes a class instance safe
-
-Bad:
-
-```swift
-final class SessionState {
-    var token: String?
-}
-
-let state = SessionState()
-
-run {
-    state.token = "abc"
-}
-```
-
-`let state` freezes the reference, not the object behind the reference. The object’s `var token` is still mutable shared state.
-
-Better:
-
-```swift
-struct SessionState: Sendable {
-    let token: String?
-}
-```
-
-or:
-
-```swift
-actor SessionStore {
-    private var token: String?
-
-    func updateToken(_ token: String?) {
-        self.token = token
-    }
-}
-```
-
----
-
-### Trap 3: Assuming `@Sendable` means “runs on a background thread”
-
-`@Sendable` says something about **type safety of a closure crossing concurrency domains**. It does not say where the closure runs.
+A Sendable value does not have the same restriction on later use:
 
 ```swift
 @MainActor
-func updateUI(_ body: @Sendable @MainActor () -> Void) {
-    body()
+func acceptNumber(_ value: sending Int) -> Int { value }
+
+@concurrent
+func reuseNumber() async -> Int {
+    let value = 7
+    let received = await acceptNumber(value)
+    return received + value
 }
 ```
 
-This closure is sendable and main-actor-isolated. Those are different facts:
+This returns 14. `sending` does not make `Int` or other copyable types single-use. For a non-Sendable region, the relevant question is whether source and destination uses can race.
 
-```text
-@Sendable  -> safe to transfer as a closure value
-@MainActor -> must execute on the main actor
-```
+## References
 
----
+### Related guides
 
-### Trap 4: Making protocols `Sendable` without understanding conformers
-
-This can be good:
-
-```swift
-protocol AnalyticsEvent: Sendable {
-    var name: String { get }
-}
-```
-
-This says every event value must be safe to cross concurrency domains.
-
-This can be over-constrained:
-
-```swift
-protocol ViewRenderable: Sendable {
-    func render()
-}
-```
-
-If conformers are UI objects, delegates, or reference-heavy adapters, `Sendable` might be the wrong semantic promise. In iOS code, UI-related types are often better isolated to `@MainActor` than made `Sendable`.
-
----
-
-### Trap 5: Treating `sending` as `Sendable`
-
-`sending Cache` does not mean `Cache: Sendable`.
-
-Bad mental model:
-
-```swift
-final class Cache {
-    var store: [String: Int] = [:]
-}
-
-func handOff(_ cache: sending Cache) async {}
-
-func later(cache: Cache) {
-    Task.detached {
-        cache.store["a"] = 1
-    }
-}
-```
-
-The `handOff` API may accept a one-time safe transfer. It does not make every future use of `Cache` safe inside detached tasks or `@Sendable` closures.
-
-Better mental model:
-
-```text
-Sendable Cache    = every Cache value can safely cross isolation boundaries.
-sending Cache     = this Cache value is transferred at this one boundary.
-@Sendable closure = this function value is safe to transfer; captures are checked.
-```
-
-### Trap 6: Treating `sending` as move-only
-
-`sending` is not Swift's move-only ownership system. It does not make the type noncopyable, and it does not mean all values of that type can only be used once.
-
-What it does mean:
-
-```text
-At this parameter/result boundary, Swift must be able to prove that
-using the transferred region elsewhere cannot race with the destination.
-```
-
-If there is an alias that can be used after the transfer, Swift may reject the call or the later use.
-
-Bad:
-
-```swift
-func handOff(_ cache: sending Cache) async {}
-
-func invalid() async {
-    let cache = Cache()
-    let alias = cache
-
-    await handOff(cache)
-    alias.store["a"] = 1
-}
-```
-
-Better:
-
-```swift
-func valid() async {
-    let cache = Cache()
-    cache.store["a"] = 1
-
-    await handOff(cache)
-    // Do not keep using this non-Sendable object in the caller.
-}
-```
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. Why can a final immutable class sometimes be Sendable, and why are many mutable classes not?
-
-A final immutable class can sometimes be `Sendable` because sharing the reference does not expose mutable shared state. `final` prevents subclasses from adding unsafe mutable storage, and immutable `let` stored properties of `Sendable` types can be checked by the compiler.
-
-```swift
-final class FeatureFlags: Sendable {
-    let isNewCheckoutEnabled: Bool
-
-    init(isNewCheckoutEnabled: Bool) {
-        self.isNewCheckoutEnabled = isNewCheckoutEnabled
-    }
-}
-```
-
-Many mutable classes are not `Sendable` because class instances have shared identity. If two tasks hold the same instance, they can concurrently access the same mutable storage.
-
-```swift
-final class MutableFeatureFlags {
-    var isNewCheckoutEnabled = false
-}
-```
-
-The compiler cannot assume this is safe. It does not know whether your code will serialize access, use a lock, or accidentally race.
-
-Interview version:
-
-> A final immutable class can be `Sendable` when it contains only immutable `Sendable` state, because sharing the reference cannot cause concurrent mutation, and `final` prevents subclasses from adding unsafe state. Mutable classes usually are not `Sendable` because the same reference identity can be accessed from multiple concurrency domains. If a mutable class is truly safe, it needs actor isolation, value redesign, or a carefully justified `@unchecked Sendable` conformance backed by synchronization.
-
----
-
-### Q2. What does `@Sendable` require of captured values?
-
-A `@Sendable` closure may be transferred to another concurrency domain, so captured values must be safe to share. Captured values generally need to conform to `Sendable`. Mutable captured variables are especially restricted because they are captured by reference-like storage and could be accessed concurrently.
-
-Safe:
-
-```swift
-let prefix = "user"
-
-run {
-    print(prefix)
-}
-```
-
-Unsafe:
-
-```swift
-var count = 0
-
-run {
-    count += 1
-}
-```
-
-Also unsafe:
-
-```swift
-final class Cache {
-    var store: [String: Int] = [:]
-}
-
-let cache = Cache()
-
-run {
-    cache.store["a"] = 1
-}
-```
-
-The second example captures mutable local state. The third captures a non-sendable mutable reference type.
-
-Interview version:
-
-> `@Sendable` is part of a function type. It means the function value can safely cross concurrency domains. For closures, Swift checks the capture list: captured values must be `Sendable`, and mutable captures cannot be shared by reference into concurrently executing code. A capture list can make a snapshot, but the captured value still has to be sendable.
-
----
-
-### Q3. How is `sending T` different from `T: Sendable` and `@Sendable`?
-
-`T: Sendable` is a type constraint: every value of `T` must satisfy the sendability promise. `@Sendable` is a function-type attribute: the closure/function value can be transferred, so its captures are checked. `sending T` is a value-transfer annotation: this particular argument or result must be safely transferable at this boundary.
-
-```swift
-func requiresType<Value: Sendable>(_ value: Value) {}
-func requiresClosure(_ operation: @Sendable () -> Void) {}
-func requiresTransfer(_ cache: sending Cache) async {}
-```
-
-They answer different questions:
-
-```text
-T: Sendable      -> Is this type generally safe to send?
-@Sendable        -> Is this function value safe to send?
-sending T        -> Is this particular value safe to transfer here?
-```
-
-Interview version:
-
-> `Sendable` is a type-level promise. `@Sendable` is a function-type promise about a closure value and its captures. `sending` is narrower: it applies to one parameter or result and says the value is being transferred at that boundary. A non-`Sendable` class might be passed as `sending` if the compiler can prove there are no live aliases that could race, but the class has not become generally `Sendable`.
-
----
-
-### Q4. Why can `sending` sometimes allow transfer of a non-`Sendable` value?
-
-Because some non-`Sendable` values are unsafe to **share**, but still safe to **transfer**. If a mutable class instance is newly created and no caller-side alias will keep using it, Swift can allow it to move from one isolation region to another.
-
-```swift
-final class Cache {
-    var store: [String: Int] = [:]
-}
-
-@MainActor
-func install(_ cache: sending Cache) {
-    cache.store["ready"] = 1
-}
-
-func makeAndInstall() async {
-    let cache = Cache()
-    await install(cache)
-}
-```
-
-This is safe because the caller is not trying to keep using `cache` after the transfer. It becomes unsafe if an alias remains live:
-
-```swift
-func broken() async {
-    let cache = Cache()
-    let alias = cache
-
-    await install(cache)
-    alias.store["late"] = 1
-}
-```
-
-Swift may diagnose the handoff or the later alias use because the same mutable object could be used from both isolation regions.
-
-Interview version:
-
-> `sending` works for some non-`Sendable` values because Swift is not claiming the type is shareable. It is proving a one-time transfer of a disconnected value. If the source side keeps an alias and uses it after the handoff, the transfer is unsafe and Swift should reject it.
-
----
-
-## 5. Code probe
-
-Given:
-
-```swift
-final class Cache {
-    var store: [String: Int] = [:]
-}
-
-func run(_ operation: @Sendable @escaping () async -> Void) {}
-
-let cache = Cache()
-
-run {
-    cache.store["a"] = 1
-}
-```
-
-### What happens?
-
-With Swift 6.2.1 and `swiftc -swift-version 6`, as written at top level, this does **not** compile:
-
-```text
-error: non-Sendable type 'Cache' of let 'cache' cannot exit main actor-isolated context
-note: class 'Cache' does not conform to the 'Sendable' protocol
-
-error: main actor-isolated let 'cache' cannot be accessed from outside of the actor
-```
-
-If the same probe is placed inside a normal function, the clearer canonical diagnostic is:
-
-```text
-error: capture of 'cache' with non-Sendable type 'Cache' in a '@Sendable' closure [#SendableClosureCaptures]
-note: class 'Cache' does not conform to the 'Sendable' protocol
-```
-
-There is no runtime output because compilation fails.
-
-A related Swift 6 diagnostic often appears with `Task.detached`:
-
-```text
-error: passing closure as a 'sending' parameter risks causing data races
-between code in the current task and concurrent execution of the closure
-```
-
-That wording means the closure value itself is being transferred into concurrent execution. If the closure captures `self` or another mutable non-`Sendable` reference that remains usable in the current task, Swift sees a possible race between the source task and the detached task.
-
-### Why?
-
-`run` accepts this closure type:
-
-```swift
-@Sendable @escaping () async -> Void
-```
-
-That means the closure can escape and may be executed from another concurrency domain. Swift therefore checks its captures.
-
-The closure captures:
-
-```swift
-let cache = Cache()
-```
-
-But `Cache` is a mutable class:
-
-```swift
-final class Cache {
-    var store: [String: Int] = [:]
-}
-```
-
-The class has shared identity and mutable state. If this closure runs concurrently with other code that also has `cache`, both domains could read/write `store` at the same time.
-
-```text
-Main/task A owns reference ─┐
-                            ├── same Cache instance ── mutable store
-Task/closure B captures ────┘
-```
-
-That is exactly the kind of shared mutable state Swift 6 strict concurrency is designed to reject. Swift 6’s opt-in language mode diagnoses potential data races as compiler errors. ([Swift.org, "Announcing Swift 6"](https://swift.org/blog/announcing-swift-6/))
-
-### Fix or redesign — actor isolation
-
-```swift
-actor Cache {
-    private var store: [String: Int] = [:]
-
-    func set(_ key: String, value: Int) {
-        store[key] = value
-    }
-
-    func value(for key: String) -> Int? {
-        store[key]
-    }
-}
-
-func run(_ operation: @Sendable @escaping () async -> Void) {}
-
-let cache = Cache()
-
-run {
-    await cache.set("a", value: 1)
-}
-```
-
-### Why this fix is correct
-
-The mutable dictionary is now actor-isolated. The closure captures a `Cache` actor reference, and actor references are safe to transfer. Mutation goes through the actor:
-
-```text
-@Sendable closure
-    captures actor reference
-        await cache.set(...)
-            serializes access to actor-isolated store
-```
-
-The mutation is no longer direct shared mutable access.
-
-### Follow-up: `sending` parameter handoff
-
-Given:
-
-```swift
-final class Cache {
-    var store: [String: Int] = [:]
-}
-
-func handOff(_ cache: sending Cache) async {}
-
-func broken() async {
-    let cache = Cache()
-
-    await handOff(cache)
-    cache.store["a"] = 1
-}
-```
-
-What happens?
-
-```text
-Swift may reject the transfer or the later use because 'cache' is a
-non-Sendable value used again after being passed as a sending parameter.
-```
-
-Why?
-
-`handOff(_:)` is allowed to send `cache` to another isolation region. If the caller then mutates `cache.store`, the same mutable class instance may be accessed in both places. `sending` only works when the value is disconnected from later source-side uses.
-
-### Alternative fixes and tradeoffs
-
-|Option|When it is appropriate|Tradeoff|
-|---|---|---|
-|Actor isolation|Shared mutable state accessed from multiple tasks|Async API surface; every isolated access may require `await`|
-|Value modeling|State can be copied, snapshotted, or transformed immutably|May require redesigning APIs around returned values instead of in-place mutation|
-|`@unchecked Sendable` + lock|Performance-sensitive synchronous API with a small, well-defined invariant|Compiler stops checking the promise; correctness depends on your lock discipline|
-|`@MainActor` isolation|UI-owned mutable state that must only be touched on the main actor|Can over-serialize work and accidentally move non-UI work to the main actor|
-
-Value-style redesign:
-
-```swift
-struct CacheSnapshot: Sendable {
-    var store: [String: Int] = [:]
-
-    func setting(_ key: String, to value: Int) -> Self {
-        var copy = self
-        copy.store[key] = value
-        return copy
-    }
-}
-
-let cache = CacheSnapshot()
-
-run { [cache] in
-    let updated = cache.setting("a", to: 1)
-    _ = updated
-}
-```
-
-Locked class redesign:
-
-```swift
-import Synchronization
-
-final class Cache: @unchecked Sendable {
-    private let store = Mutex<[String: Int]>([:])
-
-    func set(_ key: String, value: Int) {
-        store.withLock { dictionary in
-            dictionary[key] = value
-        }
-    }
-
-    func value(for key: String) -> Int? {
-        store.withLock { dictionary in
-            dictionary[key]
-        }
-    }
-}
-
-let cache = Cache()
-
-run {
-    cache.set("a", value: 1)
-}
-```
-
-The locked version is acceptable only if all mutable access goes through the lock. One exposed unsafe mutable property invalidates the proof.
-
----
-
-## 6. Exercise
-
-### Problem
-
-Take a non-sendable service type used in async code and propose the safest fix among actorization, value modeling, or unchecked conformance. Then explain whether a `sending` parameter or `sending` result would be safe for a non-`Sendable` value at a specific API boundary.
-
-### Bad / naive version
-
-```swift
-final class TokenService {
-    var token: String?
-    var refreshCount = 0
-
-    func refreshToken() async throws -> String {
-        refreshCount += 1
-
-        let newToken = try await fetchTokenFromServer()
-        token = newToken
-        return newToken
-    }
-
-    private func fetchTokenFromServer() async throws -> String {
-        "token-\(UUID().uuidString)"
-    }
-}
-
-func perform(_ operation: @Sendable @escaping () async -> Void) {}
-
-let service = TokenService()
-
-perform {
-    _ = try? await service.refreshToken()
-}
-```
-
-### What is wrong?
-
-```text
-TokenService is a mutable reference type.
-The @Sendable closure captures it.
-Multiple tasks could call refreshToken() concurrently.
-token and refreshCount can be read/written at the same time.
-Swift cannot prove this is safe.
-```
-
-This service also has a logical race: two simultaneous refreshes can both fetch new tokens, and the slower one can overwrite the newer token.
-
-### Improved version: actorization
-
-```swift
-actor TokenService {
-    private var token: String?
-    private var refreshCount = 0
-    private var refreshTask: Task<String, Error>?
-
-    func validToken() async throws -> String {
-        if let token {
-            return token
-        }
-
-        if let refreshTask {
-            return try await refreshTask.value
-        }
-
-        let task = Task<String, Error> {
-            try await Self.fetchTokenFromServer()
-        }
-
-        refreshTask = task
-
-        do {
-            let newToken = try await task.value
-            token = newToken
-            refreshCount += 1
-            refreshTask = nil
-            return newToken
-        } catch {
-            refreshTask = nil
-            throw error
-        }
-    }
-
-    private static func fetchTokenFromServer() async throws -> String {
-        "token-\(UUID().uuidString)"
-    }
-}
-```
-
-Usage:
-
-```swift
-func perform(_ operation: @Sendable @escaping () async -> Void) {}
-
-let service = TokenService()
-
-perform {
-    _ = try? await service.validToken()
-}
-```
-
-### Why this is better
-
-The actor owns the mutable state:
-
-```text
-token
-refreshCount
-refreshTask
-```
-
-External tasks cannot directly mutate those properties. They must call actor-isolated methods. This solves the sendability problem and gives you one place to reason about token-refresh invariants.
-
-This version also prevents duplicate refresh work by storing an in-flight `Task`.
-
-### Alternative: value modeling
-
-Use value modeling when the service does not truly need identity or shared mutable state.
-
-```swift
-struct TokenRequest: Sendable {
-    let userID: String
-    let deviceID: String
-}
-
-struct TokenResponse: Sendable {
-    let token: String
-    let expirationDate: Date
-}
-
-struct TokenClient: Sendable {
-    var fetchToken: @Sendable (TokenRequest) async throws -> TokenResponse
-
-    func token(for request: TokenRequest) async throws -> TokenResponse {
-        try await fetchToken(request)
-    }
-}
-```
-
-This is better when the “service” is really just immutable configuration plus behavior. State lives elsewhere.
-
-### Alternative: `@unchecked Sendable`
-
-Use this only when you need a synchronous reference type and have a small synchronization boundary.
-
-```swift
-import Synchronization
-
-final class TokenStore: @unchecked Sendable {
-    private let state = Mutex<State>(State())
-
-    struct State {
-        var token: String?
-        var refreshCount = 0
-    }
-
-    func token() -> String? {
-        state.withLock { $0.token }
-    }
-
-    func updateToken(_ token: String) {
-        state.withLock {
-            $0.token = token
-            $0.refreshCount += 1
-        }
-    }
-}
-```
-
-This is safe only if:
-
-```text
-all mutable state is private
-all reads/writes use the same synchronization primitive
-no method exposes mutable internal references
-callbacks are not invoked while holding the lock
-the invariant is documented and tested
-```
-
-### Sending API check
-
-Use `sending` only when the API really transfers a disconnected value region.
-
-```swift
-final class DraftTokenStore {
-    private(set) var token: String?
-
-    func updateToken(_ token: String) {
-        self.token = token
-    }
-}
-```
-
-Parameter handoff:
-
-```swift
-func install(_ store: sending DraftTokenStore) async {}
-
-func makeStore() async {
-    let store = DraftTokenStore()
-    store.updateToken("abc")
-
-    await install(store)
-}
-```
-
-This shape is plausible because the caller builds the store, initializes it, and stops using it after the handoff.
-
-Unsafe alias:
-
-```swift
-func invalidInstall() async {
-    let store = DraftTokenStore()
-    let alias = store
-
-    await install(store)
-    alias.updateToken("late")
-}
-```
-
-The alias makes the transfer unsafe. The callee may use the store in another isolation region while the caller continues mutating the same object.
-
-Result:
-
-```swift
-func makeDetachedStore() -> sending DraftTokenStore {
-    DraftTokenStore()
-}
-```
-
-This is the right shape for a `sending` result: return a new value that is not still connected to the callee's mutable state. Returning a stored non-`Sendable` singleton or actor-isolated property as `sending` is the wrong shape.
-
----
-
-## 7. Production guidance
-
-Use `Sendable` in production when:
-
-```text
-A value crosses task, actor, or global-actor boundaries.
-A public async API accepts generic values that may be used concurrently.
-A closure may escape into concurrent execution.
-A type is intended to be safely used from multiple concurrency domains.
-A parameter or result should require a one-time transfer, in which case use sending at that boundary.
-```
-
-Be careful when:
-
-```text
-A class has mutable state.
-A protocol is marked Sendable and now every conformer must uphold that promise.
-A closure captures self.
-A dependency is imported from Objective-C or older Swift without concurrency annotations.
-A public type gets Sendable conformance as part of its API contract.
-Using sending with reference types that may have aliases in the caller.
-Returning a sending result that is still stored in actor-isolated or shared state.
-```
-
-Avoid when:
-
-```text
-You add @unchecked Sendable just to silence Swift 6 errors.
-You make UI objects Sendable instead of isolating them to @MainActor.
-You add T: Sendable to generic APIs that never cross concurrency boundaries.
-You expose mutable reference storage from a Sendable type.
-You use sending as a substitute for a real ownership model.
-You assume sending means move-only or generally Sendable.
-```
-
-Debugging checklist:
-
-```text
-What value is crossing the concurrency boundary?
-Is it a value type, actor, immutable class, mutable class, closure, or generic?
-Does the closure need @Sendable?
-What does the closure capture?
-Is self captured?
-Is the captured object mutable?
-Should the state be actor-isolated instead?
-Could this be modeled as an immutable value?
-Is @unchecked Sendable backed by a real lock or synchronization invariant?
-Is the type public, and does Sendable become part of the library contract?
-Is this a type-level Sendable problem, a @Sendable closure capture problem, or a sending transfer problem?
-If a sending value is non-Sendable, are there aliases that can still be used after transfer?
-If a function returns sending T, is the result newly created or otherwise disconnected from callee state?
-Does nonsending behavior explain why a value is not crossing a boundary here?
-```
-
-For Swift 6 migrations, do not treat diagnostics as noise. Swift’s migration guide notes that complete concurrency checking can surface latent issues even in Swift 5 code that does not directly use concurrency features, and Swift 6 language mode can turn some of those into errors. ([Swift.org, "Common Compiler Errors"](https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/commonproblems/))
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> `Sendable` means a type is safe to use with concurrency. `@Sendable` means a closure can be used in concurrent code. `sending` means a value is sent somewhere.
-
-This is not wrong, but it is too vague.
-
-### Senior answer
-
-> `Sendable` is a marker protocol for values that can safely cross concurrency domains. Structs and enums can usually be checked structurally. Actors are implicitly sendable. A final immutable class can be checked as sendable, but mutable classes usually need actor isolation or carefully synchronized `@unchecked Sendable`. A `@Sendable` closure must not capture non-sendable or mutable shared state. `sending T` is a boundary-specific transfer of a value; it does not make `T` generally `Sendable`.
-
-This is a solid interview answer.
-
-### Staff-level answer
-
-> I treat sendability as an API boundary and ownership design question, not as an annotation problem. For new code, I prefer immutable value models and actors for shared mutable state. I use `@Sendable` on callbacks that may execute concurrently or escape into tasks. I add `T: Sendable` to generic APIs only where the value actually crosses isolation. I use `sending` only when the API really transfers a disconnected value region at a parameter or result boundary. For legacy mutable reference types, I either isolate them behind an actor, redesign them into values, or use `@unchecked Sendable` only when there is a documented synchronization invariant. During Swift 6 migration, I do not silence diagnostics until I understand which value is crossing which isolation boundary.
-
-Staff-level questions to ask:
-
-```text
-Is this type meant to be shared, transferred, or isolated?
-Who owns the mutable state?
-Can this become a value type instead of a shared reference?
-Should this be an actor rather than a locked class?
-Is Sendable part of the public API contract?
-Does @unchecked Sendable have a documented invariant?
-Are we over-constraining generic APIs with Sendable?
-Are UI types main-actor-isolated instead of incorrectly made Sendable?
-Is sending describing a real transfer, or hiding a shared mutable reference?
-Can any alias use the transferred non-Sendable value after the boundary?
-```
-
----
-
-## 9. Interview-ready summary
-
-`Sendable` is Swift's marker protocol for values that can safely cross concurrency domains such as tasks and actors. `@Sendable` is a function-type attribute: a `@Sendable` closure can be transferred into concurrent execution, so Swift checks its captures. `sending T` is narrower than both: it is a value-level transfer at one parameter or result boundary, and it can sometimes allow a non-`Sendable` value to move across isolation when the compiler can prove there are no unsafe aliases. The right fix for a non-sendable mutable service is usually actor isolation or value modeling; `@unchecked Sendable` is only acceptable when you can prove safety with internal synchronization.
-
----
-
-## 10. Flashcards
-
-Q: What does `Sendable` mean?
-
-A: A type whose values can safely cross concurrency domains.
-
-Q: What does `@Sendable` mean?
-
-A: A function or closure value can safely be transferred across concurrency domains; captured values must satisfy sendability rules.
-
-Q: Why is a mutable class usually not `Sendable`?
-
-A: Class instances have shared identity, so multiple tasks can access the same mutable storage concurrently.
-
-Q: Why can a final immutable class be `Sendable`?
-
-A: `final` prevents unsafe subclass storage, and immutable `let` properties of `Sendable` types cannot be concurrently mutated.
-
-Q: Are actors `Sendable`?
-
-A: Yes. Actor references are sendable because access to mutable actor state is protected by actor isolation.
-
-Q: Does `let object = SomeClass()` make the object immutable?
-
-A: No. It makes the reference immutable, not the object’s internal state.
-
-Q: What is the danger of `@unchecked Sendable`?
-
-A: The compiler stops checking the conformance, so the author must prove synchronization and safety manually.
-
-Q: Should every async generic API require `T: Sendable`?
-
-A: No. Add `T: Sendable` only when values actually cross concurrency domains or are captured by sendable concurrent work.
-
-Q: What does `sending T` mean?
-
-A: This argument or result value is transferred at a specific isolation boundary; the type `T` has not necessarily become generally `Sendable`.
-
-Q: Does `sending` mean move-only?
-
-A: No. `sending` is about safe isolation-region transfer, not noncopyable ownership.
-
-Q: Why can `sending` work with some non-`Sendable` values?
-
-A: A non-`Sendable` value can be safe to transfer if it is disconnected from aliases that could keep using it concurrently.
-
-Q: What does `nonsending` mean?
-
-A: Arguments and results are not sent across an isolation boundary by default; they stay in the caller's isolation context.
-
----
-
-## 11. Related sections
-
-- [[D1 — Structured concurrency fundamentals]]
-- [[D2 — Task hierarchy, cancellation, and priorities]]
-- [[D4 — Actors and actor isolation]]
-- [[D5 — Global actors and `@MainActor`]]
-- [[D7 — Actor reentrancy and logic races]]
-- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
-- [[D11 — Detached tasks, task inheritance, and isolation loss]]
-- [[D13 — Swift 6 strict concurrency migration]]
-- [[B7 — Synthesized conformances and semantic correctness]]
+- [[A2 — `let`, `var`, `mutating`, and method semantics]]
+- [[A8 — Closures, Escaping, and Capture Semantics]]
+- [[B10 — API Design Guidelines and Swift-Native Surface Design]]
 - [[C1 — ARC fundamentals]]
+- [[D1 — Structured Concurrency Fundamentals]]
+- [[D4 — Actors and Actor Isolation]]
+- [[D5 — Global Actors and `@MainActor`]]
+- [[D7 — Actor Reentrancy and Logic Races]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
+- [[D9 — Continuations and Bridging Callback APIs]]
+- [[D11 — Detached Tasks, Task Inheritance, and Isolation Loss]]
+- [[D12 — Synchronization Library, Mutexes, and Choosing Between Actors and Locks]]
+- [[D13 — Swift 6 Strict Concurrency Migration]]
+- [[D14 — Approachable Concurrency and Default Isolation]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D6 — `Sendable`, `@Sendable`, and `sending`.
-- Swift.org. "Concurrency." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/
-- GitHub. "Sendable and @Sendable Closures." Swift Evolution SE-0302. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md
-- GitHub. "Transferring Parameters and Results." Swift Evolution SE-0430. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0430-transferring-parameters-and-results.md
-- Swift.org. "Captures in a @Sendable Closure." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/
-- Swift.org. "Common Compiler Errors." Swift 6 Concurrency Migration Guide. https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/commonproblems/
-- Swift.org. "Announcing Swift 6." Swift.org Blog. https://swift.org/blog/announcing-swift-6/
+- [SE-0302](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md)
+- [SE-0518](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0518-tilde-sendable.md)
+- [The Swift Programming Language — Concurrency](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/)
+- [SE-0430 — Transferring parameters and results](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0430-transferring-parameters-and-results.md)
+- [SE-0461 — Async function isolation](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md)
+- [SE-0481 — weak let](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0481-weak-let.md)
+- [Swift 6 migration guide — Common compiler errors](https://swift.org/migration/documentation/swift-6-concurrency-migration-guide/commonproblems/)

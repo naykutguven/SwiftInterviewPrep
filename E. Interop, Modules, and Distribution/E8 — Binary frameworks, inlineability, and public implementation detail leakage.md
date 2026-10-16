@@ -8,650 +8,293 @@ tags:
   - inlinable
   - usableFromInline
 ---
+
 # E8 — Binary Frameworks, Inlineability, and Public Implementation Detail Leakage
 
-## 0. Rubric snapshot
+**Goal:** Show which implementation an unchanged optimized client retains after a compatible library update.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Understand the cost of `@inlinable`, `@usableFromInline`, and exposing internals for performance. The rubric frames E8 as a binary-framework and public-implementation-leakage topic, not just a micro-optimization topic.
+## Mental model
 
-**Caveats**
+A library and its clients may rebuild on different schedules. Source visibility controls naming; symbol export controls library entry points; body visibility allows client emission/optimization. Mandatory inlining and library-side specialization make still different commitments. A client-emitted implementation can survive a library update even when it was not inlined into its caller. [SE-0497](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0497-definition-visibility.md)
 
-Performance annotations can freeze implementation detail into a public contract.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Expose bodies only for a justified boundary
 
-- Why is `@inlinable` not just a free performance win?
-- When is `@usableFromInline` the right compromise?
+A normal library call can reach updated code. An inlinable or implementation-exported body can leave old copies in clients. @usableFromInline keeps a helper source-internal but makes it an ABI dependency for exposed implementations.
 
-**You should be able to do**
+**Common pitfall:** Making an internal helper public solely to satisfy an exposed body creates an unnecessary source contract. Keep the caller opaque unless client optimization justifies the binary commitment.
 
-- Review a public utility package and decide which, if any, helpers should become inlineable.
+### Separate optimization controls from correctness
 
----
+@inline(always) requests mandatory eligible direct inlining; it differs from the older optimizer hint. @specialized can create selected library-side specializations and redispatch while preserving a generic API. These controls arrived in 6.3 and are available in 6.4.
 
-## 1. Core mental model
+**Common pitfall:** A specialization attribute does not prove a speedup or validate arithmetic. Define input range/overflow policy and compare equivalent optimized work; see [[F3 — Performance investigation habits]].
 
-Swift normally hides implementation bodies across module boundaries. A client that imports a binary framework sees the framework’s public interface, but not arbitrary private/internal implementation bodies. This is essential for resilience: the framework author can change internals without forcing clients to recompile.
+## Interview questions
 
-`@inlinable` deliberately punches a hole through that boundary. It makes the function body available as part of the module interface so the client compiler can optimize calls from another module. That can enable inlining, specialization, constant folding, and removal of abstraction overhead. But it also means the implementation body becomes something clients can compile against. SE-0193 states that `@inlinable` exports the body as part of the module interface, while `@usableFromInline` marks an internal declaration as part of the binary interface without making it part of the source-level public API. ([GitHub, "Cross-Module Inlining and Specialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md))
+### Why does replacing the dylib update an interface-exported function but leave the client-emitted function unchanged?
 
-The dangerous part: client binaries may contain optimized copies of an old implementation. If you later change an `@inlinable` function, old clients may still run old inlined logic until recompiled. SE-0193 explicitly warns that changing an `@inlinable` body can leave binaries using the old definition, the new definition, or a mix of both depending on call sites. ([GitHub, "Cross-Module Inlining and Specialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md))
+The interface-exported call reaches the library's callable implementation, so replacement changes its result. The client-emitted function's definition already belongs to the original executable, so replacing the dylib cannot change it. @inline(never) prevents inlining but does not move that definition back into the library.
 
-The key idea:
+### When is @usableFromInline preferable to a public helper, and when should the caller stay opaque?
 
-```text
-public API exposes names;
-@inlinable exposes bodies;
-@usableFromInline exposes internal ABI symbols needed by exposed bodies.
-```
+Use @usableFromInline when a source-internal helper must be referenced by a deliberately exposed body and its ABI commitment is acceptable. Keep the public caller opaque when implementation freedom and behavior updates matter more than client optimization. Public helper access is appropriate only for a real supported client use.
 
-For staff-level API design, the question is not “can this be faster?” The question is: “Is this body stable, boring, pure, dependency-light, and worth exposing to every client compiler?”
+### How can prespecialization retain a generic API without exposing its implementation?
 
----
+The library builds selected specializations and chooses them from its generic implementation path without giving clients the algorithm body or publishing a separate specialized source API. Verify emitted interfaces/symbols and measure actual callers. Specialization is a build/representation choice, not new generic semantics.
 
-## 2. Essential mechanics
+## Focused exercise
 
-### 2.1 Binary distribution changes the optimization boundary
+**Task:** Compare a library-called function with a client-visible body across a compatible library replacement. Explain which output an unchanged client may retain.
 
-When a framework is built and shipped separately from its clients, the client compiler cannot freely optimize through the framework’s implementation. Library evolution support exists so a binary framework can be updated without recompiling clients. Swift’s library-evolution documentation says module stability lets modules built with different compiler versions work together, while library evolution lets binary frameworks make additive API changes while remaining binary compatible. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
+**Acceptance checks:**
 
-For Apple-platform binary distribution, Xcode’s `BUILD_LIBRARY_FOR_DISTRIBUTION` turns on library evolution and module stability. The Swift.org guidance says this setting should be used for binary frameworks intended for distribution, and that enabling library evolution changes performance characteristics. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
+- Run the identical original executable with v1 and a compatible v2 library.
+- Compare it with a rebuilt v2 consumer and inspect emitted interface/symbols.
+- Report observed client retention without claiming every inlinable call always inlines.
+
+**Solution:**
+
+Use separate E8Visibility library and client builds with -enable-library-evolution -O, baseline concurrency flags, stable install names, and recorded executable hashes:
+
+### An unchanged client and a replaced library
+
+Build this as module `E8Visibility`, with `-enable-library-evolution -O` and binary/textual module output. It is version 1:
 
 ```swift
-// Public framework API:
-public struct Score {
-    private let rawValue: Int
+@export(interface)
+public func libraryRevision() -> Int { 1 }
 
-    public init(_ rawValue: Int) {
-        self.rawValue = rawValue
-    }
+@export(implementation) @inline(never)
+public func clientRevision() -> Int { 1 }
 
-    public var normalized: Int {
-        max(0, min(rawValue, 100))
+@inlinable
+public func visibleRevision() -> Int { 1 }
+
+@inline(always)
+public func forcedRevision() -> Int { 1 }
+```
+
+Build this client separately with `-O`:
+
+```swift
+import E8Visibility
+
+@main struct Client {
+    static func main() {
+        print(libraryRevision(), clientRevision(),
+              visibleRevision(), forcedRevision())
     }
 }
 ```
 
-Without `@inlinable`, client code calls `Score.normalized` through the framework boundary. The framework author keeps maximum freedom to change the body.
+Make version 2 by changing all four returned literals from 1 to 2. Preserve the module name, dynamic-library install name, and compatible signatures. Replace only the dylib and start a new process; this is not live hot-swapping.
 
-### 2.2 `@inlinable` exposes the body across modules
+| Library / client | Observed output in the earlier recorded macOS builds |
+| --- | --- |
+| v1 / original optimized executable | `1 1 1 1` |
+| v2 / identical original executable | `2 1 1 1` |
+| v2 / rebuilt executable | `2 2 2 2` |
 
-`@inlinable` does **not** mean “force inline.” It means “make this body visible to clients so the optimizer may use it.” SE-0193 says the optimizer may inline, specialize, ignore the body, or continue referencing the public entry point. ([GitHub, "Cross-Module Inlining and Specialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md))
+The executable hash is unchanged during replacement. The emitted interface hides `libraryRevision`'s body and exposes the other three. Exported-symbol inspection finds `libraryRevision`, `visibleRevision`, and `forcedRevision`, but no `clientRevision` entry point. The `@inline(never)` function still retains 1 because its definition belongs to the old client. These are observations for this fixture and settings; do not predict every `@inlinable` call will always be inlined.
 
-Bad:
+**Reasoning:** The four functions deliberately separate library calls, client emission, exposed optimization, and mandatory direct inlining. Runtime output must be interpreted alongside interface and symbol evidence, because the same value alone does not identify which mechanism produced it.
+
+## In practice
+
+**Choose it when:** Set binary-library visibility policy around independent client rebuild schedules.
+
+**Investigate by:** Inspect callable symbols, interface bodies, and unchanged-client output separately.
+
+**Strong evidence:** Justify each exposed helper/body and validate arithmetic domain, compatibility, and measured performance.
+
+### Helper visibility, arithmetic, and specialization — optional
+
+#### A private dependency in an exposed body
+
+Expected rejection, checked in all three compilation configurations:
 
 ```swift
-private func clampScore(_ value: Int) -> Int {
+private func clamp(_ value: Int) -> Int {
     max(0, min(value, 100))
 }
 
-@inlinable
-public func clampedScore(_ value: Int) -> Int {
-    clampScore(value)
+@inlinable public func clamped(_ value: Int) -> Int {
+    clamp(value) // Expected rejection: private helper in an exposed body.
 }
 ```
 
-With Swift 6.2.1, this fails:
+The compiler reports that `clamp` is private and cannot be referenced from an `@inlinable` function. Either keep the caller opaque, or deliberately make the helper usable from inlineable code as in the optional helper redesign below. Making it public is appropriate only if clients should actually use it.
 
-```text
-error: global function 'clampScore' is private and cannot be referenced from an '@inlinable' function
-note: global function 'clampScore' is not '@usableFromInline' or public
-```
-
-Why? An `@inlinable` body can be emitted into client code, so everything it references must also be visible at the ABI level.
-
-Better:
+This attempted shortcut is also rejected:
 
 ```swift
 @usableFromInline
-internal func clampScore(_ value: Int) -> Int {
+private func clamp(_ value: Int) -> Int {
     max(0, min(value, 100))
-}
-
-@inlinable
-public func clampedScore(_ value: Int) -> Int {
-    clampScore(value)
 }
 ```
 
-This keeps `clampScore` out of the source-level public API while making it available to inlinable code.
+The diagnostic says `@usableFromInline` applies to internal or package declarations, not this private function. These are fresh Swift 6.4 checks; exact source locations and diagnostic formatting are not API contracts.
 
-### 2.3 `@usableFromInline` is “ABI-public, source-internal”
+#### Review an overexposed utility API
 
-`@usableFromInline` is the compromise attribute. It says: “This declaration is not public API for source users, but it is part of the binary interface because inlinable public code needs to reference it.”
-
-Swift.org’s library-evolution documentation describes `@usableFromInline` declarations as ABI-public but not source-public. They can be referenced from `@inlinable` code but not directly from client source. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
+This compiles, but mixes product policy with a stable arithmetic operation:
 
 ```swift
-public struct Score {
-    @usableFromInline
-    internal let rawValue: Int
+public import Foundation
 
-    public init(_ rawValue: Int) {
-        self.rawValue = rawValue
+public enum UtilityKit {
+    @inlinable public static func normalizedUsername(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    @inlinable
-    public var normalized: Int {
-        max(0, min(rawValue, 100))
+    @inlinable public static func analyticsEventName(_ value: String) -> String {
+        "ios_v2_" + value.lowercased()
+    }
+
+    @inlinable public static func clampedPercentage(_ value: Int) -> Int {
+        max(0, min(value, 100))
     }
 }
 ```
 
-This compiles with library evolution enabled. But `rawValue` is now ABI-public. That means changing or removing it is no longer “just an internal refactor.”
+Decide which behavior must change for already-built clients when the library changes. Explain the dependency implications of the exposed Foundation calls. Do not assume this illustrative username transformation is an appropriate account-identity or Unicode normalization policy.
 
-### 2.4 `@inline(__always)` is not the same concept
-
-`@inlinable` is about **cross-module body visibility**.
-
-`@inline(__always)` is an optimizer directive/hint about **inlining behavior**.
-
-Do not use them interchangeably:
+A candidate revision hides the two policy bodies. The arithmetic body remains exposed only to demonstrate the ABI-visible helper tradeoff; remove that annotation too unless measurements justify it.
 
 ```swift
-@inline(__always)
-public func fastThing(_ x: Int) -> Int {
-    x &* 31
-}
-```
-
-This does not necessarily make the body available across a binary framework boundary in the same way `@inlinable` does. Conversely:
-
-```swift
-@inlinable
-public func fastThing(_ x: Int) -> Int {
-    x &* 31
-}
-```
-
-This makes the body available to clients, but still does not guarantee the optimizer will inline it.
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: “`@inlinable` is a free performance win”
-
-It is not free. It exports implementation detail. Old client binaries may keep old logic. Future semantic changes become risky.
-
-Bad:
-
-```swift
-@inlinable
-public func normalizeUsername(_ username: String) -> String {
-    username
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .lowercased()
-}
-```
-
-This looks harmless, but username normalization is business logic. Product requirements may change: case sensitivity, Unicode normalization, locale behavior, server compatibility, migration behavior. Making it `@inlinable` increases the chance that old clients keep old behavior.
-
-Better:
-
-```swift
-public func normalizeUsername(_ username: String) -> String {
-    username
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .lowercased()
-}
-```
-
-Keep behavior-changing logic behind the binary boundary unless you have a measured reason and a stable semantic contract.
-
-### Trap 2: Making helpers public just to satisfy `@inlinable`
-
-Bad:
-
-```swift
-public func clampScore(_ value: Int) -> Int {
-    max(0, min(value, 100))
-}
-
-@inlinable
-public func normalizedScore(_ value: Int) -> Int {
-    clampScore(value)
-}
-```
-
-This pollutes the public source API. Now clients can call `clampScore` directly, documentation has to explain it, and removing it becomes a source-breaking change.
-
-Better:
-
-```swift
-@usableFromInline
-internal func clampScore(_ value: Int) -> Int {
-    max(0, min(value, 100))
-}
-
-@inlinable
-public func normalizedScore(_ value: Int) -> Int {
-    clampScore(value)
-}
-```
-
-This is the intended compromise: ABI-visible, source-hidden.
-
-### Trap 3: Inlining behavior that depends on private dependencies
-
-An inlinable body can leak more than Swift symbols. It can leak algorithm choices, dependency usage, data representation, and semantic assumptions.
-
-Bad:
-
-```swift
-@inlinable
-public func makeCacheKey(_ input: String) -> String {
-    // Pretend this calls an internal hashing/versioning strategy.
-    "v1:" + input.lowercased()
-}
-```
-
-If the cache-key format later changes to `"v2:"`, old clients may still produce `"v1:"` keys until rebuilt.
-
-Better:
-
-```swift
-public func makeCacheKey(_ input: String) -> String {
-    "v1:" + input.lowercased()
-}
-```
-
-Cache keys, hashing, persistence formats, crypto choices, server protocol behavior, and analytics schemas should usually **not** be inlinable.
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. Why is `@inlinable` not just a free performance win?
-
-Because `@inlinable` exposes the function body across module boundaries. That may allow client-side optimization, but it also turns implementation into part of the module interface. Clients may inline or specialize old versions of the body, so future changes can produce mixed behavior across rebuilt and non-rebuilt clients. SE-0193 explicitly warns that changes to `@inlinable` bodies should be considered carefully and are best suited to “obviously correct” algorithms whose future changes are optimizations rather than semantic changes. ([GitHub, "Cross-Module Inlining and Specialization"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md))
-
-Interview version:
-
-> `@inlinable` is not just an inline hint. It exports the implementation body to client modules so their optimizer can use it. That can help performance for tiny generic algorithms, but it also leaks implementation detail and makes future changes risky because old clients may have compiled copies of the old body. I would only use it for measured hot paths with stable semantics, not for business logic or code whose behavior may evolve.
-
-### Q2. When is `@usableFromInline` the right compromise?
-
-Use `@usableFromInline` when an `@inlinable` public or package-facing implementation needs an internal helper, type, property, or initializer, but you do not want that symbol to become source-level public API.
-
-It is the right compromise when:
-
-```text
-- the public API genuinely benefits from cross-module optimization;
-- the helper is stable enough to become ABI-public;
-- you want to avoid polluting the source-level public API;
-- the helper does not encode volatile business/product behavior.
-```
-
-Interview version:
-
-> `@usableFromInline` is appropriate when I have a measured reason to make a public API `@inlinable`, and that body needs internal support code. It keeps the helper source-internal, so clients cannot call it directly, but it makes the helper ABI-public so inlinable client code can reference it. I still treat it as a compatibility commitment, not as ordinary internal code.
-
----
-
-## 5. Code probe replacement
-
-The rubric has no code probe for E8, so use these probes instead.
-
-### Probe A — private helper from `@inlinable`
-
-Given:
-
-```swift
-private func normalize(_ value: Int) -> Int {
-    max(0, min(value, 100))
-}
-
-@inlinable
-public func clampedScore(_ value: Int) -> Int {
-    normalize(value)
-}
-```
-
-### What happens?
-
-Swift 6.2.1 compiler error:
-
-```text
-error: global function 'normalize' is private and cannot be referenced from an '@inlinable' function
-note: global function 'normalize' is not '@usableFromInline' or public
-```
-
-### Why?
-
-```text
-@inlinable public function body
-        │
-        ├── may be emitted into client module
-        │
-        └── therefore every referenced declaration must be ABI-public
-                    │
-                    └── private normalize is not ABI-public
-```
-
-### Fix or redesign
-
-```swift
-@usableFromInline
-internal func normalize(_ value: Int) -> Int {
-    max(0, min(value, 100))
-}
-
-@inlinable
-public func clampedScore(_ value: Int) -> Int {
-    normalize(value)
-}
-```
-
-### Why this fix is correct
-
-`normalize` remains hidden from the source-level public API, but it becomes visible enough at the ABI level for inlinable client code.
-
-### Probe B — `@usableFromInline` on `private`
-
-Given:
-
-```swift
-@usableFromInline
-private func normalize(_ value: Int) -> Int {
-    max(0, min(value, 100))
-}
-```
-
-### What happens?
-
-Swift 6.2.1 compiler error:
-
-```text
-error: '@usableFromInline' attribute can only be applied to internal or package declarations, but global function 'normalize' is private
-```
-
-### Why?
-
-A `private` declaration is intentionally file/local implementation detail. `@usableFromInline` means the declaration can be referenced from code emitted into clients. Those goals conflict.
-
-### Alternative fixes and tradeoffs
-
-|Option|When it is appropriate|Tradeoff|
-|---|---|---|
-|Keep the API non-`@inlinable`|Default choice for most SDK/business logic|Less cross-module optimization|
-|Mark a small helper `@usableFromInline internal`|Measured hot path; helper has stable semantics|Helper becomes ABI-public|
-|Make the helper `public`|Helper is genuinely part of the public API|Larger source API and documentation burden|
-|Inline the helper body directly|Tiny, obvious expression|Duplicates logic if used elsewhere|
-|Avoid binary distribution; ship source|Internal packages built with the app|Clients must build source; not always possible for SDKs|
-
----
-
-## 6. Exercise
-
-### Problem
-
-Review a public utility package and decide which, if any, helpers should become inlineable.
-
-### Bad / naive version
-
-```swift
-public struct UtilityKit {
-    @inlinable
-    public static func normalizedUsername(_ username: String) -> String {
-        username
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+internal import Foundation
+
+public enum UtilityKit {
+    @export(interface)
+    public static func normalizedUsername(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    @inlinable
-    public static func analyticsEventName(_ rawName: String) -> String {
-        "ios_v2_" + rawName.lowercased()
+    @export(interface)
+    public static func analyticsEventName(_ value: String) -> String {
+        eventPrefix() + value.lowercased()
     }
 
-    @inlinable
-    public static func clampedPercentage(_ value: Int) -> Int {
-        clamp(value, lowerBound: 0, upperBound: 100)
+    @inlinable public static func clampedPercentage(_ value: Int) -> Int {
+        clampPercentage(value)
     }
 }
+
+private func eventPrefix() -> String { "ios_v2_" }
 
 @usableFromInline
-internal func clamp(_ value: Int, lowerBound: Int, upperBound: Int) -> Int {
-    max(lowerBound, min(value, upperBound))
+internal func clampPercentage(_ value: Int) -> Int {
+    max(0, min(value, 100))
 }
 ```
 
-### What is wrong?
+The resilient interface contains the two policy signatures without their bodies or Foundation import. It contains the clamp body and a source-internal helper declaration. An ordinary external client can use the public API but cannot name `clampPercentage`. The helper has an exported symbol in the checked library. Changing its implementation can update calls that still reach it; it does not recover any policy already copied by previously shipped exposed bodies.
 
-```text
-normalizedUsername:
-- Product/server semantics may change.
-- Unicode, locale, and compatibility behavior may evolve.
-- Do not inline unless the behavior is permanently frozen.
+#### Define the arithmetic domain before considering optimization
 
-analyticsEventName:
-- Analytics schema/versioning is volatile.
-- Old clients could keep emitting old event names.
-- Strong candidate to keep behind framework boundary.
-
-clampedPercentage:
-- Pure arithmetic.
-- Stable semantics.
-- Tiny helper.
-- Plausible candidate for @inlinable if measured hot enough.
-```
-
-### Improved version
+A storage-dependent `isFull` body can commit clients to a representation. A formula such as `(index + 1) % capacity` also hides two bugs: zero capacity and overflow before remainder. A complete checked index operation is a clearer exercise than an incomplete ring buffer:
 
 ```swift
-public struct UtilityKit {
-    public static func normalizedUsername(_ username: String) -> String {
-        username
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-    }
-
-    public static func analyticsEventName(_ rawName: String) -> String {
-        "ios_v2_" + rawName.lowercased()
-    }
-
-    @inlinable
-    public static func clampedPercentage(_ value: Int) -> Int {
-        clamp(value, lowerBound: 0, upperBound: 100)
-    }
+public enum IndexFailure: Error, Equatable {
+    case invalidCapacity
+    case outOfBounds
 }
 
-@usableFromInline
-internal func clamp(_ value: Int, lowerBound: Int, upperBound: Int) -> Int {
-    max(lowerBound, min(value, upperBound))
+@inlinable
+public func nextIndex(after index: Int, capacity: Int)
+    throws(IndexFailure) -> Int {
+    guard capacity > 0 else { throw .invalidCapacity }
+    guard index >= 0, index < capacity else { throw .outOfBounds }
+    return index == capacity - 1 ? 0 : index + 1
 }
 ```
 
-### Why this is better
+The contract accepts positive capacity and `0 <= index < capacity`. At the last index it returns zero; otherwise incrementing is safe. Capacity `Int.max` needs no allocation and the arithmetic still works. The error cases and exposed algorithm are compatibility commitments. A real queue needs separate occupancy, insertion/removal, and optional-element semantics; this function does not implement a queue.
 
-The revised design only exposes a tiny, pure, stable arithmetic operation for cross-module optimization. It keeps product behavior, server compatibility, analytics schema decisions, and Unicode/lifecycle policy behind the framework boundary.
+#### Keep a generic algorithm inside the library
 
-The staff-level decision is not “mark small things inlineable.” It is:
-
-```text
-Inline stable mechanics.
-Hide evolving policy.
-Measure before exposing.
-Treat ABI-public internals as compatibility commitments.
-```
-
-### Production example
-
-A reasonable use case:
+Add this to `E8Utilities` with the revised utility and index files:
 
 ```swift
-public struct RingBuffer<Element> {
-    @usableFromInline
-    internal var storage: [Element?]
-
-    @usableFromInline
-    internal var head: Int
-
-    @usableFromInline
-    internal var capacity: Int
-
-    public init(capacity: Int) {
-        self.capacity = capacity
-        self.storage = Array(repeating: nil, count: capacity)
-        self.head = 0
+@specialized(where S == [Int])
+public func containsZero<S: Sequence>(_ values: S) -> Bool
+    where S.Element: BinaryInteger {
+    for value in values {
+        if value == 0 { return true }
     }
+    return false
+}
+```
 
-    @inlinable
-    public var isFull: Bool {
-        storage.allSatisfy { $0 != nil }
-    }
+The optimized SIL contains an exact `S` versus `Array<Int>` metatype check, an array-specific path, and the generic iterator/witness path. The textual interface retains the signature and specialization annotation without the algorithm body. This demonstrates prespecialization structure, not a speedup claim.
 
-    @inlinable
-    public func wrappedIndex(after index: Int) -> Int {
-        (index + 1) % capacity
+#### Exercise the external contract
+
+This is an ordinary client of `E8Utilities`, not a testable import:
+
+```swift
+import E8Utilities
+
+@main struct Checks {
+    static func main() throws {
+        precondition(UtilityKit.normalizedUsername("  ADA\n") == "ada")
+        precondition(UtilityKit.analyticsEventName("OPEN") == "ios_v2_open")
+        for (input, expected) in [(Int.min, 0), (-1, 0), (0, 0),
+                                  (37, 37), (100, 100), (Int.max, 100)] {
+            precondition(UtilityKit.clampedPercentage(input) == expected)
+        }
+        let one = try nextIndex(after: 0, capacity: 1)
+        let wrapped = try nextIndex(after: Int.max - 1, capacity: Int.max)
+        let advanced = try nextIndex(after: Int.max - 2, capacity: Int.max)
+        precondition(one == 0 && wrapped == 0 && advanced == Int.max - 1)
+        for (index, capacity, expected) in [
+            (0, 0, IndexFailure.invalidCapacity),
+            (0, -1, IndexFailure.invalidCapacity),
+            (-1, 3, IndexFailure.outOfBounds),
+            (3, 3, IndexFailure.outOfBounds),
+            (Int.max, Int.max, IndexFailure.outOfBounds)
+        ] {
+            do {
+                _ = try nextIndex(after: index, capacity: capacity)
+                preconditionFailure("Expected rejection")
+            } catch {
+                precondition(error == expected)
+            }
+        }
+        precondition(containsZero([1, 0, 2]))
+        precondition(!containsZero([Int]()))
+        precondition(!containsZero([1, 2, 3]))
+        precondition(containsZero([Int8(1), 0]))
+        precondition(containsZero((-2...2)))
+        print("utility boundaries passed")
     }
 }
 ```
 
-Even here, be careful. `wrappedIndex(after:)` is stable arithmetic. `isFull` may be too expensive or representation-dependent to expose unless you are comfortable freezing the storage model. A stronger design might inline only `wrappedIndex(after:)` and keep `isFull` non-inlinable.
+It prints `utility boundaries passed` in both macOS settings. The cases cover clamp extremes, capacity one, the largest valid indices, invalid domains, empty/no-match arrays, a different integer element type, and a range. The two client sources also compile for the iOS deployment target; iOS runtime behavior is not tested here.
 
----
+## References
 
-## 7. Production guidance
+### Related guides
 
-Use this in production when:
-
-```text
-- You ship a binary framework or SDK.
-- You have a measured cross-module performance issue.
-- The function is tiny, pure, generic, and mechanically stable.
-- The implementation depends only on public or stable ABI-public helpers.
-- The behavior is unlikely to change except for equivalent optimization.
-```
-
-Be careful when:
-
-```text
-- The function encodes business rules.
-- The function touches persistence, hashing, analytics, server protocols, normalization, caching, or crypto.
-- The function references internal representation.
-- The function depends on third-party implementation details.
-- The framework is built with library evolution enabled.
-```
-
-Avoid when:
-
-```text
-- You are guessing about performance.
-- You are trying to silence compiler errors by exposing internals.
-- You are using @inlinable as a style preference.
-- You may need to change behavior without forcing client recompilation.
-- The code is large, branchy, dependency-heavy, or policy-driven.
-```
-
-Debugging checklist:
-
-```text
-Is this framework source-distributed or binary-distributed?
-Is BUILD_LIBRARY_FOR_DISTRIBUTION enabled?
-Is this code actually a measured hot path?
-Does @inlinable expose behavior that may need to change?
-Does the inlinable body reference internal/private symbols?
-Should a helper be @usableFromInline or should the API stop being @inlinable?
-Could old clients keep running the old implementation body?
-Does the function depend on private imports or implementation-only dependencies?
-Would changing this body create mixed old/new behavior in the same app?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> `@inlinable` makes functions faster by allowing inlining.
-
-This is incomplete. It misses the binary/module boundary and compatibility cost.
-
-### Senior answer
-
-> `@inlinable` exposes a function body across module boundaries so client code can optimize it. It can help with small generic hot paths, but it leaks implementation detail. `@usableFromInline` lets internal helpers be used by inlinable code without making them public.
-
-Good, but still mostly feature-level.
-
-### Staff-level answer
-
-> I treat `@inlinable` as a public implementation contract. For binary frameworks, it can improve performance by letting the client optimizer see stable generic or tiny pure bodies, but old clients may keep compiled copies of that body. I avoid it for business logic, persistence formats, server behavior, analytics, hashing, and anything likely to evolve. If an inlinable public API needs support code, I use `@usableFromInline` only for stable helpers and treat those helpers as ABI-public. I would require measurement, API review, and compatibility review before adding these annotations to an SDK.
-
-Staff-level questions to ask:
-
-```text
-Is this source-distributed or binary-distributed?
-Is library evolution enabled?
-What measured performance problem are we solving?
-Can the implementation body change semantically in the future?
-Can old clients safely keep the old body?
-Are we leaking dependency types, storage layout, or business rules?
-Would @usableFromInline be better than making a helper public?
-Would removing @inlinable later fix the problem, or have old clients already compiled against it?
-```
-
----
-
-## 9. Interview-ready summary
-
-`@inlinable` is a cross-module optimization tool, not a generic “make it faster” switch. It exposes a function body as part of the module interface so client modules can inline or specialize it, which is useful for tiny, stable, performance-critical generic code. The cost is that implementation detail becomes part of the compatibility story: old clients may keep compiled copies of old logic. `@usableFromInline` is the compromise for internal helpers needed by inlinable code; it keeps them out of the source-level public API but makes them ABI-public. In production SDKs, I use these annotations sparingly, only after measurement, and avoid them for evolving business logic or dependency-heavy implementation details.
-
----
-
-## 10. Flashcards
-
-Q: What does `@inlinable` actually expose?
-
-A: The function body across module boundaries, making it available to the client optimizer.
-
-Q: Does `@inlinable` force a function to be inlined?
-
-A: No. It allows the optimizer to use the body. The optimizer may inline, specialize, analyze, or ignore it.
-
-Q: Why can `@inlinable` be risky in a binary framework?
-
-A: Old clients may contain optimized copies of the old body, so changing the implementation later may not affect already-built clients.
-
-Q: What does `@usableFromInline` do?
-
-A: It makes an internal/package declaration usable from inlinable code at the ABI level without making it source-public.
-
-Q: Is `@usableFromInline` ordinary internal API?
-
-A: No. It is source-internal but ABI-public, so it carries compatibility obligations.
-
-Q: When is `@inlinable` most justified?
-
-A: Tiny, pure, stable, measured hot paths, especially generic algorithms where cross-module specialization removes abstraction overhead.
-
-Q: What kind of code should usually not be `@inlinable`?
-
-A: Business rules, persistence formats, analytics naming, server compatibility logic, hashing/crypto choices, localization, and behavior likely to evolve.
-
-Q: What compiler error happens if an `@inlinable` function references a private helper?
-
-A: Swift reports that the private helper cannot be referenced from an `@inlinable` function because it is not `@usableFromInline` or public.
-
----
-
-## 11. Related sections
-
-- [[B11 — Library evolution and resilience-aware API design]]
-- [[E6 — Import visibility and dependency leakage]]
-- [[E7 — Resilience, ABI, and module stability]]
+- [[B11 — Library Evolution and Resilience-Aware API Design]]
+- [[E6 — Import Visibility and Dependency Leakage]]
+- [[E7 — Resilience, ABI, and Module Stability]]
 - [[C9 — Existential, generic, and allocation performance model]]
-- [[C10 — Compiler optimization behavior and debug vs release differences]]
+- [[C10 — Compiler Optimization Behavior and Debug vs Release Differences]]
 - [[F3 — Performance investigation habits]]
 - [[F5 — Language mode, build settings, and migration flags]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E8 rubric, questions, and exercise.
-- GitHub. "Cross-Module Inlining and Specialization." Swift Evolution SE-0193. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md
-- Swift.org. "Library Evolution in Swift." Swift.org Blog. https://swift.org/blog/library-evolution/
-- Swift.org. "ABI Stability and More." Swift.org Blog. https://swift.org/blog/abi-stability-and-more/
+- [SE-0497](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0497-definition-visibility.md)
+- [SE-0193 — Cross-module inlining and specialization](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0193-cross-module-inlining-and-specialization.md)
+- [SE-0496 — `@inline(always)`](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0496-inline-always.md)
+- [SE-0460 — Explicit specialization](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0460-specialized.md)
+- [Library evolution in Swift](https://www.swift.org/blog/library-evolution/)

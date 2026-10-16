@@ -7,1037 +7,434 @@ tags:
   - c-interop
   - unsafe-pointers
 ---
+
 # E3 — C Interoperability and Unsafe Boundaries
 
-## 0. Rubric snapshot
+**Goal:** Wrap a synchronous C pointer/count operation with explicit empty-input and failure cleanup.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Understand how Swift interacts with C APIs, pointers, nullability, and imported macros/constants at a practical level. The rubric’s caveat is that C interop often imports unsafety into otherwise safe Swift code. The measured skills are safe wrapper design, quarantining unsafe pointer manipulation, and wrapping C APIs that use output pointers and manual cleanup.
+## Mental model
 
-**You should be able to answer**
+A C declaration rarely states the full ownership contract. Pointer type and count do not prove allocation size, initialization, retention, or who releases output on failure. A Swift wrapper must combine the actual native contract with scoped inputs, owned outputs, status mapping, and confinement. [C interoperability](https://www.swift.org/documentation/c-interop/)
 
-- What design steps would you take to wrap a C API safely for the rest of a Swift codebase?
-- Why should most unsafe pointer manipulation be quarantined to a narrow layer?
+## Rules and pitfalls
 
-**You should be able to do**
+### Register cleanup for every owned output
 
-- Design a Swifty wrapper for a C API that uses output pointers and manual cleanup.
+If a native API transfers an allocation even on failure or with zero length, register the matching release immediately after receiving ownership, before status-based returns. Match allocator and deallocator exactly.
 
----
+**Common pitfall:** Checking status before registering cleanup leaks failure output. A zero count does not mean a nonnull owned allocation can be ignored; ownership follows the contract, not size.
 
-## 1. Core mental model
+### Keep borrowed input within the native use
 
-Swift is safe by default. C is not. When Swift calls C, Swift can preserve some type information, but it cannot magically infer all of C’s hidden contracts: who owns memory, whether a pointer can be null, how many elements a pointer references, whether the pointer escapes, whether a buffer must be freed by a specific function, or whether an integer return code represents an error. Apple’s current guidance frames raw C/C++ pointers as hard to call safely because incorrect use can cause buffer overflows and use-after-free bugs; Swift imports such pointers as unsafe types deliberately. ([Apple Developer, "Safely mix C, C++, and Swift"](https://developer.apple.com/videos/play/wwdc2025/311/))
+Use scoped buffer access for a synchronous nonretaining call. A retaining operation needs an owner lasting through completion and cancellation. PassUnretained callback context is valid only while another guaranteed owner spans every callback.
 
-The key idea:
+**Common pitfall:** Bounds annotations, @safe, or unsafe acknowledgment do not verify C implementation behavior. Inspect and run the native fixture; check generated Span overloads separately from a pointer/count ABI implementation.
 
-```text
-C boundary = unchecked contracts enter Swift.
-Good Swift wrapper = converts unchecked C contracts into checked Swift ownership, errors, lifetimes, and types.
-```
+## Interview questions
 
-Swift interop gives you tools: `UnsafePointer`, `UnsafeMutablePointer`, `UnsafeRawPointer`, `UnsafeMutableRawPointer`, `OpaquePointer`, `withUnsafeBytes`, `withUnsafePointer`, `defer`, `Data`, `Array`, `String`, `Result`, `throws`, and wrapper types. But these are not safety guarantees by themselves. They are vocabulary for expressing C’s memory model in Swift.
+### Who owns an output returned on failure or with zero length, and where must cleanup be registered?
 
-A strong wrapper does three things:
+The caller owns it whenever the C contract transfers ownership, including failure and zero-length cases. Register matching cleanup immediately after ownership is established, then inspect status/count. Treat borrowed outputs and static sentinels according to their different contracts.
 
-1. It **keeps raw pointers private**.
-2. It **turns C conventions into Swift conventions**: return codes become `throws`, output pointers become return values, nullable pointers become optionals or thrown errors, ownership becomes `deinit`, and C enums/constants become typed Swift models.
-3. It **documents and enforces the C contract** at the boundary.
+### Why does a counted/noescape declaration provide a safe Span overload while its Swift @implementation still takes pointer/count?
 
-The staff-level point: do not let C-shaped APIs spread through an app. One unsafe API in a private adapter is manageable. `UnsafeMutablePointer<T>?` leaking across feature modules is architectural debt.
+The importer can generate a Swift-facing Span overload from bounds and noescape annotations, encoding safer access for callers. The exported/imported C ABI still uses pointers and counts, so a Swift @implementation supplies that raw signature. A safe overload does not rewrite the ABI or prove the implementation.
 
----
+### When is passUnretained valid for callback context, and what changes if callbacks can escape or overlap?
 
-## 2. Essential mechanics
+Only when a separate owner guarantees the context remains alive for all callbacks and no use occurs after teardown. Escaping or overlapping callbacks need a retained registration owner, synchronized terminal state, and exactly matched release after all native access ends. Avoid releasing context from one callback while another can still use it.
 
-### 2.1 C pointer imports
+## Focused exercise
 
-C pointer types map to Swift unsafe pointer types. In Swift’s importer documentation, `const T *` maps to `UnsafePointer<T>`, mutable `T *` maps to `UnsafeMutablePointer<T>`, `void *` maps to raw pointers, and incomplete/opaque C types can be represented as `OpaquePointer`. ([GitHub, "How Swift Imports C APIs"](https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md))
+**Task:** Wrap a synchronous pointer/count C call. Check empty input and failure cleanup; state whether the callee may retain the input.
 
-```c
-// C
-void addSecondToFirst(int *x, const long *y);
-```
+**Acceptance checks:**
 
-Imported approximately as:
+- Empty input follows the documented null/count and ownership rules.
+- A failure that returns owned output still releases it once.
+- Successful output is copied before native release; the input is not retained.
 
-```swift
-func addSecondToFirst(
-    _ x: UnsafeMutablePointer<CInt>!,
-    _ y: UnsafePointer<CLong>!
-)
-```
+**Solution:**
 
-The `!` matters. It means the imported pointer is an implicitly unwrapped optional because the C header did not provide enough nullability information.
+The complete native fixture below is part of this solution. Use its exact owned-output/release API rather than substituting an unrelated free. The wrapper accepts Swift-owned bytes, lends them only for the synchronous call, registers output cleanup before checking failure, then copies successful output to Swift-owned data.
 
-Better C header:
+**Native fixture contract:** Wrap E3Native using Data input/results and Swift errors. Input is copied during creation. Every nonnull output belongs to the wrapper, including partial failure and zero-length allocation. Support bounded input/output, valid empty results, deterministic idempotent close, fallback deinitialization, and use-after-close rejection. Keep the owner explicitly non-Sendable because the fixture supplies no shared-access guarantee.
+
+The complete E3Native.h used by the wrapper is:
 
 ```c
-void addSecondToFirst(int * _Nonnull x, const long * _Nonnull y);
+#pragma once
+#include <stddef.h>
+#include <stdint.h>
+#define E3_MAX_INPUT 4096
+#define E3_VERSION "1.0.0"
+#define E3_MIN(a, b) ((a) < (b) ? (a) : (b))
+enum { E3_OK = 0, E3_INVALID_INPUT = 1, E3_OUT_OF_MEMORY = 2, E3_DECODE_FAILED = 3 };
+typedef struct E3Decoder E3Decoder;
+// Copies input synchronously. Every nonnull output handle, even on failure,
+// belongs to the caller and must be destroyed with e3_decoder_destroy.
+int e3_decoder_create(const uint8_t * _Nullable bytes, size_t count,
+                      E3Decoder * _Nullable * _Nonnull output);
+void e3_decoder_destroy(E3Decoder * _Nullable decoder);
+// Every nonnull output allocation, even on failure or zero count, must be
+// released with e3_bytes_free. Nil plus zero is valid empty success.
+int e3_decoder_copy_bytes(E3Decoder * _Nonnull decoder,
+                         uint8_t * _Nullable * _Nonnull output,
+                         size_t * _Nonnull count);
+void e3_bytes_free(uint8_t * _Nullable bytes);
+typedef void (*E3Visitor)(uint8_t value, void * _Nonnull context);
+// Synchronous serial calls; stores neither input, callback, nor context.
+void e3_visit(const uint8_t * _Nullable bytes, size_t count,
+              E3Visitor _Nonnull visitor, void * _Nonnull context);
+// Fixture controls/counters: use only sequentially, reset with no live objects.
+void e3_fixture_reset(int mode);
+int e3_live_handles(void);
+int e3_live_buffers(void);
+int e3_destroyed_handles(void);
+int e3_freed_buffers(void);
 ```
 
-Better Swift import:
+Import it as a Clang module using temporary module.modulemap:
 
-```swift
-func addSecondToFirst(
-    _ x: UnsafeMutablePointer<CInt>,
-    _ y: UnsafePointer<CLong>
-)
-```
+> module E3Native { header "E3Native.h" export * }
 
-### 2.2 Nullability annotations shape the Swift API
+The enum constants above import as Int in this fixture, while the status return is CInt. The wrapper converts the status to Int for matching and retains the original CInt for unknown codes. E3_MAX_INPUT and E3_VERSION import as simple constants; E3_MIN does not become a Swift function. C preprocessor macros and Swift compiler macros are different systems.
 
-C pointers can be null, but C itself historically does not encode that in the type system. Swift does. `_Nonnull` imports as a non-optional pointer, `_Nullable` imports as an optional pointer, and unspecified nullability imports as an implicitly unwrapped optional. ([GitHub, "How Swift Imports C APIs"](https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md))
-
-Bad C header:
-
-```c
-int decoder_create(const uint8_t *bytes, size_t count, Decoder **outDecoder);
-```
-
-Swift sees too many IUOs:
-
-```swift
-func decoder_create(
-    _ bytes: UnsafePointer<UInt8>!,
-    _ count: Int,
-    _ outDecoder: UnsafeMutablePointer<OpaquePointer?>!
-) -> CInt
-```
-
-Better C header:
-
-```c
-int decoder_create(
-    const uint8_t * _Nonnull bytes,
-    size_t count,
-    Decoder * _Nullable * _Nonnull outDecoder
-);
-```
-
-Now Swift can distinguish:
-
-```swift
-// input bytes: required
-// out pointer: required
-// produced decoder: nullable until success is checked
-```
-
-In production, fix nullability at the C header level when you own it. If you do not own it, fix it in the Swift wrapper.
-
-### 2.3 Temporary pointer lifetimes
-
-`withUnsafeBytes`, `withUnsafeBufferPointer`, and `withUnsafePointer` provide temporary access. The pointer must not escape the closure unless the C API explicitly copies the data synchronously.
-
-Good:
-
-```swift
-let status = data.withUnsafeBytes { rawBuffer in
-    let bytes = rawBuffer.bindMemory(to: UInt8.self)
-
-    return c_process_bytes(bytes.baseAddress, bytes.count)
-}
-```
-
-Bad:
-
-```swift
-var saved: UnsafePointer<UInt8>?
-
-data.withUnsafeBytes { rawBuffer in
-    saved = rawBuffer.bindMemory(to: UInt8.self).baseAddress
-}
-
-// Undefined behavior if used later.
-// The pointer was only valid during the closure.
-print(saved!.pointee)
-```
-
-Apple’s unsafe-pointer guidance emphasizes that generated pointer values are temporary and invalidated when the function returns; closure-based unsafe APIs make that lifetime explicit. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
-
-### 2.4 Output pointers become Swift return values
-
-C commonly uses output pointers:
-
-```c
-int get_size(Image *image, int *width, int *height);
-```
-
-Raw Swift import:
-
-```swift
-var width: CInt = 0
-var height: CInt = 0
-
-let status = get_size(imagePointer, &width, &height)
-```
-
-Swifty wrapper:
-
-```swift
-struct ImageSize: Equatable {
-    let width: Int
-    let height: Int
-}
-
-func size() throws -> ImageSize {
-    var width: CInt = 0
-    var height: CInt = 0
-
-    let status = c_image_get_size(pointer, &width, &height)
-    guard status == C_IMAGE_OK else {
-        throw CImageError(status)
-    }
-
-    return ImageSize(width: Int(width), height: Int(height))
-}
-```
-
-The rest of the app should not know this was implemented with output pointers.
-
-### 2.5 Manual cleanup becomes RAII-style Swift ownership
-
-C APIs often look like this:
-
-```c
-Decoder *decoder_create(...);
-void decoder_destroy(Decoder *);
-```
-
-or:
-
-```c
-int decoder_create(..., Decoder **outDecoder);
-void decoder_destroy(Decoder *);
-```
-
-In Swift, use a wrapper whose `deinit` calls the cleanup function:
-
-```swift
-public final class Decoder {
-    private let pointer: OpaquePointer
-
-    private init(pointer: OpaquePointer) {
-        self.pointer = pointer
-    }
-
-    deinit {
-        c_decoder_destroy(pointer)
-    }
-}
-```
-
-This turns “remember to call cleanup” into normal Swift object lifetime. It is not magic: you still need to know whether the pointer is owned by the caller, borrowed, retained, or returned autoreleased-like. Apple’s unsafe-pointer material stresses that pointers do not manage memory for you; you must know whether the C function takes ownership, stores the pointer, or merely uses it for the duration of the call. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
-
-### 2.6 C macros and constants
-
-Swift imports simple constant-like C macros as global constants, but C macros are generally not imported as executable Swift macros. The Swift repository documentation says C macros are generally not imported, while constant-defining macros are imported as readonly variables; Apple’s C macro documentation similarly describes simple `#define` constants as imported constants. ([GitHub, "How Swift Imports C APIs"](https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md))
-
-C:
-
-```c
-#define IMAGE_MAX_WIDTH 4096
-#define LIB_VERSION "1.2.0"
-#define IMAGE_MIN(a, b) ((a) < (b) ? (a) : (b))
-```
-
-Swift import:
-
-```swift
-// likely imported
-var IMAGE_MAX_WIDTH: CInt { get }
-var LIB_VERSION: String { get }
-
-// not imported as a normal Swift function
-// IMAGE_MIN(...)
-```
-
-Wrap constants into a namespace:
-
-```swift
-public enum ImageLibrary {
-    public static let maximumWidth = Int(IMAGE_MAX_WIDTH)
-    public static let version = LIB_VERSION
-}
-```
-
-Avoid letting `SCREAMING_C_MACRO_NAMES` leak through your Swift API.
-
-### 2.7 Function pointers and callbacks
-
-C function pointers import as `@convention(c)` function values. They cannot capture Swift context like normal Swift closures. The Swift importer documentation notes that Swift closures have different layout because they include captured context, while C function pointers do not; C function pointers are represented as `@convention(c)`. ([GitHub, "How Swift Imports C APIs"](https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md))
-
-C:
-
-```c
-typedef void (*LogCallback)(const char *message);
-void set_logger(LogCallback callback);
-```
-
-Swift:
-
-```swift
-let callback: @convention(c) (UnsafePointer<CChar>?) -> Void = { message in
-    guard let message else { return }
-    print(String(cString: message))
-}
-
-set_logger(callback)
-```
-
-If you need captured state, C APIs usually require a separate `void *context` parameter. The Swift wrapper must retain/release that context safely, often with `Unmanaged`.
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: Treating `UnsafePointer` as “just another reference”
-
-Bad:
-
-```swift
-final class ImageProcessor {
-    private var bytes: UnsafePointer<UInt8>?
-    
-    func configure(data: Data) {
-        data.withUnsafeBytes { buffer in
-            bytes = buffer.bindMemory(to: UInt8.self).baseAddress
-        }
-    }
-}
-```
-
-This stores a pointer whose lifetime ended when the closure returned.
-
-Better:
-
-```swift
-final class ImageProcessor {
-    private var data: Data?
-
-    func configure(data: Data) {
-        self.data = data
-    }
-
-    func process() throws {
-        guard let data else { return }
-
-        try data.withUnsafeBytes { buffer in
-            let bytes = buffer.bindMemory(to: UInt8.self)
-            guard let base = bytes.baseAddress else { return }
-            try check(c_process(base, bytes.count))
-        }
-    }
-}
-```
-
-Store the owning Swift value, not the borrowed pointer.
-
-### Trap 2: Assuming C return codes are obvious
-
-Bad:
-
-```swift
-c_decoder_create(bytes, count, &decoder)
-return Decoder(pointer: decoder!)
-```
-
-This ignores:
-
-```text
-What does nonzero mean?
-Can outDecoder be nil on failure?
-Can outDecoder be nonnil on partial failure?
-Who frees it?
-```
-
-Better:
-
-```swift
-let status = c_decoder_create(bytes, count, &decoder)
-
-guard status == C_DECODER_OK, let decoder else {
-    if let decoder {
-        c_decoder_destroy(decoder)
-    }
-    throw DecoderError(status)
-}
-
-return Decoder(pointer: decoder)
-```
-
-### Trap 3: Leaking C-shaped APIs upward
-
-Bad public API:
-
-```swift
-public func decode(
-    _ bytes: UnsafePointer<UInt8>?,
-    _ count: Int,
-    _ outImage: UnsafeMutablePointer<OpaquePointer?>?
-) -> CInt
-```
-
-Better public API:
-
-```swift
-public func decode(_ data: Data) throws -> DecodedImage
-```
-
-The former forces every caller to understand C memory rules. The latter localizes the unsafe knowledge.
-
-### Trap 4: Trusting unspecified nullability
-
-Imported `UnsafePointer<T>!` is not a guarantee. It means the importer did not know whether null is meaningful. Treat it as an API smell at the boundary.
-
-### Trap 5: Forgetting C integer widths
-
-C uses `int`, `size_t`, `long`, `uint32_t`, etc. Swift `Int` is convenient, but do not blindly convert. Validate ranges when converting from Swift values to narrower C types:
-
-```swift
-guard count <= Int(CInt.max) else {
-    throw DecoderError.inputTooLarge
-}
-
-let cCount = CInt(count)
-```
-
-### Trap 6: Making unsafe code “look safe” without proving it
-
-A wrapper is not safe because it hides pointers. It is safe only if it enforces:
-
-```text
-lifetime
-ownership
-bounds
-nullability
-thread-safety
-error handling
-cleanup
-```
-
-Swift 6.2’s strict memory safety mode can help identify unsafe constructs, especially around C/C++ pointers, but it is opt-in and diagnostics are not a proof that every manual contract is correct. ([Apple Developer, "Safely mix C, C++, and Swift"](https://developer.apple.com/videos/play/wwdc2025/311/))
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What design steps would you take to wrap a C API safely for the rest of a Swift codebase?
-
-Start by reading the C contract, not by translating signatures mechanically. Identify ownership, nullability, pointer lifetime, buffer bounds, error conventions, cleanup rules, threading guarantees, and whether callbacks escape. Then expose a small Swift API that uses Swift-native types: `Data`, `Array`, `String`, typed structs/enums, `throws`, and a wrapper object whose `deinit` performs cleanup.
-
-Concrete steps:
-
-```text
-1. Audit the C header.
-2. Fix C annotations if possible: nullability, bounds, noescape/lifetime annotations where available.
-3. Hide imported C declarations in a private/internal adapter target.
-4. Convert return codes to Swift errors.
-5. Convert output pointers to return values.
-6. Convert manual cleanup to deinit.
-7. Convert C constants/macros into typed Swift constants/enums.
-8. Keep unsafe pointer lifetimes inside closure scopes.
-9. Add tests for success, failure, nil output, cleanup, invalid input, and large input.
-10. Document the remaining unsafe assumptions.
-```
-
-Interview version:
-
-> I would not expose the imported C API directly. I would first audit the C contract: ownership, nullability, buffer sizes, escaping, cleanup, and error codes. Then I would build a small Swift wrapper that turns output pointers into return values, return codes into `throws`, manual cleanup into `deinit`, and raw buffers into `Data` or typed collections. The rest of the app should see a Swift API, not `UnsafeMutablePointer` and integer status codes.
-
-### Q2. Why should most unsafe pointer manipulation be quarantined to a narrow layer?
-
-Because unsafe pointer code has unchecked failure modes. The compiler cannot fully protect you from dangling pointers, use-after-free, invalid binding, wrong capacity, wrong ownership, double free, or out-of-bounds access. Apple’s unsafe Swift guidance is explicit that unsafe pointers provide low-level control but trust you to use them correctly; incorrect use can lead to undefined behavior and memory corruption. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
-
-Quarantining unsafe code gives you:
-
-```text
-smaller audit surface
-fewer callers that need C expertise
-clear ownership rules
-centralized tests
-easier migration if the C API changes
-easier replacement with pure Swift later
-```
-
-Interview version:
-
-> Unsafe pointer manipulation should be treated like a hazardous boundary. It is sometimes necessary for C interop or performance, but it should be isolated. A narrow wrapper lets the team audit one place for lifetime, ownership, bounds, and cleanup correctness. If unsafe types spread across the app, every caller becomes responsible for C-level invariants, and that is how memory bugs become architecture bugs.
-
----
-
-## 5. Code probe
-
-The rubric does not include a code probe for E3. Use these focused examples instead.
-
-### Minimal example: output pointer
-
-C-style imported function:
-
-```swift
-// Pretend this is imported from C:
-//
-// int c_image_get_size(OpaquePointer *image, int *width, int *height)
-func c_image_get_size(
-    _ image: OpaquePointer,
-    _ width: UnsafeMutablePointer<CInt>,
-    _ height: UnsafeMutablePointer<CInt>
-) -> CInt {
-    width.pointee = 640
-    height.pointee = 480
-    return 0
-}
-```
-
-Swift wrapper:
-
-```swift
-struct ImageSize: Equatable {
-    let width: Int
-    let height: Int
-}
-
-enum ImageError: Error {
-    case cFailure(CInt)
-}
-
-final class ImageHandle {
-    private let pointer: OpaquePointer
-
-    init(pointer: OpaquePointer) {
-        self.pointer = pointer
-    }
-
-    func size() throws -> ImageSize {
-        var width: CInt = 0
-        var height: CInt = 0
-
-        let status = c_image_get_size(pointer, &width, &height)
-
-        guard status == 0 else {
-            throw ImageError.cFailure(status)
-        }
-
-        return ImageSize(width: Int(width), height: Int(height))
-    }
-}
-```
-
-### What happens?
-
-```text
-No output. The wrapper compiles conceptually and turns C output parameters into a Swift return value.
-```
-
-### Why?
-
-```text
-C API:
-caller allocates output variables
-callee writes through pointers
-status code indicates success/failure
-
-Swift wrapper:
-local variables own temporary output storage
-unsafe pointer exposure lasts only for the C call
-validated status controls whether values are returned
-callers receive a typed Swift value
-```
-
-### Counterexample: escaping temporary pointer
-
-```swift
-var escaped: UnsafePointer<UInt8>?
-
-let data = Data([1, 2, 3])
-
-data.withUnsafeBytes { rawBuffer in
-    escaped = rawBuffer.bindMemory(to: UInt8.self).baseAddress
-}
-
-print(escaped!.pointee)
-```
-
-### What happens?
-
-```text
-Undefined behavior.
-```
-
-### Why?
-
-The pointer produced by `withUnsafeBytes` is only valid during the closure. It does not own the `Data` storage, and it must not be saved for later.
-
-### Production example: wrapper around manual cleanup
+Reference implementation:
 
 ```swift
 import Foundation
+import E3Native
 
-// MARK: - Pretend C declarations
-
-// C:
-//
-// typedef struct decoder decoder_t;
-//
-// typedef enum decoder_status_t {
-//   DECODER_OK = 0,
-//   DECODER_INVALID_DATA = 1,
-//   DECODER_OUT_OF_MEMORY = 2
-// } decoder_status_t;
-//
-// decoder_status_t decoder_create(
-//   const uint8_t *bytes,
-//   size_t count,
-//   decoder_t **out_decoder
-// );
-//
-// void decoder_destroy(decoder_t *decoder);
-//
-// decoder_status_t decoder_decode_png(
-//   decoder_t *decoder,
-//   uint8_t **out_bytes,
-//   size_t *out_count
-// );
-//
-// void decoder_free(void *ptr);
-
-typealias decoder_t = OpaquePointer
-
-let DECODER_OK: CInt = 0
-let DECODER_INVALID_DATA: CInt = 1
-let DECODER_OUT_OF_MEMORY: CInt = 2
-
-func decoder_create(
-    _ bytes: UnsafePointer<UInt8>,
-    _ count: Int,
-    _ outDecoder: UnsafeMutablePointer<decoder_t?>
-) -> CInt {
-    // Placeholder for imported C implementation.
-    outDecoder.pointee = OpaquePointer(bitPattern: 0x1)
-    return DECODER_OK
-}
-
-func decoder_destroy(_ decoder: decoder_t) {
-    // Placeholder for imported C cleanup.
-}
-
-func decoder_decode_png(
-    _ decoder: decoder_t,
-    _ outBytes: UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>,
-    _ outCount: UnsafeMutablePointer<Int>
-) -> CInt {
-    // Placeholder for imported C implementation.
-    let count = 3
-    let pointer = UnsafeMutablePointer<UInt8>.allocate(capacity: count)
-    pointer.initialize(from: [0x89, 0x50, 0x4E], count: count)
-
-    outBytes.pointee = pointer
-    outCount.pointee = count
-
-    return DECODER_OK
-}
-
-func decoder_free(_ pointer: UnsafeMutableRawPointer?) {
-    pointer?.deallocate()
-}
-
-// MARK: - Swifty wrapper
-
-public enum DecoderError: Error, Equatable {
-    case invalidData
-    case outOfMemory
-    case missingOutput
+public enum ByteDecoderError: Error, Equatable {
+    case inputTooLarge, invalidInput, allocationFailed, decodeFailed, invalidOutput, closed
     case unknownStatus(CInt)
-
     init(status: CInt) {
-        switch status {
-        case DECODER_INVALID_DATA:
-            self = .invalidData
-        case DECODER_OUT_OF_MEMORY:
-            self = .outOfMemory
-        default:
-            self = .unknownStatus(status)
+        switch Int(status) {
+        case E3_INVALID_INPUT: self = .invalidInput
+        case E3_OUT_OF_MEMORY: self = .allocationFailed
+        case E3_DECODE_FAILED: self = .decodeFailed
+        default: self = .unknownStatus(status)
         }
     }
 }
 
-public final class ImageDecoder {
-    private let pointer: decoder_t
+@safe
+public final class ByteDecoder: ~Sendable {
+    private var handle: OpaquePointer?
+    public static let maximumInputCount = Int(E3_MAX_INPUT)
+    public static let libraryVersion = E3_VERSION
 
-    private init(pointer: decoder_t) {
-        self.pointer = pointer
-    }
+    private init(adopting handle: OpaquePointer) { unsafe self.handle = handle }
+    deinit { close() }
 
-    deinit {
-        decoder_destroy(pointer)
-    }
-
-    public static func make(data: Data) throws -> ImageDecoder {
-        try data.withUnsafeBytes { rawBuffer in
-            let bytes = rawBuffer.bindMemory(to: UInt8.self)
-
-            guard let baseAddress = bytes.baseAddress else {
-                throw DecoderError.invalidData
-            }
-
-            var rawDecoder: decoder_t?
-
-            let status = decoder_create(
-                baseAddress,
-                bytes.count,
-                &rawDecoder
+    public static func make(_ input: Data) throws -> ByteDecoder {
+        guard input.count <= maximumInputCount else { throw ByteDecoderError.inputTooLarge }
+        return unsafe try input.withUnsafeBytes { raw in
+            var created: OpaquePointer?
+            let status = unsafe e3_decoder_create(
+                raw.bindMemory(to: UInt8.self).baseAddress, raw.count, &created
             )
-
-            guard status == DECODER_OK else {
-                if let rawDecoder {
-                    decoder_destroy(rawDecoder)
-                }
-                throw DecoderError(status: status)
+            guard status == E3_OK else {
+                unsafe e3_decoder_destroy(created)
+                throw ByteDecoderError(status: status)
             }
-
-            guard let rawDecoder else {
-                throw DecoderError.missingOutput
-            }
-
-            return ImageDecoder(pointer: rawDecoder)
+            guard let created = unsafe created else { throw ByteDecoderError.invalidOutput }
+            return unsafe ByteDecoder(adopting: created)
         }
     }
 
-    public func decodePNGData() throws -> Data {
-        var outputBytes: UnsafeMutablePointer<UInt8>?
-        var outputCount: Int = 0
+    public func copyBytes() throws -> Data {
+        guard let handle = unsafe handle else { throw ByteDecoderError.closed }
+        var output: UnsafeMutablePointer<UInt8>?
+        var count = 0
+        let status = unsafe e3_decoder_copy_bytes(handle, &output, &count)
+        defer { unsafe e3_bytes_free(output) }
+        guard status == E3_OK else { throw ByteDecoderError(status: status) }
+        guard count >= 0, count <= Self.maximumInputCount else { throw ByteDecoderError.invalidOutput }
+        if count == 0 { return Data() }
+        guard let output = unsafe output else { throw ByteDecoderError.invalidOutput }
+        return unsafe Data(bytes: output, count: count)
+    }
 
-        let status = decoder_decode_png(
-            pointer,
-            &outputBytes,
-            &outputCount
-        )
-
-        guard status == DECODER_OK else {
-            if let outputBytes {
-                decoder_free(UnsafeMutableRawPointer(outputBytes))
-            }
-            throw DecoderError(status: status)
-        }
-
-        guard let outputBytes else {
-            throw DecoderError.missingOutput
-        }
-
-        defer {
-            decoder_free(UnsafeMutableRawPointer(outputBytes))
-        }
-
-        return Data(bytes: outputBytes, count: outputCount)
+    public func close() {
+        guard let owned = unsafe handle else { return }
+        unsafe handle = nil
+        unsafe e3_decoder_destroy(owned)
     }
 }
 ```
 
-### Why this wrapper is correct
+The output allocation is registered for cleanup before checking status/count. A zero count returns empty Data while still freeing any nonnull allocation. A nonzero count requires a nonnull output and must fit the resource policy. Data copies the bytes before native release, so returned data survives handle closure. The wrapper cannot independently measure an arbitrary pointer's real capacity; that invariant still comes from the audited C implementation.
 
-The wrapper makes the C contract explicit:
+The class reference deliberately has shared identity; it is not a value-semantic copy of a decoder. ~Sendable states the confinement intent, and @safe states that safe callers need not manage its pointer contract themselves. Neither attribute synchronizes the C implementation or forces a particular thread for cleanup. A thread-affine library needs an owner/teardown design that actually honors that requirement.
 
-```text
-decoder_create:
-- input Data is borrowed only during withUnsafeBytes
-- C must copy input bytes if it needs them later
-- output pointer is checked
-- failure cleans up partial output if needed
-- success becomes ImageDecoder
-
-decoder_destroy:
-- called exactly once from deinit
-
-decoder_decode_png:
-- C-owned output buffer is copied into Swift Data
-- defer guarantees decoder_free
-- raw pointer does not escape
-```
-
-### Alternative fixes and tradeoffs
-
-|Option|When appropriate|Tradeoff|
-|---|---|---|
-|`final class` wrapper with `deinit`|C object has identity and manual cleanup|ARC controls lifetime, but thread-safety still needs design|
-|`struct` containing `Data`|C output can be copied into Swift-owned memory|Copy cost, but safest API|
-|Keep `UnsafePointer` public|Very low-level performance API or systems package|Forces every caller to uphold C invariants|
-|Add C header annotations|You own the C API|Best long-term safety, but requires C-side changes|
-|Use Swift 6.2 strict memory safety|Security-sensitive or low-level modules|Finds unsafe constructs, but does not replace wrapper design|
-
----
-
-## 6. Exercise
-
-### Problem
-
-Design a Swifty wrapper for a C API that uses output pointers and manual cleanup.
-
-### Bad / naive version
+These independent negatives use the header and wrapper respectively. A nil handle cannot call a _Nonnull decoder parameter, and the explicitly non-Sendable wrapper cannot satisfy a Sendable generic requirement.
 
 ```swift
-public func decodeImage(_ data: Data) -> OpaquePointer? {
-    var decoder: OpaquePointer?
+import E3Native
+func nilRequiredHandle() {
+    var bytes: UnsafeMutablePointer<UInt8>?
+    var count = 0
+    _ = unsafe e3_decoder_copy_bytes(nil, &bytes, &count)
+}
+```
+```swift
+func requireSendable<T: Sendable>(_ value: T) {}
+func sendDecoder(_ decoder: ByteDecoder) { requireSendable(decoder) }
+```
 
-    data.withUnsafeBytes { rawBuffer in
-        let bytes = rawBuffer.bindMemory(to: UInt8.self)
-        decoder_create(bytes.baseAddress!, bytes.count, &decoder)
-    }
+### Real fixture implementation and failure modes
 
-    return decoder
+E3Native.c below owns allocations with malloc/free, pairs every resource with the documented release function, and copies input. Its modes are deliberately test-only: 0 normal; 1 simulated creation allocation failure; 2 partial handle failure; 3 successful status with missing handle; 4 partial output failure; 5 nil with positive count; 6 nil/zero success; 7 allocated/zero success; 8 over-limit count; 9 SIZE_MAX count; 10 unknown status. Modes 8/9 must be rejected before any read of their deliberately insufficient allocation.
+
+```c
+#include "E3Native.h"
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+struct E3Decoder { uint8_t bytes[E3_MAX_INPUT]; size_t count; int mode; };
+static int fixture_mode, handles, buffers, destroyed, freed;
+void e3_fixture_reset(int mode) {
+    assert(handles == 0 && buffers == 0);
+    fixture_mode = mode; destroyed = 0; freed = 0;
+}
+int e3_live_handles(void) { return handles; }
+int e3_live_buffers(void) { return buffers; }
+int e3_destroyed_handles(void) { return destroyed; }
+int e3_freed_buffers(void) { return freed; }
+int e3_decoder_create(const uint8_t *bytes, size_t count, E3Decoder **output) {
+    *output = NULL;
+    if (count > E3_MAX_INPUT || (count > 0 && bytes == NULL)) return E3_INVALID_INPUT;
+    if (fixture_mode == 1) return E3_OUT_OF_MEMORY;
+    if (fixture_mode == 3) return E3_OK; // Deliberately malformed success.
+    if (fixture_mode == 10) return 77; // Unknown status.
+    E3Decoder *decoder = malloc(sizeof(*decoder));
+    if (decoder == NULL) return E3_OUT_OF_MEMORY;
+    ++handles; decoder->count = count; decoder->mode = fixture_mode;
+    if (count > 0) memcpy(decoder->bytes, bytes, count);
+    *output = decoder;
+    return fixture_mode == 2 ? E3_INVALID_INPUT : E3_OK;
+}
+void e3_decoder_destroy(E3Decoder *decoder) {
+    if (decoder == NULL) return;
+    free(decoder); --handles; ++destroyed;
+}
+int e3_decoder_copy_bytes(E3Decoder *decoder, uint8_t **output, size_t *count) {
+    *output = NULL; *count = 0;
+    if (decoder->mode == 5) { *count = 3; return E3_OK; } // Malformed nil/count.
+    if (decoder->mode == 6) return E3_OK;
+    size_t allocation = decoder->count;
+    if (decoder->mode == 7 || decoder->mode == 8 || decoder->mode == 9) allocation = 1;
+    if (allocation == 0) return E3_OK;
+    uint8_t *bytes = malloc(allocation);
+    if (bytes == NULL) return E3_OUT_OF_MEMORY;
+    ++buffers; *output = bytes;
+    if (decoder->mode == 7) return E3_OK; // Owned allocation, zero logical count.
+    if (decoder->mode == 8) { *count = E3_MAX_INPUT + 1; return E3_OK; }
+    if (decoder->mode == 9) { *count = SIZE_MAX; return E3_OK; }
+    for (size_t i = 0; i < decoder->count; ++i) bytes[i] = decoder->bytes[i] ^ 0xff;
+    *count = decoder->count;
+    return decoder->mode == 4 ? E3_DECODE_FAILED : E3_OK;
+}
+void e3_bytes_free(uint8_t *bytes) {
+    if (bytes == NULL) return;
+    free(bytes); --buffers; ++freed;
+}
+void e3_visit(const uint8_t *bytes, size_t count, E3Visitor visitor, void *context) {
+    for (size_t i = 0; i < count; ++i) visitor(bytes[i], context);
 }
 ```
 
-### What is wrong?
+**Acceptance cases:** empty input; every byte value and boundary size; copied input despite caller mutation; independent owned output after native cleanup; repeated decode; normal close twice; closing through an alias; deinit without explicit close; oversized input; each creation/decode fault mode; exact live/destroy/free counters; synchronous context callbacks; generated C export/enum calls; expected compiler rejections; strict-memory-safety and Address Sanitizer checks. Do not execute the escaped-pointer example or violate annotated native bounds to test a crash.
 
-```text
-- Force unwraps baseAddress.
-- Ignores empty data.
-- Ignores the C status code.
-- Returns a raw C pointer to the app.
-- Does not document or enforce who destroys the decoder.
-- Allows leaks because callers may forget decoder_destroy.
-- Does not protect against partial initialization.
-- Does not convert C errors into Swift errors.
-```
+The validation harness uses bounded sequential cases and checks that native live counts return to zero. Simulated allocation failure proves that branch, not real system exhaustion. Counters establish cleanup for these calls, not a universal absence of leaks or races in an arbitrary C library.
 
-### Improved version
+**Reasoning:** The safety argument comes from the fixture's explicit allocation/retention behavior plus the wrapper's cleanup order. Aliases of a class owner share close state; non-sendability alone does not synchronize native globals. Check the native API's concurrency and failure contracts independently.
+
+## In practice
+
+**Choose it when:** Expose a small Swift contract that hides native allocation and error conventions.
+
+**Investigate by:** Inspect real headers and implementation, then test native failure output and cleanup counters.
+
+**Strong evidence:** Validate generated headers, ordinary native consumers, and strict-memory diagnostics without treating annotations as proof.
+
+### Generated C interfaces and safe overloads — optional
+
+#### Generate a C header from Swift
+
+The following emits E3Mode with its integer cases and E3Transform into the C-compatible section of the generated header. The C client below calls both cases for every UInt8 value. @c uses the C calling convention and a C name; choose collision-resistant names for a real library. Supply only valid enum values under this exported closed-enum contract.
 
 ```swift
-public final class SafeImageDecoder {
-    private let decoder: OpaquePointer
+@c(E3Mode)
+public enum ExportMode: CInt {
+    case identity = 0
+    case invert = 1
+}
 
-    private init(decoder: OpaquePointer) {
-        self.decoder = decoder
-    }
-
-    deinit {
-        decoder_destroy(decoder)
-    }
-
-    public static func create(from data: Data) throws -> SafeImageDecoder {
-        guard !data.isEmpty else {
-            throw DecoderError.invalidData
-        }
-
-        return try data.withUnsafeBytes { rawBuffer in
-            let buffer = rawBuffer.bindMemory(to: UInt8.self)
-
-            guard let baseAddress = buffer.baseAddress else {
-                throw DecoderError.invalidData
-            }
-
-            var output: OpaquePointer?
-
-            let status = decoder_create(
-                baseAddress,
-                buffer.count,
-                &output
-            )
-
-            guard status == DECODER_OK else {
-                if let output {
-                    decoder_destroy(output)
-                }
-                throw DecoderError(status: status)
-            }
-
-            guard let output else {
-                throw DecoderError.missingOutput
-            }
-
-            return SafeImageDecoder(decoder: output)
-        }
+@c(E3Transform)
+public func transform(_ value: UInt8, _ mode: ExportMode) -> UInt8 {
+    switch mode {
+    case .identity: value
+    case .invert: 255 - value
     }
 }
 ```
 
-### Why this is better
+Use the generated header flag even though its historical spelling mentions Objective-C: -emit-objc-header -emit-objc-header-path E3Exports.h. The tested header compiles as C11. @c/@implementation are 6.3 additions, not new 6.4 syntax; moving from an underscored @_cdecl export can have symbol/ABI consequences and requires consumer review. [SE-0495](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0495-cdecl.md)
 
-The improved wrapper changes the API from this:
+#### Import bounds and lifetime into a safe overload
 
-```text
-"Here is a nullable pointer. Good luck."
+Temporary E3Safe.h annotates a read-only pointer with its element count and synchronous nonescape contract. The C implementation of e3_sum adds bytes modulo 2^32. e3_swift_sum is declared here but implemented in Swift in the next block.
+
+```c
+#pragma once
+#include <stddef.h>
+#include <stdint.h>
+#include <ptrcheck.h>
+#include <lifetimebound.h>
+uint32_t e3_sum(const uint8_t * _Nullable __counted_by(count) bytes __noescape, size_t count);
+uint32_t e3_swift_sum(const uint8_t * _Nullable __counted_by(count) bytes __noescape, size_t count);
+```
+> module E3Safe { header "E3Safe.h" export * }
+```c
+#include "E3Safe.h"
+uint32_t e3_sum(const uint8_t *bytes, size_t count) {
+    uint32_t result = 0;
+    for (size_t i = 0; i < count; ++i) result += bytes[i];
+    return result;
+}
 ```
 
-to this:
+The installed compiler produces a Span<UInt8> overload from this nullable counted/noescape pointer declaration without an experimental flag. The checked empty case uses nil with count zero. The nonoptional Span API does not imply that nil with a positive count is valid for native callers. Bounds annotations must describe reality; __noescape is a lifetime promise, not an instruction to copy/retain input.
 
-```text
-"Give me Data. I either return a valid decoder or throw. Cleanup is automatic."
+```swift
+import E3Safe
+
+func sum(_ bytes: Span<UInt8>) -> UInt32 {
+    e3_sum(bytes)
+}
+
+@available(anyAppleOS 26.0, *)
+func sumArray(_ bytes: [UInt8]) -> UInt32 {
+    e3_sum(bytes.span)
+}
 ```
 
-That is exactly what a Swifty wrapper should do.
+sum takes an existing Span and compiles for the older targets used here. sumArray uses Array.span and therefore carries the separate Apple OS 26 availability requirement. Scope, declaration annotations, SDK availability, and strict-memory-safety checking remain distinct. [Safe interop documentation](https://www.swift.org/documentation/cxx-interop/safe-interop/)
 
----
+#### Implement a pre-existing C declaration in Swift
 
-## 7. Production guidance
+The raw implementation matches the imported pointer/count signature. Its unsafe construction trusts the C caller's annotated bounds/lifetime contract; nativeSum then operates on a checked borrowed view. Swift callers can select the generated imported overload through E3Safe.e3_swift_sum. The generated E3Exports.h does not redeclare the @implementation function: native consumers keep using E3Safe.h.
 
-Use C interop in production when:
+```swift
+import E3Safe
 
-```text
-- You depend on a mature C library.
-- You need OS/POSIX/Darwin APIs.
-- You need performance-critical native code already implemented in C.
-- You are gradually migrating a legacy Objective-C/C codebase.
-- A C ABI boundary is required for distribution or plugin compatibility.
+func nativeSum(_ bytes: Span<UInt8>) -> UInt32 {
+    var total: UInt32 = 0
+    for i in bytes.indices { total &+= UInt32(bytes[i]) }
+    return total
+}
+
+@c @implementation
+public func e3_swift_sum(
+    _ bytes: UnsafePointer<UInt8>?, _ count: Int
+) -> UInt32 {
+    let span = unsafe Span(_unsafeElements: UnsafeBufferPointer(start: bytes, count: count))
+    return nativeSum(span)
+}
+
+func callSwiftImplementation(_ bytes: Span<UInt8>) -> UInt32 {
+    E3Safe.e3_swift_sum(bytes)
+}
 ```
 
-Be careful when:
+A complete native client follows. Compile the Swift export and implementation under module E3Exports to emit E3Exports.h, compile this C source plus E3Safe.c, and link the objects with the Swift driver/runtime. It uses real generated/imported declarations, not a guessed Swift-compatible C prototype.
 
-```text
-- The C API stores pointers passed by Swift.
-- The C API returns borrowed memory.
-- The C API requires caller-allocated buffers.
-- The C API uses callbacks with void * context.
-- The C API uses global mutable state.
-- The C API is not thread-safe.
-- Nullability annotations are missing.
-- Cleanup differs depending on success/failure.
+```c
+#include "E3Exports.h"
+#include "E3Safe.h"
+#include <assert.h>
+#include <stdio.h>
+int main(void) {
+    uint8_t bytes[] = {0, 1, 255};
+    assert(e3_sum(bytes, 3) == 256);
+    assert(e3_swift_sum(bytes, 3) == 256);
+    assert(e3_sum(NULL, 0) == 0);
+    assert(e3_swift_sum(NULL, 0) == 0);
+    for (int value = 0; value < 256; ++value) {
+        assert(E3Transform((uint8_t)value, E3ModeIdentity) == value);
+        assert(E3Transform((uint8_t)value, E3ModeInvert) == 255 - value);
+    }
+    puts("C client called generated exports and a Swift implementation of a C header.");
+    return 0;
+}
 ```
 
-Avoid when:
+#### Rejected signatures and an explicit unsafe call
 
-```text
-- A safe Swift/Foundation API already exists.
-- You are using C only to avoid learning Swift-native APIs.
-- Unsafe pointers leak into feature-layer code.
-- Ownership rules are undocumented.
-- You cannot write tests for failure and cleanup behavior.
+Each negative is independent. The first cannot export an ordinary Swift struct. The next two use E3Safe: one changes the imported size parameter to Double; the other attempts to use the safe Span signature as the raw @implementation. Both fail matching/representability checks.
+
+```swift
+struct NotCRepresentable { let value: Int }
+@c
+func invalidExport(_ value: NotCRepresentable) {}
+```
+```swift
+import E3Safe
+@c @implementation
+func e3_swift_sum(_ bytes: UnsafePointer<UInt8>?, _ count: Double) -> UInt32 { 0 }
+```
+```swift
+import E3Safe
+@c @implementation
+func e3_swift_sum(_ bytes: Span<UInt8>) -> UInt32 { 0 }
 ```
 
-Debugging checklist:
+The following raw call can compile in ordinary mode but is rejected when StrictMemorySafety diagnostics are promoted to errors. Its pointer/count signature remains unsafe even though a safe overload exists. Adding unsafe acknowledges the raw contract; prefer the safe overload when it fits the operation.
 
-```text
-Ownership:
-- Who owns this pointer?
-- Who frees it?
-- Which function frees it?
-- Is cleanup required on failure?
-
-Lifetime:
-- Is the pointer valid after the call returns?
-- Does C copy the bytes or store the pointer?
-- Did a withUnsafe... pointer escape?
-
-Bounds:
-- Where is the count stored?
-- Is count in bytes or elements?
-- Can count overflow when converting Int <-> CInt/size_t?
-
-Nullability:
-- Can input be null?
-- Can output be null on success?
-- Does the C header encode this?
-
-Errors:
-- What does each status code mean?
-- Can partial output be produced on failure?
-
-Concurrency:
-- Is the C object thread-safe?
-- Is there global mutable state?
-- Should the Swift wrapper be non-Sendable, actor-isolated, or locked?
-
-Diagnostics:
-- Enable Address Sanitizer for pointer bugs.
-- Enable Thread Sanitizer for thread-safety issues.
-- Consider Swift 6.2 strict memory safety for unsafe-boundary auditing.
+```swift
+import E3Safe
+func unacknowledgedRawCall(_ bytes: UnsafePointer<UInt8>?, _ count: Int) -> UInt32 {
+    e3_sum(bytes, count)
+}
 ```
 
-Apple recommends keeping unsafe API usage to a minimum, choosing safer alternatives where available, using buffer pointers for memory regions, and using tools such as Address Sanitizer to catch unsafe-memory bugs. ([Apple Developer, "Unsafe Swift"](https://developer.apple.com/videos/play/wwdc2020/10648/))
+## References
 
----
+### Related guides
 
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> Swift can call C functions using unsafe pointers. You use `withUnsafePointer` or `withUnsafeBytes`, pass pointers to C, and call cleanup functions manually.
-
-### Senior answer
-
-> C interop imports unsafe contracts into Swift. I would wrap the C API so callers use `Data`, `String`, Swift structs, and `throws`. I would hide pointers, validate status codes, use `defer` for cleanup, and use `deinit` for owned C handles.
-
-### Staff-level answer
-
-> I would treat the C boundary as an architecture boundary. The imported module should be isolated behind an adapter or package target. I would fix nullability and bounds annotations in the C headers where possible, design a Swift overlay that expresses ownership and errors natively, prevent raw pointers from leaking into public API, and add tests and sanitizers around failure paths. For security-sensitive modules, I would also consider Swift 6.2 strict memory safety and C/C++ bounds-safety annotations, because the goal is not just to make the call compile; it is to make the unsafe assumptions explicit and auditable. ([Apple Developer, "Safely mix C, C++, and Swift"](https://developer.apple.com/videos/play/wwdc2025/311/))
-
-Staff-level questions to ask:
-
-```text
-Who owns each pointer returned by the C API?
-Can the C function store a pointer passed from Swift?
-Are pointer counts bytes, elements, or capacity?
-Can the C API produce partial output on failure?
-Can we annotate the C header with nullability and bounds?
-Should this wrapper be Sendable, actor-isolated, locked, or explicitly non-thread-safe?
-Should this C dependency leak into public API or stay implementation-only?
-How will we test cleanup, failure, and invalid input?
-Can we replace parts of this C API with Swift-native code over time?
-```
-
----
-
-## 9. Interview-ready summary
-
-Swift can interoperate with C, but C brings unchecked contracts into Swift: pointer lifetime, ownership, nullability, bounds, cleanup, and error conventions. I would keep unsafe pointer manipulation inside a narrow wrapper layer. That wrapper should convert C output pointers into Swift return values, return codes into `throws`, manual cleanup into `deinit` or `defer`, C constants into typed Swift names, and raw buffers into `Data`, `Array`, or carefully scoped unsafe buffers. The rest of the app should not see `UnsafeMutablePointer` unless it is genuinely a low-level API. Staff-level judgment is designing the boundary so Swift’s type system works for the codebase instead of letting C’s unsafety spread through it.
-
----
-
-## 10. Flashcards
-
-Q: Why is C interop unsafe in Swift?  
-A: Because C APIs often encode ownership, lifetime, nullability, bounds, and error contracts only in documentation or convention. Swift can import the function, but it cannot infer every safety rule.
-
-Q: What should a Swifty C wrapper do with output pointers?  
-A: Hide them. Use local variables internally, call the C function, validate the status code, then return a Swift value.
-
-Q: What should a Swifty C wrapper do with manual cleanup?  
-A: Use `defer` for temporary buffers and `deinit` for owned C handles.
-
-Q: Why is `withUnsafeBytes` safer than storing an `UnsafePointer`?  
-A: It scopes the pointer lifetime to a closure, making it harder to accidentally use the pointer after the underlying storage is invalid.
-
-Q: What does unspecified C pointer nullability usually import as?  
-A: An implicitly unwrapped optional unsafe pointer, such as `UnsafePointer<T>!`.
-
-Q: Why is `UnsafePointer<T>!` a smell at an API boundary?  
-A: It means Swift does not know whether nil is valid. The wrapper should make that explicit as non-optional, optional, or throwing behavior.
-
-Q: When should raw pointers appear in public Swift API?  
-A: Rarely; mainly in low-level libraries where callers are expected to understand memory contracts.
-
-Q: What is `OpaquePointer` for?  
-A: C pointers to incomplete or opaque types whose pointee layout Swift does not know.
-
-Q: Can C function pointers capture Swift state?  
-A: Not like normal Swift closures. C function pointers import as `@convention(c)` and have no captured context. Use a separate context pointer if the C API supports it.
-
-Q: What is the staff-level concern with C interop?  
-A: Not just making the call compile, but controlling unsafe surface area, preserving module boundaries, testing failure/cleanup paths, and making hidden contracts explicit.
-
----
-
-## 11. Related sections
-
+- [[A6 — `defer`, Early Exits, and Cleanup Semantics]]
+- [[A12 — Availability and Conditional Compilation]]
+- [[A13 — Error handling and typed throws]]
+- [[B11 — Library Evolution and Resilience-Aware API Design]]
+- [[C1 — ARC fundamentals]]
 - [[C6 — Unsafe pointers, buffers, and raw memory]]
-- [[C11 — Strict memory safety mode and safe systems programming]]
-- [[C12 — Span, InlineArray, and modern low-level abstractions]]
-- [[E1 — Objective-C interoperability]]
-- [[E2 — Foundation and Objective-C bridging behavior]]
+- [[C7 — Ownership modifiers - `borrowing`, `consuming`, and `consume`]]
+- [[C8 — Copyable, noncopyable types, and `~Copyable`]]
+- [[C11 — Strict Memory Safety Mode and Safe Systems Programming]]
+- [[C12 — `Span`, `InlineArray`, and modern low-level abstractions]]
+- [[D6 — `Sendable`, `@Sendable`, and `sending`]]
+- [[D9 — Continuations and Bridging Callback APIs]]
+- [[E1 — Objective-C Interoperability]]
+- [[E2 — Foundation and Objective-C Bridging Behavior]]
 - [[E4 — C++ interoperability]]
-- [[E6 — Import visibility and dependency leakage]]
+- [[E5 — Modules, packages, targets, products, and resources]]
+- [[E6 — Import Visibility and Dependency Leakage]]
 - [[F2 — Debugging Swift code with LLDB and compiler diagnostics]]
 - [[F3 — Performance investigation habits]]
 - [[F5 — Language mode, build settings, and migration flags]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E3 — C interoperability and unsafe boundaries.
-- GitHub. "How Swift Imports C APIs." swiftlang/swift. https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md
-- Apple Developer. "C Interoperability." Apple Developer Documentation. https://developer.apple.com/documentation/swift/c-interoperability
-- Apple Developer. "Unsafe Swift." WWDC20. https://developer.apple.com/videos/play/wwdc2020/10648/
-- Apple Developer. "Safely mix C, C++, and Swift." WWDC25. https://developer.apple.com/videos/play/wwdc2025/311/
-- Swift.org. "Safely Mixing Swift and C/C++." Swift.org Documentation. https://swift.org/documentation/cxx-interop/safe-interop/
+- [C interoperability](https://www.swift.org/documentation/c-interop/)
+- [SE-0495](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0495-cdecl.md)
+- [Safe interop documentation](https://www.swift.org/documentation/cxx-interop/safe-interop/)
+- [Swift importer documentation](https://github.com/swiftlang/swift/blob/main/docs/HowSwiftImportsCAPIs.md)
+- [Swift 6.3 release](https://www.swift.org/blog/swift-6.3-released/)
+- [Swift 6.4 release](https://www.swift.org/blog/swift-6.4-released/)
+- [SE-0458: strict memory-safety checking](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0458-strict-memory-safety.md)
+- [Official native-client implementation test](https://github.com/swiftlang/swift/blob/main/test/Interpreter/c_implementation.swift)

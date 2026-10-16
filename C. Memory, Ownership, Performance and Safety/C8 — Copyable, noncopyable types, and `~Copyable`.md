@@ -10,797 +10,180 @@ tags:
   - copyable
   - noncopyable
 ---
+
 # C8 — Copyable, Noncopyable Types, and `~Copyable`
 
-## 0. Rubric snapshot
+**Goal:** Transfer an exclusively owned resource token and verify one cleanup event.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Know what `Copyable` means, when noncopyable modeling is useful, and how modern Swift lets generic code work with both copyable and noncopyable types. The uploaded rubric places C8 in the low-level ownership/performance section and asks you to model a file handle or lock token as noncopyable.
+## Mental model
 
-**Caveats**
+Noncopyable values have one owner at a time; transfer is allowed and duplication is not. Copyable is an implicit capability of ordinary generic parameters unless suppressed. A uniquely owned wrapper can still contain a class reference shared elsewhere, so noncopyability does not imply a deeply unique graph, Sendable conformance, or thread-affine destruction. [Noncopyable structs and enums](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md)
 
-Noncopyable types change API design, generic constraints, control flow, and pattern matching. Do not suppress copyability because it “looks more advanced”; do it when the domain truth is single ownership.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Suppress only genuinely unnecessary copying
 
-- What does `Copyable` mean semantically, and when do you need to spell it or suppress it?
-- Why would you make a Swift type noncopyable?
-- How does noncopyability interact with generics and protocol design, especially when one API should support both copyable and noncopyable inputs?
+Use ~Copyable on the resource type and relevant generic/associated-type positions. Every consumer must also avoid implicitly requiring a copy. Borrow inspection and consume handoff; use explicit shutdown when cleanup timing or executor completion is a caller requirement.
 
-**You should be able to do**
+**Common pitfall:** Declaring a protocol's Item noncopyable-capable does not generalize Holder<Item> or all extension methods. Check each implicit constraint and operation.
 
-- Model a file handle or lock token as a noncopyable type and explain what misuse it prevents.
+### Separate unique storage from payload semantics
 
----
+UniqueBox and UniqueArray provide different ownership/storage contracts from shared CoW values and require Apple OS 27 in this SDK. clone of an Array payload preserves Array value behavior; clone of a class payload can copy the reference while sharing the object.
 
-## 1. Core mental model
+**Common pitfall:** Noncopyable Hashable support does not make Set accept noncopyable elements. Check protocol support, synthesized witnesses, container constraints, and OS availability independently. Proposed Optional reference accessors and a public RigidArray are absent from the selected surface.
 
-Most Swift values are **copyable**. That does not mean Swift eagerly copies memory every time; it means the language is allowed to produce another logically independent value when needed. For normal structs and enums, assignment, argument passing, tuple formation, generic wrapping, and closure capture can all rely on this copyability assumption.
+## Interview questions
 
-A **noncopyable** type is different: it represents a value with **unique ownership**. There is exactly one owner of that value at a time. Moving ownership is allowed; duplicating ownership is not. Swift Evolution SE-0390 introduced noncopyable structs and enums, also called move-only types, and describes them as values that always have unique ownership, unlike normal Swift values that can be freely copied. ([GitHub, "Noncopyable Structs and Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md))
+### Where must Copyable defaults be suppressed in a generic Holder with an associated Item?
 
-You opt out of implicit copyability with `~Copyable`:
+Suppress copying on the holder itself when storing a noncopyable item, on the item's generic parameter, on an associated type that permits such payloads, and on generic uses that otherwise add their own Copyable requirement. Swift 6.4 primary associated-type defaults have specific propagation rules; verify non-primary positions explicitly.
 
-```swift
-struct FileDescriptor: ~Copyable {
-    private let rawValue: CInt
-}
-```
+### How does UniqueBox.clone behave with an Array payload versus a class payload?
 
-This is not “a protocol conformance to noncopyable.” It is a **suppression** of the default `Copyable` assumption. SE-0427 later generalized this model for generics: `Copyable` became the formal capability, most things require it by default, and `~Copyable` suppresses that default where you want generic code to accept either copyable or noncopyable values. ([GitHub, "Noncopyable Generics"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md))
+Cloning a Copyable Array payload produces another logical array value whose mutations remain independent through Array's own semantics. Cloning a class payload can duplicate the reference, preserving object identity and shared mutation. Uniqueness of the box ownership does not turn that reference copy into a deep clone.
 
-The key idea:
+### Why can a noncopyable value conform to Hashable yet still fail as a Set element?
 
-```text
-Copyable value     => Swift may duplicate it when needed.
-~Copyable value    => Swift must track one owner; use must be borrowing, consuming, or mutating.
-T                  => implicitly T: Copyable
-T: ~Copyable       => maybe copyable; accepts both copyable and noncopyable values
-```
+The Hashable protocols can support a broader ownership domain than a particular container. Set in this SDK still requires a Copyable element. A valid conformance and even accepted synthesized witnesses do not remove that separate generic requirement.
 
-Noncopyable types are about **semantic ownership**, not just performance. Good examples: file descriptors, lock tokens, unique buffers, cryptographic secret material, linear capabilities, one-shot resources, and C/C++ handles where double-close or use-after-close is a real bug.
+## Focused exercise
 
----
+**Task:** Model an exclusively owned resource token. Check transfer and cleanup, then explain what remains shared if its payload is a class.
 
-## 2. Essential mechanics
+**Acceptance checks:**
 
-### `Copyable` is the default capability
+- A consuming call transfers the single token.
+- Cleanup occurs once by the completion of this synchronous transfer.
+- The original value cannot be used after transfer.
 
-Most Swift structs, enums, classes, generic parameters, protocols, existentials, and associated types are implicitly `Copyable` unless you suppress that default. SE-0427 states that every struct, enum, class, generic parameter, protocol, and associated type conforms to `Copyable` by default, and `~Copyable` suppresses the inferred default requirement. ([GitHub, "Noncopyable Generics"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md))
+**Solution:**
+
+Standalone noncopyable token with observable cleanup:
 
 ```swift
-struct UserID {
-    let rawValue: String
+struct Resource: ~Copyable {
+    let onClose: () -> Void
+    deinit { onClose() }
 }
-
-// Conceptually:
-struct UserID /* : Copyable */ {
-    let rawValue: String
+func transfer(_ resource: consuming Resource) {}
+func probe() {
+    var closed = 0
+    let resource = Resource(onClose: { closed += 1 })
+    transfer(consume resource)
+    precondition(closed == 1)
 }
+probe()
 ```
 
-For ordinary app models, this is exactly what you want. `UserID`, `URL`, `Date`, `CGPoint`, and most DTOs should be copyable.
+Compile a second use of resource after transfer separately; it intentionally rejects. This fixture has synchronous nonisolated cleanup and no real file, lock, or thread affinity.
 
-### `~Copyable` suppresses copyability
+**Reasoning:** The resource's noncopyability prevents accidental duplicate owners and cleanup. A class-valued payload could still be referenced elsewhere; the token's unique lifetime does not change that graph. Real native handles also need explicit error, release-thread, and cancellation contracts.
+
+## In practice
+
+**Choose it when:** Exclusive ownership expresses a resource invariant callers must respect.
+
+**Investigate by:** Check ownership paths through generic wrappers and actual SDK container declarations.
+
+**Strong evidence:** Define adoption, deployment, release context, and fallback requirements before introducing newer unique-storage APIs.
+
+### Unique storage and protocol boundaries — optional
+
+#### UniqueBox and UniqueArray in Swift 6.4
+
+UniqueBox owns one heap allocation and is noncopyable even when its contents are copyable. Access `.value` by borrowing or mutation; `consume()` transfers the payload out and ends the box. `clone()` requires a Copyable payload. [SE-0517](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0517-uniquebox.md)
 
 ```swift
-struct Token: ~Copyable {
-    let id: Int
+struct Packet: ~Copyable {
+    var count: Int
+    deinit { print("destroy", count) }
 }
-```
-
-This means `Token` values cannot be implicitly duplicated.
-
-```swift
-struct Token: ~Copyable {}
-
-func use(_ token: borrowing Token) {}
-
 func demo() {
-    let a = Token()
-    let b = a
-    use(a)
-    use(b)
+    var box = UniqueBox(Packet(count: 1))
+    box.value.count += 1
+    let packet = box.consume()
+    print(packet.count)
 }
-```
-
-Swift 6.2.1 compiler output:
-
-```text
-/tmp/c8_copy.swift:6:9: error: 'a' used after consume
- 4 | 
- 5 | func demo() {
- 6 |     let a = Token()
-   |         `- error: 'a' used after consume
- 7 |     let b = a
-   |             `- note: consumed here
- 8 |     use(a)
-   |         `- note: used here
- 9 |     use(b)
-10 | }
-```
-
-`let b = a` does not copy `a`; it **moves/consumes** ownership from `a` into `b`. After that, `a` is invalid.
-
-### Noncopyable parameters force explicit ownership
-
-For noncopyable values, the ownership convention is part of the API contract. SE-0390 describes `consume` as invalidating the value and `borrow` as shared access that does not take ownership. ([GitHub, "Noncopyable Structs and Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md))
-
-```swift
-struct Token: ~Copyable {
-    let id: Int
-
-    borrowing func inspect() {
-        print("inspecting \(id)")
-    }
-
-    consuming func finish() {
-        print("finished \(id)")
-    }
-
-    deinit {
-        print("deinit \(id)")
-    }
-}
-
-func demo() {
-    let token = Token(id: 1)
-    token.inspect()
-    token.finish()
-}
-
 demo()
 ```
 
-Output:
+Output is `2` then `destroy 2`. A later `box.value` access is rejected. Cloning a box containing a noncopyable Packet is also rejected.
 
-```text
-inspecting 1
-finished 1
-deinit 1
-```
+Clone uses the payload's ordinary copy semantics. With an Array payload, later value mutation produces independent array values. With a class payload, both allocations contain references to the same object; cloning the box is not a deep clone. UniqueBox can be useful for stable heap storage, but it adds allocation and indirection and does not automatically improve performance.
 
-After a consuming use, the value cannot be used again:
+UniqueArray owns a growable contiguous buffer and supports noncopyable elements:
 
 ```swift
-struct Token: ~Copyable {
-    borrowing func inspect() {}
-    consuming func finish() {}
-}
+struct Token: ~Copyable { let id: Int }
 
-func demo() {
-    let token = Token()
-    token.finish()
-    token.inspect()
+func demoUniqueArray() {
+    var values = UniqueArray<Token>()
+    values.append(Token(id: 1))
+    values.append(Token(id: 2))
+    for value in values { print(value.id) } // borrowing iteration
+    print(values.count)                    // owner remains usable
+    let last = values.removeLast()         // transfers one element out
+    print(last.id, values.count)
 }
+demoUniqueArray()
 ```
 
-Swift 6.2.1 compiler output:
+Output is `1`, `2`, `2`, then `2 1`. See C5/C12 for the iteration and storage comparisons. The tested SDK exposes no public RigidArray; do not substitute the proposal-only name for a usable baseline API. Both unique types above require Apple OS 27 in this SDK.
 
-```text
-/tmp/c8_after_consume.swift:7:9: error: 'token' used after consume
- 5 | 
- 6 | func demo() {
- 7 |     let token = Token()
-   |         `- error: 'token' used after consume
- 8 |     token.finish()
-   |     `- note: consumed here
- 9 |     token.inspect()
-   |     `- note: used here
-10 | }
-11 | 
-```
+#### Generalized protocols: verify the boundary
 
-### Generic code is `Copyable` unless you opt out
-
-A plain generic parameter still has an implicit `Copyable` requirement.
+The installed Equatable, Comparable, and Hashable protocols accept noncopyable/nonescapable conformers. Manual noncopyable Hashable conformance works:
 
 ```swift
-struct Token: ~Copyable {}
-
-func inspect<T>(_ value: borrowing T) {}
-
-func demo() {
-    let x = Token()
-    inspect(x)
-}
-```
-
-Swift 6.2.1 compiler output:
-
-```text
-/tmp/c8_generic_bad.swift:7:5: error: global function 'inspect' requires that 'Token' conform to 'Copyable'
-1 | struct Token: ~Copyable {}
-2 | 
-3 | func inspect<T>(_ value: borrowing T) {}
-  |      `- note: 'where T: Copyable' is implicit here
-4 | 
-5 | func demo() {
-6 |     let x = Token()
-7 |     inspect(x)
-  |     `- error: global function 'inspect' requires that 'Token' conform to 'Copyable'
-8 | }
-9 | 
-```
-
-To support both copyable and noncopyable values, write `T: ~Copyable`:
-
-```swift
-struct Token: ~Copyable {}
-
-func inspect<T: ~Copyable>(_ value: borrowing T) {
-    _ = value
-}
-
-func take<T: ~Copyable>(_ value: consuming T) {
-    _ = value
-}
-
-func demo() {
-    let x = Token()
-    inspect(x)
-    take(x)
-}
-```
-
-This compiles because `T: ~Copyable` means “maybe copyable,” not “must be noncopyable.” The Swift book describes `~Copyable` as a suppressed constraint that allows both copyable and noncopyable types. ([Swift.org, "Generics"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/))
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: Thinking `~Copyable` means “noncopyable protocol conformance”
-
-Bad mental model:
-
-```swift
-struct Token: ~Copyable {}
-// "Token conforms to a NonCopyable protocol."
-```
-
-Better mental model:
-
-```swift
-struct Token: ~Copyable {}
-// "Token suppresses the default Copyable capability."
-```
-
-`Copyable` is the positive capability. `~Copyable` removes the implicit requirement that the value can be copied.
-
-### Trap 2: Making types noncopyable for style
-
-Bad:
-
-```swift
-struct UserProfile: ~Copyable {
-    var name: String
-    var avatarURL: URL
-}
-```
-
-This is usually a mistake. A user profile is ordinary value data. Making it noncopyable damages ergonomics: storing it in arrays, passing it through generic APIs, testing it, logging it, and composing it become harder.
-
-Better:
-
-```swift
-struct UserProfile: Sendable, Equatable {
-    var name: String
-    var avatarURL: URL
-}
-```
-
-Use noncopyability when the domain has **one owner**: a lock token, unique file descriptor, temporary unsafe memory region, one-time continuation-like capability, or secret that should not be implicitly duplicated.
-
-### Trap 3: Forgetting that classes remain copyable references
-
-SE-0390 states that classes may contain noncopyable stored properties, but class declarations themselves cannot use `~Copyable`; class values remain copyable because references can be retained and released. ([GitHub, "Noncopyable Structs and Enums"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md))
-
-```swift
-final class SharedBox {
-    var token: Token
-
-    init(token: consuming Token) {
-        self.token = token
-    }
-}
-```
-
-The `Token` is noncopyable, but `SharedBox` references are copyable. That may reintroduce shared ownership around a unique resource. Sometimes that is intentional; often it defeats the point.
-
-### Trap 4: Assuming noncopyable automatically means thread-safe
-
-`~Copyable` prevents implicit duplication. It does not make interior state synchronized, actor-isolated, or `Sendable`.
-
-```swift
-struct UniqueBuffer: ~Copyable {
-    // Unique ownership, yes.
-    // Thread-safe mutation, not automatically.
-}
-```
-
-You still need concurrency design: `Sendable`, actor isolation, locks, or clear single-thread confinement.
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What does `Copyable` mean semantically, and when do you need to spell it or suppress it?
-
-`Copyable` means Swift may create another logically equivalent value when language operations need a copy. Most Swift types are implicitly `Copyable`, so you rarely write it. You suppress it with `~Copyable` when duplication would violate the resource model.
-
-Interview version:
-
-> `Copyable` is Swift’s capability for values that can be duplicated by normal value operations. Most Swift code gets this implicitly. I only spell or suppress it when ownership matters: `T` in a generic API means `T: Copyable` by default, while `T: ~Copyable` means the API can work with both copyable and noncopyable values. For a resource like a file descriptor or lock token, I’d make the type `~Copyable` because copying the value would create two apparent owners of one underlying resource.
-
-### Q2. Why would you make a Swift type noncopyable?
-
-You make a type noncopyable when the value represents a unique resource or capability where duplicate ownership is wrong.
-
-Good candidates:
-
-```text
-File descriptor
-Lock guard/token
-Unique unsafe buffer
-One-shot resource
-C/C++ handle with manual close/free
-Secret data that should not be implicitly duplicated
-Linear permission/capability token
-```
-
-Bad candidates:
-
-```text
-DTOs
-View state
-API response models
-Configuration structs
-Most SwiftUI/UIKit view models
-Ordinary domain values
-```
-
-Interview version:
-
-> I’d make a type noncopyable when copying the value would create a correctness bug, not just because I want fewer copies. A file descriptor is a good example: two Swift values pointing at the same descriptor can both try to close it, or one can use it after the other closes it. A noncopyable wrapper lets the compiler enforce single ownership and makes borrowing versus consuming part of the API.
-
-### Q3. How does noncopyability interact with generics and protocol design?
-
-Plain generic parameters and protocols are copyable by default. If a generic API should accept noncopyable values, it must suppress the default with `~Copyable`.
-
-```swift
-func copyableOnly<T>(_ value: T) {
-    // implicit T: Copyable
-}
-
-func acceptsBoth<T: ~Copyable>(_ value: borrowing T) {
-    // accepts copyable and noncopyable values
-}
-```
-
-For protocols, this matters because a protocol can accidentally exclude noncopyable conformers if its `Self` or associated types implicitly require `Copyable`. SE-0427 was specifically introduced to close the expressivity gap where noncopyable types could not participate in generics, protocols, or existentials. ([GitHub, "Noncopyable Generics"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md))
-
-Interview version:
-
-> In modern Swift, generic APIs are still copyable unless you opt out. That means `func f<T>(_ value: T)` is effectively constrained to `T: Copyable`. If I’m designing a low-level API that should accept a unique buffer or file token, I need `T: ~Copyable` and ownership-qualified parameters like `borrowing` or `consuming`. For protocols, I’d be deliberate because protocol requirements, associated types, and existential use can easily reintroduce copyability assumptions.
-
----
-
-## 5. Code probe
-
-The rubric has no dedicated C8 code probe, so use these three probes instead.
-
-### 5.1 Minimal valid example
-
-Given:
-
-```swift
-struct Token: ~Copyable {
+struct Ticket: ~Copyable, Hashable {
     let id: Int
-
-    borrowing func inspect() {
-        print("inspecting \(id)")
+    static func == (lhs: borrowing Self, rhs: borrowing Self) -> Bool {
+        lhs.id == rhs.id
     }
-
-    consuming func finish() {
-        print("finished \(id)")
-    }
-
-    deinit {
-        print("deinit \(id)")
-    }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    var description: String { "Ticket(\(id))" }
 }
-
 func demo() {
-    let token = Token(id: 1)
-    token.inspect()
-    token.finish()
+    let first = Ticket(id: 4)
+    let second = Ticket(id: 4)
+    print(first == second)
+    print(first.description)
 }
-
 demo()
 ```
 
-What happens?
+Output is `true` and `Ticket(4)`. The description is an ordinary property. Although [SE-0499](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0499-support-non-copyable-simple-protocols.md) describes wider string/stream protocol generalization, this installed SDK still requires Copyable for CustomStringConvertible and the related string/stream protocols inspected. A noncopyable CustomStringConvertible conformance fails. Also, `Set<Ticket>` still fails: the container requires Copyable elements. Do not equate protocol support with container support, synthesis, or unrestricted print/interpolation.
 
-```text
-inspecting 1
-finished 1
-deinit 1
-```
+B7 now checks the synthesis boundary separately: the noncopyable Ticket struct derives Hashable, while the tested TicketState enum fails in generated equality and works with manual borrowing witnesses. See [[B7 — Synthesized conformances and semantic correctness]] for the exact declarations and compiler limitation.
 
-Why?
+#### Noncopyable continuations and Optional boundaries
 
-```text
-token.inspect() borrows token.
-token.finish() consumes token.
-After finish(), token's lifetime ends.
-deinit runs once for the unique value.
-```
+D9's `Continuation` is a concrete noncopyable capability: resume consumes the handle, and dropping an unresumed handle traps. Unique ownership still does not prove a callback fires eventually or coordinate cancellation races.
 
-### 5.2 Counterexample: accidental “copy”
+Optional already supports noncopyable payloads and `take()`. The proposed Optional `ref`, `mutableRef`, and `put` operations are absent from the tested SDK; keep those SE-0532 examples outside this baseline. The validation record explains the status conflict.
 
-Given:
+## References
 
-```swift
-struct Token: ~Copyable {}
-
-func use(_ token: borrowing Token) {}
-
-func demo() {
-    let a = Token()
-    let b = a
-    use(a)
-    use(b)
-}
-```
-
-What happens?
-
-```text
-/tmp/c8_copy.swift:6:9: error: 'a' used after consume
- 4 | 
- 5 | func demo() {
- 6 |     let a = Token()
-   |         `- error: 'a' used after consume
- 7 |     let b = a
-   |             `- note: consumed here
- 8 |     use(a)
-   |         `- note: used here
- 9 |     use(b)
-10 | }
-```
-
-Why?
-
-```text
-let b = a
-```
-
-does not copy `a`. It transfers ownership from `a` into `b`. Since `a` is noncopyable, using `a` afterward is invalid.
-
-### 5.3 Production-style example: lock token
-
-A lock token is a good noncopyable model because copying it would imply multiple owners of one lock acquisition. That can cause double-unlock, unlock-after-transfer, or unclear critical-section ownership.
-
-```swift
-import Foundation
-
-public struct LockToken: ~Copyable {
-    private let lock: NSLock
-    private var isActive = true
-
-    fileprivate init(lock: NSLock) {
-        self.lock = lock
-        lock.lock()
-    }
-
-    public mutating func unlock() {
-        guard isActive else { return }
-        isActive = false
-        lock.unlock()
-    }
-
-    deinit {
-        if isActive {
-            lock.unlock()
-        }
-    }
-}
-
-public final class Gate: @unchecked Sendable {
-    private let lock = NSLock()
-
-    public init() {}
-
-    public func acquire() -> LockToken {
-        LockToken(lock: lock)
-    }
-}
-
-func useProtectedResource() {
-    let gate = Gate()
-
-    var token = gate.acquire()
-    // protected work here
-    token.unlock()
-}
-```
-
-Misuse attempt:
-
-```swift
-func misuse() {
-    let gate = Gate()
-    let first = gate.acquire()
-    let second = first
-    _ = second
-    _ = first
-}
-```
-
-Swift 6.2.1 compiler output:
-
-```text
-/tmp/c8_lock_bad.swift:20:9: error: 'first' used after consume
-18 | func misuse() {
-19 |     let gate = Gate()
-20 |     let first = gate.acquire()
-   |         `- error: 'first' used after consume
-21 |     let second = first
-   |                  `- note: consumed here
-22 |     _ = second
-23 |     _ = first
-   |         `- note: used here
-24 | }
-25 | 
-```
-
-Why this design is correct:
-
-```text
-The lock acquisition is represented by exactly one LockToken.
-Moving the token transfers the responsibility to unlock.
-The token's deinit is a fallback cleanup boundary.
-The compiler prevents two token values from both believing they own the same acquisition.
-```
-
-Alternative fixes and tradeoffs:
-
-|Option|When it is appropriate|Tradeoff|
-|---|---|---|
-|`defer { lock.unlock() }`|Simple local critical section|Easy, but ownership is not represented as a value|
-|Closure API: `withLock { ... }`|Preferred high-level API|Prevents escaping the token, but less flexible for staged workflows|
-|Noncopyable `LockToken`|Capability-style API or staged lifetime|More advanced; generic/protocol ergonomics are harder|
-|Class-based token|Needs Objective-C/reference interop|Reintroduces shared ownership and ARC overhead|
-
----
-
-## 6. Exercise
-
-### Problem
-
-Model a file handle or lock token as a noncopyable type and explain what misuse it prevents.
-
-### Bad / naive version
-
-```swift
-import Foundation
-
-struct NaiveLockToken {
-    private let lock: NSLock
-
-    init(lock: NSLock) {
-        self.lock = lock
-        lock.lock()
-    }
-
-    func unlock() {
-        lock.unlock()
-    }
-}
-
-func misuse(lock: NSLock) {
-    let first = NaiveLockToken(lock: lock)
-    let second = first
-
-    first.unlock()
-    second.unlock()
-}
-```
-
-### What is wrong?
-
-```text
-NaiveLockToken is copyable.
-first and second both represent the same lock acquisition.
-Both can call unlock().
-The type permits double-unlock because ownership is not modeled.
-```
-
-### Improved version
-
-```swift
-import Foundation
-
-public struct LockToken: ~Copyable {
-    private let lock: NSLock
-    private var isActive = true
-
-    fileprivate init(lock: NSLock) {
-        self.lock = lock
-        lock.lock()
-    }
-
-    public mutating func unlock() {
-        guard isActive else { return }
-        isActive = false
-        lock.unlock()
-    }
-
-    deinit {
-        if isActive {
-            lock.unlock()
-        }
-    }
-}
-
-public final class Gate: @unchecked Sendable {
-    private let lock = NSLock()
-
-    public init() {}
-
-    public func acquire() -> LockToken {
-        LockToken(lock: lock)
-    }
-
-    public func withLock<R>(_ body: () throws -> R) rethrows -> R {
-        var token = acquire()
-        defer {
-            token.unlock()
-        }
-        return try body()
-    }
-}
-```
-
-### Why this is better
-
-The noncopyable token makes lock ownership explicit. There can be only one owner responsible for releasing the acquisition. The `withLock` API remains the simpler default for most production code, while `acquire()` exposes a lower-level capability for cases where the critical section must span multiple helper calls.
-
-In production, prefer this shape:
-
-```swift
-gate.withLock {
-    // critical section
-}
-```
-
-Expose the noncopyable token only when the caller genuinely needs staged ownership.
-
----
-
-## 7. Production guidance
-
-Use this in production when:
-
-```text
-A value represents exactly one owned resource.
-Copying the value would cause double-close, double-free, double-unlock, or use-after-close.
-The API boundary benefits from compile-time ownership enforcement.
-You are wrapping C, C++, POSIX, crypto, memory, file, socket, or synchronization primitives.
-```
-
-Be careful when:
-
-```text
-The type must participate heavily in generic containers, existentials, Codable, Equatable, or logging.
-The team is not ready to reason about borrowing/consuming APIs.
-The value crosses concurrency domains and also needs Sendable reasoning.
-The type is public API; adding or removing ~Copyable changes the API contract.
-```
-
-Avoid when:
-
-```text
-The type is ordinary value data.
-You only want performance.
-You are trying to prevent mutation rather than copying.
-A simple closure API would express the lifetime more safely.
-A class/actor is actually needed because shared identity is the domain model.
-```
-
-Debugging checklist:
-
-```text
-Is this value truly uniquely owned?
-Which operation borrows it?
-Which operation consumes it?
-After consumption, is there any attempted use?
-Did a generic function accidentally require Copyable?
-Did a protocol or associated type accidentally exclude noncopyable conformers?
-Is a class wrapper reintroducing shared ownership?
-Does deinit perform exactly-once cleanup?
-Would withX { ... } be simpler than exposing a token?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> `~Copyable` means a Swift value cannot be copied.
-
-### Senior answer
-
-> `~Copyable` suppresses Swift’s default `Copyable` assumption. It is useful for unique resources where assignment or passing should move ownership instead of duplicate it. APIs using these values need explicit `borrowing`, `consuming`, or `inout` ownership.
-
-### Staff-level answer
-
-> I would treat noncopyability as an API design tool for ownership truth. It belongs at narrow boundaries: file descriptors, locks, unique buffers, secrets, low-level interop handles. I would keep most app-layer models copyable. For public APIs, I’d think carefully before exposing `~Copyable`, because it affects generics, protocols, existentials, source compatibility, testing, and adoption. I’d usually pair a safe high-level closure API with a lower-level noncopyable capability only where staged ownership is required.
-
-Staff-level questions to ask:
-
-```text
-Does this type model data, identity, or unique ownership?
-Is noncopyability visible in public API, or hidden behind a safe wrapper?
-Can clients accidentally regain shared ownership through a class box?
-Should the generic API require T: Copyable, or should it support T: ~Copyable?
-Is cleanup guaranteed exactly once across success, failure, early return, and deinit?
-```
-
----
-
-## 9. Interview-ready summary
-
-`Copyable` is Swift’s default capability for values that can be duplicated by normal language operations. `~Copyable` suppresses that default and gives you a move-only value with unique ownership. That is useful for resources like file descriptors, lock tokens, unique buffers, or secrets where accidental duplication creates correctness bugs. The important design shift is that APIs must say whether they borrow, consume, or mutate the value. In generic code, plain `T` still implicitly means `T: Copyable`; use `T: ~Copyable` when the API should support both copyable and noncopyable values.
-
----
-
-## 10. Flashcards
-
-Q: What does `Copyable` mean in Swift?  
-A: It means Swift may duplicate a value when language operations require a copy. Most Swift types are implicitly `Copyable`.
-
-Q: What does `~Copyable` mean?  
-A: It suppresses the default `Copyable` requirement. It does not mean “conforms to a NonCopyable protocol.”
-
-Q: Does `T: ~Copyable` mean `T` must be noncopyable?  
-A: No. It means “maybe copyable”; the generic API can accept both copyable and noncopyable values.
-
-Q: Why make a file descriptor wrapper noncopyable?  
-A: To prevent multiple Swift values from believing they each own the same OS handle, which can cause double-close or use-after-close.
-
-Q: What happens when assigning a noncopyable value to another variable?  
-A: Ownership is consumed/moved into the new binding; the original binding cannot be used afterward.
-
-Q: Are classes allowed to be `~Copyable`?  
-A: No. Class references remain copyable; classes can contain noncopyable stored properties, but the reference itself is still shared.
-
-Q: What are the three main ownership modes for noncopyable APIs?  
-A: `borrowing`, `consuming`, and `inout`/`mutating`.
-
-Q: When is `~Copyable` a bad idea?  
-A: For ordinary app data, DTOs, view state, and domain models where copying is semantically fine and ergonomic generic use matters.
-
----
-
-## 11. Related sections
+### Related guides
 
 - [[C7 — Ownership modifiers - `borrowing`, `consuming`, and `consume`]]
 - [[C6 — Unsafe pointers, buffers, and raw memory]]
 - [[C9 — Existential, generic, and allocation performance model]]
-- [[C10 — Compiler optimization behavior and debug vs release differences]]
+- [[C10 — Compiler Optimization Behavior and Debug vs Release Differences]]
 - [[D6 — `Sendable`, `@Sendable`, and `sending`]]
-- [[E3 — C interoperability and unsafe boundaries]]
+- [[E3 — C Interoperability and Unsafe Boundaries]]
 - [[E4 — C++ interoperability]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — C8 section.
-- GitHub. "Noncopyable Structs and Enums." Swift Evolution SE-0390. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md
-- GitHub. "Noncopyable Generics." Swift Evolution SE-0427. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md
-- GitHub. "Borrowing and Consuming Pattern Matching for Noncopyable Types." Swift Evolution SE-0432. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0432-noncopyable-switch.md
-- Swift.org. "Generics." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/
+- [Noncopyable structs and enums](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md)
+- [SE-0517](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0517-uniquebox.md)
+- [SE-0499](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0499-support-non-copyable-simple-protocols.md)
+- [GitHub. "Noncopyable Generics." Swift Evolution SE-0427](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0427-noncopyable-generics.md)
+- [GitHub. "Borrowing and Consuming Pattern Matching for Noncopyable Types." Swift Evolution SE-0432](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0432-noncopyable-switch.md)
+- [Swift.org. "Generics." The Swift Programming Language](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/generics/)
+- [SE-0527: UniqueArray design](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0527-rigidarray-uniquearray.md)
+- [SE-0503: Suppressed associated-type defaults](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0503-suppressed-associated-types.md)

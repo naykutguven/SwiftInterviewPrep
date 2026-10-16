@@ -6,897 +6,180 @@ tags:
   - core-semantics
   - closures
 ---
+
 # A8 — Closures, Escaping, and Capture Semantics
 
-## 0. Rubric snapshot
+**Goal:** Break a stored-callback cycle and verify invocation both before and after the owner is released.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Know escaping vs nonescaping closures, capture behavior for value and reference types, capture lists, and `@autoclosure`. The rubric specifically calls out that capturing a mutable local boxes storage, and that capturing `self` strongly in long-lived async work frequently leaks.
+## Mental model
 
-**Caveats**
+A closure combines executable behavior and a captured environment. Copies can share mutable captured storage. A capture list can snapshot a value, retain an object, or observe it weakly; these choices are separate from whether the callee may retain the closure and where it may execute. Shared capture behavior does not guarantee a particular heap-box allocation. [Closures](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/)
 
-- A closure is not just syntax for “inline function.”
-- A closure can carry captured state.
-- Closures are reference types.
-- Storing a closure can extend the lifetime of everything it strongly captures.
-- Escaping closures that capture `self` are a major source of retain cycles.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Define callback ownership and delivery
 
-- What changes when a closure becomes `@escaping`?
-- How does `[weak self]` differ from `[unowned self]`, and when is each justified?
+A directly declared function parameter is nonescaping unless marked escaping. Optional function values are ordinary stored-capable values and can escape without that parameter annotation. Neither form promises asynchronous or concurrent invocation.
 
-**You should be able to do**
+**Common pitfall:** Assuming escaping means “later” misses callbacks invoked immediately and retained afterward. State delivery isolation, invocation count, storage owner, and removal behavior independently.
 
-- Diagnose a retain cycle involving a view controller, a service callback, and a stored closure.
-- Predict the output of the rubric code probe.
+### Trace every strong edge
 
----
+An owner storing a closure that captures the owner creates a cycle. Bound instance methods and outer closures can supply the strong edge even when an inner closure uses weak self. Unowned requires a proven lifetime; weak allows absence.
 
-## 1. Core mental model
+**Common pitfall:** Adding weak self only to an inner task does not remove the enclosing stored callback's strong capture. Inspect the whole ownership graph and test teardown.
 
-A closure is a callable reference that may carry an environment with it. That environment contains the values or variables the closure needs from the scope where it was created. Swift calls this “capturing values”: the closure can refer to constants and variables from the surrounding context, and it can keep those captured values alive after the original scope has ended. The Swift book explicitly describes closures as self-contained blocks that can capture and store references to surrounding constants and variables. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
+### Account for suspension
 
-The dangerous part is not the `{ ... }` syntax. The dangerous part is lifetime. A nonescaping closure is guaranteed not to outlive the function call that receives it. An escaping closure may be stored, executed later, passed into async work, or retained by another object. Once a closure escapes, its captures can escape too.
+Promoting weak self to a strong local before await can retain the owner throughout suspension. Capture a dependency separately and promote the owner after await when post-release work should be discarded. Cancellation requests and deinit are not interchangeable lifecycle events.
 
-The key idea:
+## Interview questions
 
-```text
-closure = callable code + captured environment + lifetime
-```
+### How do direct nonescaping parameters, optional function values, and escaping parameters differ, and does any spelling promise later/concurrent execution?
 
-Closures are reference types. Assigning a closure to two variables does not copy independent closure state; both variables can refer to the same closure and the same captured storage. Swift’s closure documentation shows this with incrementer closures that share their captured running total. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
+Nonescaping directly typed parameters cannot be retained beyond the call without an explicit escape. Escaping parameters and optional function values can be retained. None implies when or how many times the callback runs, or whether it is Sendable. Actor and transfer requirements remain separate parts of the signature.
 
-For value types, capture semantics depend on whether the closure captures a value snapshot or mutable storage. A closure that captures a mutable local variable captures storage so later calls observe mutations. The Swift book describes this as capturing a reference to local variables such as `runningTotal`, ensuring the variable remains available after the creating function returns. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
+### What do a closure copy, [value], [object], [weak self], and [unowned self] retain or observe?
 
-For class instances, capturing `self` strongly increments the reference count of the instance. If the instance also stores the closure, you get the classic cycle:
+A copied closure can share its environment. [value] captures that value at creation; [object] retains the same object rather than deep-copying it. Weak self observes optional lifetime without retaining it, while unowned self assumes the object remains alive and can trap if that assumption fails. Referenced mutable state still needs isolation.
 
-```text
-object -> closure property -> closure -> object
-```
+### When is implicit self valid after a capture list, and why does a weak inner closure not remove a strong outer cycle?
 
-Swift’s ARC documentation explicitly describes strong reference cycles between a class instance and a closure assigned to one of its properties. ([Swift.org, "Automatic Reference Counting"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/))
+Explicit strong self capture, and supported weak-self promotion forms, can allow implicit member access because the retention decision is visible. A weak inner closure cannot undo a strong self captured by an outer stored closure. Remove the actual cycle edge, not merely a nearby occurrence of self.
 
----
+### How do early and late promotion of weak self affect retention across await, cancellation, and deinit?
 
-## 2. Essential mechanics
+Early promotion keeps self strong across await; late promotion can let it deinitialize while dependency work runs. Cancellation does not necessarily end that work or prevent stale publication. Define an owner, cancellation, joining, and freshness policy, then test release while the operation is suspended.
 
-### Nonescaping is the default for closure parameters
+## Focused exercise
 
-Function parameters of function type are nonescaping by default. That means the callee can call the closure during the function call, but cannot store it for later.
+**Task:** Trace an owner, stored callback, and captured reference. Break the cycle and check both live-owner behavior and post-release invocation.
 
-```swift
-func performNow(_ operation: () -> Void) {
-    operation()
-}
+**Acceptance checks:**
 
-performNow {
-    print("Runs before performNow returns")
-}
-```
+- Invocation updates a live owner.
+- The externally retained callback does not keep the owner alive.
+- Invocation after release safely does nothing.
 
-This gives the compiler stronger lifetime guarantees. It also means a nonescaping closure can implicitly refer to `self` in places where an escaping closure would require explicit `self`.
+**Solution:**
 
-### `@escaping` means the closure may outlive the function call
-
-A closure escapes when it is passed into a function but may be called after that function returns. Common causes:
-
-```text
-stored in a property
-stored in an array
-passed to async work
-used as a completion handler
-returned from a function
-```
-
-Example:
+Standalone synchronous lifetime probe; the callback is deliberately non-Sendable:
 
 ```swift
-final class Loader {
-    private var completion: (() -> Void)?
-
-    func load(completion: @escaping () -> Void) {
-        self.completion = completion
-    }
-}
-```
-
-The Swift book describes escaping closures as closures that are passed as arguments but called after the receiving function returns; storing a closure outside the function is the canonical example. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
-
-### Escaping closures make `self` capture explicit
-
-```swift
-final class ViewModel {
-    var title = ""
-
-    func load(completion: @escaping () -> Void) {
-        completion()
-    }
-
-    func start() {
-        load {
-            self.title = "Loaded"
-        }
-    }
-}
-```
-
-In an escaping closure, Swift requires explicit `self` when capturing a class instance. This is not cosmetic. It forces you to notice that the closure may keep the object alive. Swift’s documentation says explicit `self` expresses intent and reminds you to check for reference cycles. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
-
-### Capturing mutable locals captures storage
-
-```swift
-func makeCounter() -> () -> Int {
+final class Owner {
     var count = 0
-
-    return {
-        count += 1
-        return count
+    var callback: (() -> Void)?
+    func install() {
+        callback = { [weak self] in self?.count += 1 }
     }
 }
-
-let counter = makeCounter()
-print(counter()) // 1
-print(counter()) // 2
+func probe() {
+    var owner: Owner? = Owner()
+    weak var observed = owner
+    owner!.install()
+    let callback = owner!.callback!
+    callback()
+    precondition(owner!.count == 1)
+    owner = nil
+    precondition(observed == nil)
+    callback()
+}
+probe()
 ```
 
-`count` does not disappear when `makeCounter()` returns. The returned closure keeps captured storage alive.
+**Reasoning:** The owner's callback storage is a strong edge, but the capture back to the owner is weak. Retaining the callback externally therefore does not close a cycle. This is a synchronous retention test; it does not establish thread safety or prompt cancellation of async work.
 
-This is why saying “closures capture values” is sometimes too imprecise. For mutable locals, the important mental model is:
+## In practice
 
-```text
-the closure captures the variable's storage, not just its initial value
-```
+**Choose it when:** Use explicit callback lifecycle contracts for subscriptions and separately owned tasks for asynchronous work.
 
-### Capture lists let you override default capture behavior
+**Investigate by:** Follow strong edges, then release the owner at a controlled suspension point.
 
-Capture lists are written before the closure body:
+**Strong evidence:** Validate delivery, cancellation, cleanup, and late publication separately instead of treating weak capture as a complete design.
+
+### Capture and autoclosure details — optional
+
+#### Weak immutable references and weak-capture mutability are separate
 
 ```swift
-final class Controller {
-    var onTap: (() -> Void)?
+final class SharedOwner: Sendable {
+    let id: Int
+    init(id: Int) { self.id = id }
+}
 
-    func bind() {
-        onTap = { [weak self] in
-            self?.handleTap()
-        }
-    }
+final class WeakLink: Sendable {
+    weak let owner: SharedOwner?
+    init(_ owner: SharedOwner) { self.owner = owner }
+}
 
-    private func handleTap() {}
+func weakReader(_ owner: SharedOwner) -> @Sendable () -> Int? {
+    { [weak owner] in owner?.id }
 }
 ```
 
-A capture list can capture references as `weak` or `unowned`, or capture a snapshot of a value:
+weak let prevents reassignment by program code; it can still observe nil after the referent is released. Checked sendability here also depends on the referenced SharedOwner being Sendable. A weak capture of an arbitrary mutable non-Sendable class does not make a Sendable closure valid. [SE-0481](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0481-weak-let.md)
+
+This next example deliberately exposes the separate configuration boundary:
 
 ```swift
-var count = 0
-
-let printSnapshot = { [count] in
-    print(count)
+func resettableReader(_ owner: SharedOwner) -> () -> Int? {
+    { [weak owner] in
+        let value = owner?.id
+        owner = nil
+        return value
+    }
 }
-
-count = 10
-printSnapshot() // 0
 ```
 
-Without `[count]`, the closure would read the captured variable storage and print the later value.
+In the checked baseline it returns the ID once and then nil. With `-enable-upcoming-feature ImmutableWeakCaptures`, assignment to the explicit weak capture is rejected. The read-only reader above works with either setting. Do not label every weak capture immutable merely because the compiler version is 6.4. A2/D6 record the same distinction for binding and transfer design.
 
-### `@autoclosure` delays expression evaluation
-
-`@autoclosure` automatically wraps an expression in a closure:
+#### Autoclosure defers an expression; it does not memoize it
 
 ```swift
-func logIfNeeded(_ message: @autoclosure () -> String, enabled: Bool) {
-    guard enabled else { return }
-    print(message())
+func message(
+    enabled: Bool, _ value: @autoclosure () -> String
+) -> String? {
+    enabled ? value() : nil
 }
 
-logIfNeeded(expensiveMessage(), enabled: false)
-```
+func twice(_ value: @autoclosure () -> String) -> [String] {
+    [value(), value()]
+}
 
-`expensiveMessage()` is not evaluated unless `message()` is called.
-
-Swift’s documentation describes `@autoclosure` as automatically creating a no-argument closure around an expression, allowing delayed evaluation. It also warns that overuse can make code harder to understand because evaluation is deferred invisibly. ([Swift.org, "Closures"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/))
-
-Use `@autoclosure` mainly for assertion-like APIs, lazy logging, and APIs where the function name makes deferred evaluation obvious.
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: “Escaping just means async”
-
-Escaping is about lifetime, not necessarily threading.
-
-Bad:
-
-```swift
-final class Store {
-    private var callbacks: [() -> Void] = []
-
-    func add(_ callback: () -> Void) {
-        callbacks.append(callback)
-    }
+func deferred(
+    _ value: @autoclosure @escaping () -> String
+) -> () -> String {
+    value
 }
 ```
 
-This does not compile because `callback` is nonescaping by default.
+For a side-effecting message expression, disabled evaluates it zero times, enabled once, and twice evaluates it twice. The returned deferred closure can evaluate it later and more than once. Captured mutable storage can therefore be read at invocation time; use an explicit snapshot when that is the intended contract. Keep this invisible deferral limited to APIs whose names and behavior make it understandable.
 
-Better:
+## References
 
-```swift
-final class Store {
-    private var callbacks: [() -> Void] = []
-
-    func add(_ callback: @escaping () -> Void) {
-        callbacks.append(callback)
-    }
-}
-```
-
-A stored closure escapes even if it is eventually called synchronously.
-
-### Trap 2: “Use `[weak self]` everywhere”
-
-`[weak self]` is safe but not always semantically correct. It turns `self` into an optional and allows the closure to silently do nothing after the object is gone.
-
-That is usually correct for UI callbacks:
-
-```swift
-service.onUpdate = { [weak self] value in
-    self?.render(value)
-}
-```
-
-But it can hide bugs in domain code where the object must exist for the operation to be meaningful.
-
-### Trap 3: “Use `[unowned self]` because it avoids optionals”
-
-`unowned` is not “weak without optional syntax.” It is a promise that the captured object outlives the closure. If that promise is wrong, accessing the reference after deallocation traps.
-
-Use it only when the lifetime relationship is structurally guaranteed.
-
-Good candidate:
-
-```swift
-final class HTMLElement {
-    let name: String
-
-    lazy var asHTML: () -> String = { [unowned self] in
-        "<\(self.name)>"
-    }
-
-    init(name: String) {
-        self.name = name
-    }
-}
-```
-
-Here, the closure is owned by the instance and is not expected to outlive it. Swift’s ARC documentation uses this kind of example for `unowned` closure captures. ([Swift.org, "Automatic Reference Counting"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/))
-
-Risky candidate:
-
-```swift
-service.onComplete = { [unowned self] result in
-    self.render(result)
-}
-```
-
-If the service outlives the view controller, this can crash.
-
-### Trap 4: “A closure property is like a method”
-
-A method does not usually create a stored object that strongly captures `self`. A closure property can.
-
-```swift
-final class Formatter {
-    var prefix = "ID"
-
-    lazy var format: (Int) -> String = {
-        "\(self.prefix)-\($0)"
-    }
-}
-```
-
-This creates:
-
-```text
-Formatter -> format closure -> Formatter
-```
-
-Unless you break the cycle, `Formatter` may never deallocate.
-
-### Trap 5: Capturing `self` inside nested escaping closures
-
-This can happen even when the inner closure uses `[weak self]`.
-
-```swift
-outerEscapingClosure {
-    innerEscapingClosure { [weak self] in
-        self?.doSomething()
-    }
-
-    self.doSomethingElse()
-}
-```
-
-The outer closure may still strongly capture `self`. Swift has diagnostics around implicit strong captures of weak capture list items in nested escaping closures because this pattern can unexpectedly extend lifetimes or create cycles. ([Swift.org, "Implicit Strong Capture"](https://docs.swift.org/compiler/documentation/diagnostics/implicit-strong-capture/))
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What changes when a closure becomes `@escaping`?
-
-An `@escaping` closure is allowed to outlive the function call that receives it. That means it can be stored, called later, passed into asynchronous work, or otherwise retained beyond the current call stack.
-
-This changes the compiler’s lifetime model:
-
-- the closure may retain captured objects longer;
-- captured `self` in class instances must be explicit;
-- storing the closure is allowed;
-- retain cycles become a design concern;
-- in concurrency contexts, `@escaping @Sendable` closures also impose sendability restrictions on captures.
-
-Example:
-
-```swift
-var handlers: [() -> Void] = []
-
-func store(_ handler: @escaping () -> Void) {
-    handlers.append(handler)
-}
-```
-
-Without `@escaping`, this is illegal because `handler` would be nonescaping.
-
-Interview version:
-
-> `@escaping` means the closure can survive past the function call that received it. That changes lifetime and ownership: the closure may be stored or run later, so its captures may be retained longer. For class instances, capturing `self` becomes explicit because a strong capture can create a retain cycle. It is not just an async marker; storing a closure is enough to make it escaping.
-
-### Q2. How does `[weak self]` differ from `[unowned self]`, and when is each justified?
-
-`[weak self]` captures `self` without keeping it alive and turns it into an optional. If `self` is deallocated, the reference becomes `nil`.
-
-```swift
-callback = { [weak self] in
-    guard let self else { return }
-    self.updateUI()
-}
-```
-
-Use `[weak self]` when the closure may outlive `self`, and it is acceptable for the closure to do nothing after `self` is gone. This is common for UI callbacks, service completions, notification handlers, timers, and long-lived async work.
-
-`[unowned self]` captures `self` without keeping it alive, but it assumes `self` will still exist whenever the closure runs. If not, the program traps.
-
-```swift
-lazy var descriptionProvider: () -> String = { [unowned self] in
-    self.description
-}
-```
-
-Use `[unowned self]` only when the closure and object have tightly coupled lifetimes and the closure cannot be invoked after the object is gone. Swift’s ARC documentation says weak references are appropriate when the reference may become `nil`, while unowned references are appropriate when the closure and captured instance are expected to be deallocated together. ([Swift.org, "Automatic Reference Counting"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/))
-
-Interview version:
-
-> `weak` is a non-owning optional reference that becomes `nil` after deallocation. It is the safe default for closures that may outlive the object, especially UI and async callbacks. `unowned` is a non-owning reference that assumes the object is still alive; accessing it after deallocation traps. I use `unowned` only when the lifetime relationship is structurally guaranteed, not just to avoid optional unwrapping.
-
----
-
-## 5. Code probe
-
-Given:
-
-```swift
-final class Screen {
-    var onTap: (() -> Void)?
-
-    deinit {
-        print("Screen deinit")
-    }
-
-    func bind() {
-        onTap = {
-            print(self)
-        }
-    }
-}
-
-var screen: Screen? = Screen()
-screen?.bind()
-screen = nil
-```
-
-### What happens?
-
-```text
-No output.
-```
-
-### Why?
-
-`screen?.bind()` assigns a closure to the `onTap` property.
-
-Inside the closure:
-
-```swift
-print(self)
-```
-
-Because `self` is a class instance and the closure is stored on the instance, the closure strongly captures `self`.
-
-The object graph becomes:
-
-```text
-screen variable
-  |
-  v
-Screen instance
-  |
-  | strong
-  v
-onTap closure
-  |
-  | strong capture
-  v
-Screen instance
-```
-
-Then:
-
-```swift
-screen = nil
-```
-
-removes the external strong reference from the variable, but the internal cycle remains:
-
-```text
-Screen instance -> onTap closure -> Screen instance
-```
-
-So `Screen` is not deallocated. Therefore:
-
-```swift
-deinit {
-    print("Screen deinit")
-}
-```
-
-does not run.
-
-The closure is also never called, so:
-
-```swift
-print(self)
-```
-
-does not run either.
-
-### Fix or redesign
-
-```swift
-final class Screen {
-    var onTap: (() -> Void)?
-
-    deinit {
-        print("Screen deinit")
-    }
-
-    func bind() {
-        onTap = { [weak self] in
-            guard let self else { return }
-            print(self)
-        }
-    }
-}
-
-var screen: Screen? = Screen()
-screen?.bind()
-screen = nil
-```
-
-Output:
-
-```text
-Screen deinit
-```
-
-### Why this fix is correct
-
-`[weak self]` breaks the ownership cycle:
-
-```text
-Screen instance -> onTap closure - - weak - -> Screen instance
-```
-
-The closure no longer keeps the `Screen` alive. When `screen = nil` removes the last strong external reference, the instance can deallocate.
-
-### Alternative fixes and tradeoffs
-
-|Option|When it is appropriate|Tradeoff|
-|---|---|---|
-|`[weak self]`|Closure may outlive the object; UI callbacks; service completions; async work|Requires optional handling; closure may silently no-op|
-|`[unowned self]`|Closure cannot outlive the object by construction|Crashes if lifetime assumption is wrong|
-|Explicit teardown|You have a lifecycle event where callback storage should be cleared|Easy to forget; lifecycle coupling|
-|Avoid stored closure|The callback should not be stateful or long-lived|Requires redesign|
-|Use async/await|The operation is a one-shot async result|Better structure, cancellation, and ownership; needs migration|
-
-Example explicit teardown:
-
-```swift
-final class Screen {
-    var onTap: (() -> Void)?
-
-    func bind() {
-        onTap = { [weak self] in
-            self?.handleTap()
-        }
-    }
-
-    func unbind() {
-        onTap = nil
-    }
-
-    private func handleTap() {}
-}
-```
-
----
-
-## 6. Exercise
-
-### Problem
-
-Diagnose a retain cycle involving a view controller, a service callback, and a stored closure.
-
-### Bad / naive version
-
-```swift
-import UIKit
-
-struct Profile {
-    let name: String
-}
-
-final class ProfileService {
-    var onProfileLoaded: ((Profile) -> Void)?
-
-    func loadProfile() {
-        // Imagine a network request finishes later.
-        onProfileLoaded?(Profile(name: "Blob"))
-    }
-}
-
-@MainActor
-final class ProfileViewController: UIViewController {
-    private let service = ProfileService()
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-
-        service.onProfileLoaded = { profile in
-            self.render(profile)
-        }
-
-        service.loadProfile()
-    }
-
-    private func render(_ profile: Profile) {
-        title = profile.name
-    }
-
-    deinit {
-        print("ProfileViewController deinit")
-    }
-}
-```
-
-### What is wrong?
-
-```text
-ProfileViewController strongly owns ProfileService.
-ProfileService strongly owns onProfileLoaded closure.
-onProfileLoaded closure strongly captures ProfileViewController.
-```
-
-Ownership graph:
-
-```text
-ProfileViewController
-    |
-    | strong
-    v
-ProfileService
-    |
-    | strong
-    v
-closure
-    |
-    | strong capture
-    v
-ProfileViewController
-```
-
-The view controller cannot deallocate.
-
-### Improved version
-
-```swift
-import UIKit
-
-struct Profile {
-    let name: String
-}
-
-final class ProfileService {
-    var onProfileLoaded: ((Profile) -> Void)?
-
-    func loadProfile() {
-        onProfileLoaded?(Profile(name: "Blob"))
-    }
-
-    func cancel() {
-        onProfileLoaded = nil
-    }
-}
-
-@MainActor
-final class ProfileViewController: UIViewController {
-    private let service = ProfileService()
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-
-        service.onProfileLoaded = { [weak self] profile in
-            guard let self else { return }
-            self.render(profile)
-        }
-
-        service.loadProfile()
-    }
-
-    private func render(_ profile: Profile) {
-        title = profile.name
-    }
-
-    deinit {
-        service.cancel()
-        print("ProfileViewController deinit")
-    }
-}
-```
-
-### Why this is better
-
-`[weak self]` breaks the ownership cycle. `service.cancel()` also clears the callback during teardown, which is useful when the service owns resources or could emit later.
-
-However, this is still callback-based. A more modern Swift design for a one-shot request is usually async/await:
-
-```swift
-import UIKit
-
-struct Profile {
-    let name: String
-}
-
-protocol ProfileLoading {
-    func loadProfile() async throws -> Profile
-}
-
-final class LiveProfileService: ProfileLoading {
-    func loadProfile() async throws -> Profile {
-        Profile(name: "Blob")
-    }
-}
-
-@MainActor
-final class ProfileViewController: UIViewController {
-    private let service: ProfileLoading
-    private var loadTask: Task<Void, Never>?
-
-    init(service: ProfileLoading) {
-        self.service = service
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-
-        loadTask = Task { [weak self] in
-            do {
-                let profile = try await service.loadProfile()
-                guard let self else { return }
-                self.render(profile)
-            } catch {
-                guard let self else { return }
-                self.renderError(error)
-            }
-        }
-    }
-
-    private func render(_ profile: Profile) {
-        title = profile.name
-    }
-
-    private func renderError(_ error: Error) {
-        title = "Failed"
-    }
-
-    deinit {
-        loadTask?.cancel()
-    }
-}
-```
-
-This avoids a permanently stored service callback and makes the operation lifecycle explicit.
-
----
-
-## 7. Production guidance
-
-Use closures in production when:
-
-```text
-You need a small behavior parameter.
-You need a callback for a short-lived operation.
-You need lazy/deferred evaluation.
-You need dependency injection without creating a protocol.
-You need to customize an algorithm, such as sorting, mapping, filtering, or event handling.
-```
-
-Be careful when:
-
-```text
-The closure is stored.
-The closure is retained by a long-lived service.
-The closure captures self.
-The closure starts or participates in async work.
-The closure is @Sendable and captures mutable or non-Sendable state.
-The closure hides deferred evaluation through @autoclosure.
-```
-
-Avoid when:
-
-```text
-The closure becomes a hidden lifecycle mechanism.
-The closure stores complex state that should be modeled as a type.
-The closure is used as an implicit delegate replacement without clear ownership.
-The API needs multiple related callbacks that should be an enum, AsyncSequence, delegate, or async function.
-```
-
-Debugging checklist:
-
-```text
-Who owns the closure?
-Does the closure escape?
-Does it capture self?
-Is self captured strongly, weakly, or unowned?
-Can the closure outlive self?
-Is there a cycle: object -> property -> closure -> object?
-Is the closure ever cleared?
-Would async/await model this better?
-Would AsyncSequence model this better?
-Does @Sendable change what captures are legal?
-```
-
-Modern Swift concurrency caveat:
-
-```swift
-func run(_ operation: @escaping @Sendable () async -> Void) {
-    Task {
-        await operation()
-    }
-}
-```
-
-`@Sendable` is separate from `@escaping`, but they often appear together in async APIs. `@Sendable` closures can be called concurrently, so captured values must be safe to access across concurrency domains; Swift compiler diagnostics explicitly warn about unsafe captures in `@Sendable` closures. ([Swift.org, "Sendable Closure Captures"](https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/))
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> Closures are blocks of code. Escaping means they run later. Use weak self to avoid memory leaks.
-
-### Senior answer
-
-> A closure is a reference type that can capture surrounding state. Nonescaping closures are bounded by the callee’s call frame, while escaping closures may be stored or executed later. Once a closure escapes, captured objects can have extended lifetimes, and a stored closure that strongly captures `self` can create a retain cycle. I usually use `[weak self]` for UI and service callbacks that may outlive the owner, and `[unowned self]` only when lifetime is guaranteed.
-
-### Staff-level answer
-
-> I treat closure APIs as ownership APIs. The important questions are: who stores the closure, who owns whom, when is it cleared, and what lifetime does the closure imply for its captures? For one-shot async operations, I prefer `async throws` over stored callbacks. For streams of events, I consider `AsyncSequence` or a delegate with explicit ownership. For UI code, `[weak self]` is usually the correct default because the view controller may disappear. For library code, I avoid forcing clients into hidden retain cycles by documenting callback lifetime, clearing callbacks, and designing APIs that make ownership visible.
-
-Staff-level questions to ask:
-
-```text
-Is this closure a short-lived behavior parameter or a long-lived lifecycle hook?
-Can the closure outlive the object it captures?
-Who clears the closure, and when?
-Would async/await or AsyncSequence express this lifecycle better?
-Does the closure need @Sendable, and are its captures safe under Swift 6 strict concurrency?
-```
-
----
-
-## 9. Interview-ready summary
-
-Closures in Swift are reference types that can capture surrounding state. A nonescaping closure is limited to the duration of the function call that receives it, while an `@escaping` closure may be stored or called later, which extends the lifetime of its captures. Mutable locals are captured as storage, so a closure can preserve and mutate state after the original scope returns. Class instances are strongly captured by default, so a stored closure that references `self` can create a cycle like `object -> closure -> object`. Use `[weak self]` when the closure may outlive the object, and `[unowned self]` only when the object and closure have a guaranteed shared lifetime. `@autoclosure` is a separate feature for delayed expression evaluation and should be used sparingly because it hides when work happens.
-
----
-
-## 10. Flashcards
-
-Q: What is a closure in Swift?
-
-A: A reference type representing callable code, optionally bundled with captured state from its surrounding scope.
-
-Q: What does `@escaping` mean?
-
-A: The closure may outlive the function call that receives it, usually because it is stored, returned, or executed asynchronously.
-
-Q: Are closure parameters escaping by default?
-
-A: No. Closure parameters are nonescaping by default unless marked `@escaping`.
-
-Q: Why does an escaping closure require explicit `self` for class instances?
-
-A: Because it may retain `self` beyond the function call, and explicit `self` forces you to notice possible reference cycles.
-
-Q: What ownership does a closure use when capturing a class instance by default?
-
-A: Strong capture.
-
-Q: What is the classic closure retain cycle?
-
-A: An object strongly owns a closure property, and the closure strongly captures the object.
-
-Q: How does `[weak self]` behave?
-
-A: It captures `self` without retaining it and exposes it as an optional that becomes `nil` after deallocation.
-
-Q: How does `[unowned self]` behave?
-
-A: It captures `self` without retaining it but assumes `self` is alive when accessed; if not, the program traps.
-
-Q: When is `[weak self]` usually correct?
-
-A: UI callbacks, service completions, timers, notifications, and async work where the closure may outlive the object.
-
-Q: When is `[unowned self]` justified?
-
-A: When the closure and object have a structurally guaranteed shared lifetime and the closure cannot run after the object deallocates.
-
-Q: What does capturing a mutable local variable mean?
-
-A: The closure captures variable storage, allowing the value to persist and change across closure calls.
-
-Q: What does `@autoclosure` do?
-
-A: It automatically wraps an expression in a no-argument closure, delaying evaluation until the closure is called.
-
----
-
-## 11. Related sections
+### Related guides
 
 - [[A1 — Value semantics, reference semantics, identity, and copy-on-write]]
 - [[A2 — `let`, `var`, `mutating`, and method semantics]]
+- [[A7 — Functions, Parameter Labels, Defaults, and API Surface]]
+- [[B14 — Result Builders and DSL Construction]]
 - [[C1 — ARC fundamentals]]
+- [[D2 — Task Hierarchy, Cancellation, and Priorities]]
+- [[D5 — Global Actors and `@MainActor`]]
 - [[D6 — `Sendable`, `@Sendable`, and `sending`]]
-- [[D9 — Continuations and bridging callback APIs]]
+- [[D7 — Actor Reentrancy and Logic Races]]
+- [[D9 — Continuations and Bridging Callback APIs]]
 - [[D10 — `AsyncSequence`, Streams, and Backpressure-Aware Design]]
+- [[D11 — Detached Tasks, Task Inheritance, and Isolation Loss]]
 
----
+### Official sources
 
-## 12. Sources
-
-- "Swift Senior/Staff Rubric." A8 closure expectations, caveats, exercise, and code probe.
-- Swift.org. "Closures." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/
-- Swift.org. "Automatic Reference Counting." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/
-- Swift.org. "Sendable Closure Captures." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/
-- Swift.org. "Implicit Strong Capture." Swift Compiler Diagnostics. https://docs.swift.org/compiler/documentation/diagnostics/implicit-strong-capture/
+- [Closures](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/closures/)
+- [SE-0481](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0481-weak-let.md)
+- [Swift: Automatic reference counting](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/automaticreferencecounting/)
+- [SE-0269: Implicit self after explicit capture](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0269-implicit-self-explicit-capture.md)
+- [SE-0365: Implicit self after weak capture unwrapping](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0365-implicit-self-weak-capture.md)
+- [Swift compiler: ImplicitStrongCapture](https://docs.swift.org/compiler/documentation/diagnostics/implicit-strong-capture/)
+- [Swift compiler: Sendable captures](https://docs.swift.org/compiler/documentation/diagnostics/sendable-closure-captures/)

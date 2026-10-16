@@ -6,930 +6,188 @@ tags:
   - type-system
   - api-design
 ---
+
 # B10 — API Design Guidelines and Swift-Native Surface Design
 
-## 0. Rubric snapshot
+**Goal:** Expose a clear public operation with validated domain inputs and explicit outcomes.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Understand naming, argument labels, mutating vs nonmutating APIs, fluent vs explicit style, and minimizing surface area.
+## Mental model
 
-**Caveats**
+An API contract combines call-site meaning, construction, effects, ownership, and isolation. Labels explain roles; distinct domain types reject categories of misuse; validation rejects invalid values inside those categories. Naming should describe actual mutation and cost. Established pairs such as sort/sorted help callers predict behavior. [API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/)
 
-A technically correct API can still be un-Swifty, ambiguous at the call site, and expensive to maintain.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Design a usable boundary
 
-- Why are naming and labels part of correctness in Swift API design?
-- What signs show an API was ported mechanically from another language without adapting to Swift idioms?
+Read realistic client calls, including object construction. A public property or type does not publish a public memberwise initializer. Return a named outcome when callers need different success/failure states, and avoid forcing them to infer policy from primitive values.
 
-**You should be able to do**
+**Common pitfall:** Better labels do not prevent two same-typed IDs being swapped. Use distinct ID types where that mistake matters and validate their domain on construction.
 
-- Review a small SDK API and rewrite three signatures to better fit Swift API Design Guidelines.
+### Make ownership and execution honest
 
----
+Consuming transfers a noncopyable value into the callee; for a copyable value, the caller may preserve it by copying. Async permits suspension and throws describes an error path; neither promises offloading, rollback, or cancellation of external effects.
 
-## 1. Core mental model
+**Common pitfall:** Declaring async throws while silently starting unowned work leaves lifetime and publication undefined. State task ownership and use @concurrent only when leaving the caller's actor is part of the contract.
 
-Swift API design is about **call-site semantics**. A declaration is written once, but every consumer reads the call site repeatedly. The official guidelines make this explicit: clarity at the point of use is the most important goal, and clarity is more important than brevity. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
+## Interview questions
 
-A Swift-native API should read like a small phrase that explains what is happening:
+### Which misuse does a label reveal, which does a distinct ID type reject, and which still needs validation?
 
-```swift
-cache.removeValue(forKey: userID)
-image.resized(to: targetSize)
-try await client.fetchUser(id: userID)
-```
+A label reveals an argument's role to a reader. Distinct types can reject swapped user and document IDs at compile time. Both can still contain an empty or malformed identifier unless construction validates it. These are complementary layers, not substitutes.
 
-The name, base name, argument labels, mutability, return type, and error model together form the API contract. In Swift, labels are not decoration. They disambiguate roles, compensate for weak type information, and prevent accidental misuse.
+### What does consuming mean for a noncopyable draft compared with a copyable value?
 
-The key idea:
+A consuming noncopyable draft transfers ownership and prevents later use of that consumed value. A consuming copyable parameter can receive a copy while the caller retains its own value. Neither says the operation commits atomically or makes referenced payloads deeply unique.
 
-```text
-A Swift API is judged primarily by the clarity and correctness of its use site, not by how compact its declaration looks.
-```
+### How would a separate client expose missing public constructors or accidental isolation requirements?
 
-Swift does **not** guarantee that a legal signature is a good API. This compiles:
+An ordinary separate client must import, construct inputs, and call from its intended isolation context. That exposes internal-only synthesized initializers and accidental MainActor requirements that same-module or testable code can hide. Compile a rejected invalid-input case separately from access failures.
 
-```swift
-func perform(_ a: String, _ b: Bool, _ c: Int)
-```
+## Focused exercise
 
-But the call site is useless:
+**Task:** Rewrite one ambiguous operation with typed inputs and explicit outcomes. Compile an ordinary client and check an invalid-input boundary.
 
-```swift
-perform("abc", true, 3)
-```
+**Acceptance checks:**
 
-A good Swift API makes misuse harder:
+- An ordinary client can construct and call the public surface.
+- Empty identifiers reject; self-follow has an explicit outcome.
+- Argument labels communicate the two user roles.
+
+**Solution:**
+
+Two-module fixture. Core.swift exports validated IDs and a small operation; the client needs an ordinary import, not @testable.
 
 ```swift
-func upload(
-    fileNamed name: String,
-    allowsCellularAccess: Bool,
-    retryLimit: Int
-)
-```
-
----
-
-## 2. Essential mechanics
-
-### 2.1 Optimize for the use site
-
-The guideline is not “make declarations pretty.” It is “make calls clear in context.” The official guidelines say reading a declaration is seldom sufficient; you should examine actual use cases. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
-
-Bad:
-
-```swift
-func resize(_ image: UIImage, _ size: CGSize, _ mode: Int) -> UIImage
-
-resize(image, size, 1)
-```
-
-Better:
-
-```swift
-enum ImageResizeMode {
-    case aspectFit
-    case aspectFill
-    case stretch
-}
-
-func resizedImage(
-    from image: UIImage,
-    to size: CGSize,
-    mode: ImageResizeMode
-) -> UIImage
-
-resizedImage(from: image, to: size, mode: .aspectFit)
-```
-
-Better as a method when there is a natural receiver:
-
-```swift
-extension UIImage {
-    func resized(to size: CGSize, mode: ImageResizeMode) -> UIImage {
-        // implementation
+// Core.swift, module Core
+public struct UserID: Equatable {
+    public let rawValue: String
+    public init?(_ raw: String) {
+        guard !raw.isEmpty else { return nil }
+        rawValue = raw
     }
 }
-
-image.resized(to: size, mode: .aspectFit)
-```
-
-The receiver `image` now carries part of the meaning. The method name and labels carry the rest.
-
----
-
-### 2.2 Labels express parameter roles, not just types
-
-The guidelines say variables, parameters, and associated types should be named according to their roles rather than their type constraints. They also say weakly typed parameters such as `String`, `Int`, `Any`, `AnyObject`, or `NSObject` often need extra clarity. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
-
-Bad:
-
-```swift
-func track(_ string: String, _ string2: String, _ int: Int)
-```
-
-Call site:
-
-```swift
-track("checkout", "button", 3)
-```
-
-Better:
-
-```swift
-func trackEvent(
-    named eventName: String,
-    source: AnalyticsSource,
-    retryLimit: Int
-)
-```
-
-Call site:
-
-```swift
-trackEvent(named: "checkout", source: .button, retryLimit: 3)
-```
-
-Even better if the domain has stronger types:
-
-```swift
-struct EventName: RawRepresentable, Hashable {
-    let rawValue: String
-}
-
-enum AnalyticsSource {
-    case button
-    case deepLink
-    case pushNotification
-}
-
-func trackEvent(
-    named eventName: EventName,
-    source: AnalyticsSource,
-    retryLimit: Int
-)
-```
-
-The senior-level move is not just renaming parameters. It is replacing primitive obsession with domain types when labels alone cannot protect correctness.
-
----
-
-### 2.3 Mutating and nonmutating APIs should be named consistently
-
-The Swift guidelines distinguish side-effecting APIs from value-returning APIs. Side-effecting methods should read as imperative verb phrases, while methods without side effects should generally read as noun phrases. For mutating/nonmutating pairs, Swift convention uses patterns like `sort()` / `sorted()` and `formUnion(_:)` / `union(_:)`. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
-
-Bad:
-
-```swift
-extension Array where Element: Comparable {
-    mutating func sortedInPlace() {
-        sort()
-    }
-
-    func sortCopy() -> [Element] {
-        sorted()
-    }
+public enum FollowOutcome: Equatable { case followed(UserID); case selfFollow }
+public func follow(user target: UserID, as viewer: UserID) -> FollowOutcome {
+    target == viewer ? .selfFollow : .followed(target)
 }
 ```
 
-Better:
-
 ```swift
-var values = [3, 1, 2]
-
-values.sort()          // mutates in place
-let copy = values.sorted() // returns a new value
+// Client.swift
+import Core
+let viewer = UserID("viewer")!
+let target = UserID("target")!
+precondition(follow(user: target, as: viewer) == .followed(target))
+precondition(follow(user: viewer, as: viewer) == .selfFollow)
+precondition(UserID("") == nil)
 ```
 
-For noun-like operations:
+Use A11's separate-module build process. This fixture returns a domain decision; it performs no remote follow request.
+
+**Reasoning:** Both inputs are UserID because they share one domain, while labels distinguish their roles. If the domain has different ID categories, introduce different types. A real network operation would additionally define authentication, cancellation, idempotency, and publication policy.
+
+## In practice
+
+**Choose it when:** Review representative consumer tasks before adding abstraction or overloads.
+
+**Investigate by:** Compile ordinary clients and test the boundary's invalid values and effects.
+
+**Strong evidence:** Weigh caller clarity, ownership, isolation, and migration while demonstrating usable public construction.
+
+### Intentional non-sendability and ownership — optional
+
+- **Counting words instead of examining use.** More labels are not always clearer, and fewer are not always better.
+- **Adding a protocol for every concrete type.** Introduce an abstraction for a real substitution or ownership boundary, not merely to make the declaration look architectural.
+- **Turning every flag into a wrapper with one Boolean.** That wrapper is useful only if it adds a meaningful concept, invariant, or future contract.
+- **Using an options value as a miscellaneous container.** Group related choices, keep required inputs visible, and document defaults as behavior.
+- **Claiming an implementation resizes an image when it only returns the input.** A signature sketch belongs in a protocol or explicitly labeled pseudocode, not under a “working implementation” claim.
+- **Assuming `public` properties provide a public initializer.** A public struct's synthesized memberwise initializer is not automatically public. Exercise the API from another module.
+- **Using a UI singleton in a neutral request's default argument.** Obtain environment-specific scale from the actual UI context and pass the resulting value explicitly; UI access and portable request construction have different isolation requirements.
+
+#### Intentional non-sendability in 6.4
 
 ```swift
-let combined = a.union(b) // nonmutating
-a.formUnion(b)            // mutating
-```
-
-This matters because the name communicates ownership and side effects before the reader inspects the implementation.
-
----
-
-### 2.4 Prefer methods/properties when there is a natural receiver
-
-The guidelines prefer methods and properties over free functions unless there is no obvious `self`, the function is unconstrained generic, or function syntax is established domain notation. ([Swift.org, "API Design Guidelines"](https://swift.org/documentation/api-design-guidelines/))
-
-Bad:
-
-```swift
-func validateEmail(_ email: String) -> Bool
-func normalizeURL(_ url: URL) -> URL
-```
-
-Better:
-
-```swift
-extension EmailAddress {
-    var isValid: Bool { /* ... */ }
+struct LocalOptions: ~Sendable {
+    var retryLimit: Int
 }
 
-extension URL {
-    var normalizedForCaching: URL { /* ... */ }
-}
-```
-
-But do not force everything into extensions. If the operation belongs to a service boundary, a method on a service can be clearer:
-
-```swift
-protocol UserFetching {
-    func user(id: User.ID) async throws -> User
+func copyLocalOptions() -> Int {
+    let original = LocalOptions(retryLimit: 1)
+    var copy = original
+    copy.retryLimit = 3
+    return original.retryLimit + copy.retryLimit
 }
 ```
 
-Not every operation on `URL`, `String`, or `Data` should become an extension. Staff-level judgment is knowing where the semantic owner lives.
-
----
-
-### 2.5 Minimize public surface area
-
-API design is also subtraction. Every public type, overload, default value, behavior, and naming convention becomes something clients learn, depend on, test against, and complain about when changed.
-
-Bad:
+`~Sendable` suppresses inference even though this stored `Int` could otherwise support it. The type remains copyable: the function returns 4. It does not acquire thread affinity, locking, or an actor owner. The following addition to those declarations intentionally fails:
 
 ```swift
-public final class AnalyticsSDK {
-    public func track(_ event: String)
-    public func track(_ event: String, params: [String: Any])
-    public func sendEvent(_ event: String)
-    public func logEvent(_ event: String)
-    public func uploadEvent(_ event: String)
+func requireSendable<T: Sendable>(_ value: T) {}
+
+func rejectedOptions() {
+    requireSendable(LocalOptions(retryLimit: 1))
 }
 ```
 
-Better:
+Use suppression to record an audited API decision, rather than as decoration on every local value. It does not categorically forbid a checked `sending` transfer of a disconnected value. Conditional conformance and subclass rules have additional details in D6. [SE-0518](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0518-tilde-sendable.md)
+
+#### Ownership belongs in the surface when it matters
 
 ```swift
-public protocol AnalyticsTracking: Sendable {
-    func track(_ event: AnalyticsEvent) async
+struct Document: Sendable, Equatable {
+    let title: String
 }
 
-public struct AnalyticsEvent: Sendable, Hashable {
-    public let name: Name
-    public let properties: [PropertyKey: PropertyValue]
-}
-```
+struct Draft: ~Copyable {
+    var title: String
 
-One clear abstraction is better than five synonyms.
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: Treating labels as style instead of semantics
-
-Bad:
-
-```swift
-func schedule(_ date: Date, _ date2: Date, _ bool: Bool)
-```
-
-This is not just ugly. It is unsafe because the call site does not reveal which date is start, which is end, or what the boolean means.
-
-Better:
-
-```swift
-func scheduleMeeting(
-    from startDate: Date,
-    to endDate: Date,
-    sendsReminder: Bool
-)
-```
-
-Even better:
-
-```swift
-struct MeetingReminderPolicy: Sendable, Hashable {
-    var sendsReminder: Bool
+    borrowing func preview() -> String { title }
+    consuming func finalized() -> Document { Document(title: title) }
 }
 
-func scheduleMeeting(
-    from startDate: Date,
-    to endDate: Date,
-    reminderPolicy: MeetingReminderPolicy
-)
-```
-
-### Trap 2: Mechanical Objective-C / Java / Kotlin naming
-
-Bad Swift:
-
-```swift
-func getUserById(_ id: String) async throws -> User
-func setUserName(_ name: String)
-func isUserActive(_ user: User) -> Bool
-```
-
-More Swift-native:
-
-```swift
-func user(id: User.ID) async throws -> User
-var userName: String
-func isActive(_ user: User) -> Bool
-```
-
-`get` is often redundant in Swift when the method simply returns a value. There are exceptions, such as APIs that write into an `inout` or pointer parameter, or domain-specific cases like HTTP GET, but ordinary value-returning APIs usually do not need it.
-
-### Trap 3: Boolean blindness
-
-Bad:
-
-```swift
-client.request("/users", true, false, true)
-```
-
-Better:
-
-```swift
-client.request(
-    .users,
-    cachePolicy: .reloadIgnoringLocalCache,
-    allowsCellularAccess: false,
-    retries: .upTo(3)
-)
-```
-
-A boolean is fine when it reads clearly:
-
-```swift
-view.dismiss(animated: true)
-```
-
-It is not fine when several booleans encode hidden modes.
-
-### Trap 4: Overusing fluent chaining
-
-Bad:
-
-```swift
-request
-    .withUser(id)
-    .withCache(true)
-    .withRetry(3)
-    .withTimeout(10)
-    .execute()
-```
-
-This can hide required configuration, invalid states, order-dependence, and error boundaries.
-
-Better:
-
-```swift
-let request = UserRequest(
-    id: id,
-    cachePolicy: .returnCacheElseLoad,
-    retryPolicy: .upTo(3),
-    timeout: .seconds(10)
-)
-
-let user = try await client.user(for: request)
-```
-
-Fluent APIs are good when each step is truly compositional and order-independent. They are risky when they simulate a mutable builder without modeling required state.
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. Why are naming and labels part of correctness in Swift API design?
-
-Because the call site is where most API correctness is judged. A bad name or missing label can make two valid calls look equally plausible while only one is semantically correct.
-
-Example:
-
-```swift
-func transfer(_ amount: Decimal, _ source: Account, _ destination: Account)
-```
-
-Call site:
-
-```swift
-transfer(100, savings, checking)
-```
-
-This compiles, but the direction is easy to misread.
-
-Better:
-
-```swift
-func transfer(
-    _ amount: Decimal,
-    from source: Account,
-    to destination: Account
-)
-```
-
-Call site:
-
-```swift
-transfer(100, from: savings, to: checking)
-```
-
-The improved API reduces the chance of reversing source and destination.
-
-Interview version:
-
-> Naming and labels are part of correctness in Swift because they carry semantic information at the call site. Swift APIs are read far more often than they are declared, so labels should express roles, side effects, and relationships between arguments. A legal signature can still be a bad API if it makes the correct call hard to distinguish from an incorrect one.
-
----
-
-### Q2. What signs show an API was ported mechanically from another language without adapting to Swift idioms?
-
-Common signs:
-
-```text
-- get/set prefixes for ordinary properties or simple value-returning methods
-- unlabeled positional parameters
-- primitive strings, ints, and booleans where domain types should exist
-- callback-heavy APIs where async/await would be the natural Swift surface
-- ObjC-style naming that repeats type information
-- method names that do not read naturally at the call site
-- large manager classes with many unrelated verbs
-- overexposed public surface area
-- nullable/optional-heavy models instead of enum-based state
-```
-
-Bad:
-
-```swift
-final class UserManager {
-    func getUserById(_ id: String, completion: @escaping (User?, Error?) -> Void)
-    func setUserName(_ name: String)
-    func deleteUserWithId(_ id: String, _ hardDelete: Bool)
+func finalizeDraft() -> Document {
+    let draft = Draft(title: "Notes")
+    _ = draft.preview()
+    return draft.finalized()
 }
 ```
 
-Better:
+Preview borrows; finalization consumes this noncopyable draft. This models an in-memory transition, not publishing or writing a file. Reuse after consumption is rejected. Add this separately to the declarations above:
 
 ```swift
-protocol UserRepository: Sendable {
-    func user(id: User.ID) async throws -> User
-    func updateName(_ name: User.Name, for userID: User.ID) async throws
-    func deleteUser(id: User.ID, mode: UserDeletionMode) async throws
-}
-
-enum UserDeletionMode: Sendable {
-    case soft
-    case permanent
+func reuseDraft() -> String {
+    let draft = Draft(title: "Notes")
+    _ = draft.finalized()
+    return draft.preview() // Expected use-after-consume rejection.
 }
 ```
 
-Interview version:
+The ownership modifiers predate 6.4. A consuming parameter of a copyable type does not automatically impose the same last-use restriction because a copy may satisfy ownership. Use `~Copyable` only when the domain or resource model justifies it. [SE-0377](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md)
 
-> A mechanically ported API usually exposes the source language’s habits instead of Swift’s call-site clarity. I look for `get`/`set` noise, unlabeled parameters, boolean flags, primitive obsession, callback shapes where async/await would be clearer, and names that repeat type information instead of expressing roles. A Swift-native rewrite usually strengthens types, improves labels, chooses properties or methods deliberately, and reduces surface area.
+Swift 6.4's `Ref` and `MutableRef` provide lifetime-bound shared/exclusive access to one value. Prefer ordinary borrowing parameters or `inout` when they express the operation; references become useful when the view itself is part of a generic API. They do not own the referent or make a valid asynchronous escape. In the checked Apple SDK their operations require OS 27; C7/C12 carry the detailed lifetime, exclusivity, and availability probes. [SE-0519](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0519-ref-mutableref-types.md)
 
----
+## References
 
-## 5. Code probe
-
-No rubric code probe is provided for B10. This section uses API review examples instead.
-
-### Minimal example
-
-```swift
-struct ImageProcessor {
-    func resize(_ image: UIImage, _ size: CGSize) -> UIImage {
-        image
-    }
-}
-```
-
-### What happens?
-
-```text
-Compiles successfully.
-No runtime output.
-```
-
-### Why this is still weak API design
-
-The signature is legal, but the call site is not ideal:
-
-```swift
-processor.resize(image, size)
-```
-
-The first argument can be unlabeled if it forms a clear phrase with the base name, but this use site is borderline: `resize image size` does not say whether `size` is a target size, maximum size, minimum size, canvas size, or crop size.
-
-### Redesign
-
-```swift
-struct ImageProcessor {
-    func resizedImage(
-        from image: UIImage,
-        to targetSize: CGSize,
-        contentMode: ImageContentMode
-    ) -> UIImage {
-        image
-    }
-}
-
-enum ImageContentMode {
-    case aspectFit
-    case aspectFill
-    case stretch
-}
-```
-
-Call site:
-
-```swift
-let thumbnail = processor.resizedImage(
-    from: image,
-    to: CGSize(width: 120, height: 120),
-    contentMode: .aspectFill
-)
-```
-
-### Why this fix is correct
-
-The improved signature names the semantic role of each argument. It also replaces a likely future boolean or integer mode with an enum.
-
-### Counterexample
-
-Over-labeling can also be bad:
-
-```swift
-imageProcessor.resizeImage(
-    imageToResize: image,
-    toTargetSize: size,
-    usingImageContentMode: .aspectFit
-)
-```
-
-This is noisy. Swift API design is not “label everything with maximum words.” It is “make the use site clear and concise.”
-
-### Production example
-
-```swift
-public protocol ImageLoading: Sendable {
-    func image(
-        for request: ImageRequest
-    ) async throws -> UIImage
-}
-
-public struct ImageRequest: Sendable, Hashable {
-    public var url: URL
-    public var targetSize: CGSize?
-    public var scale: CGFloat
-    public var cachePolicy: ImageCachePolicy
-
-    public init(
-        url: URL,
-        targetSize: CGSize? = nil,
-        scale: CGFloat = UIScreen.main.scale,
-        cachePolicy: ImageCachePolicy = .returnCacheElseLoad
-    ) {
-        self.url = url
-        self.targetSize = targetSize
-        self.scale = scale
-        self.cachePolicy = cachePolicy
-    }
-}
-```
-
-This API avoids parameter explosion and keeps future evolution easier. Instead of adding overloads for every combination of size, scale, cache policy, priority, and retry behavior, it groups request configuration into a named value.
-
----
-
-## 6. Exercise
-
-### Problem
-
-Review a small SDK API and rewrite three signatures to better fit Swift API Design Guidelines.
-
-### Bad / naive SDK API
-
-```swift
-public final class PaymentSDK {
-    public func getCustomerById(
-        _ id: String,
-        completion: @escaping (Customer?, Error?) -> Void
-    )
-
-    public func createPayment(
-        _ amount: Double,
-        _ currency: String,
-        _ save: Bool,
-        _ metadata: [String: Any]?
-    )
-
-    public func deleteCard(
-        _ cardId: String,
-        _ hardDelete: Bool
-    )
-}
-```
-
-### What is wrong?
-
-```text
-1. getCustomerById carries non-Swift naming and callback-era shape.
-2. String IDs and currency codes are weakly typed.
-3. completion: (Customer?, Error?) allows invalid states:
-   - customer and error both nil
-   - customer and error both non-nil
-4. createPayment has positional parameters and boolean blindness.
-5. amount as Double is risky for money.
-6. metadata: [String: Any]? weakens type safety and sendability.
-7. deleteCard(_:_:)
-   hides the meaning of hardDelete at the call site.
-8. The SDK exposes one large manager class instead of smaller capability-focused abstractions.
-```
-
-### Improved version
-
-```swift
-public protocol CustomerFetching: Sendable {
-    func customer(id: Customer.ID) async throws -> Customer
-}
-
-public protocol PaymentCreating: Sendable {
-    func createPayment(
-        amount: Money,
-        options: PaymentOptions
-    ) async throws -> Payment
-}
-
-public protocol CardDeleting: Sendable {
-    func deleteCard(
-        id: Card.ID,
-        mode: CardDeletionMode
-    ) async throws
-}
-
-public struct Money: Sendable, Hashable {
-    public let minorUnits: Int64
-    public let currency: Currency
-
-    public init(minorUnits: Int64, currency: Currency) {
-        self.minorUnits = minorUnits
-        self.currency = currency
-    }
-}
-
-public struct PaymentOptions: Sendable, Hashable {
-    public var savesPaymentMethod: Bool
-    public var metadata: [PaymentMetadataKey: PaymentMetadataValue]
-
-    public init(
-        savesPaymentMethod: Bool = false,
-        metadata: [PaymentMetadataKey: PaymentMetadataValue] = [:]
-    ) {
-        self.savesPaymentMethod = savesPaymentMethod
-        self.metadata = metadata
-    }
-}
-
-public enum CardDeletionMode: Sendable, Hashable {
-    case detachFromCustomer
-    case permanentlyDelete
-}
-```
-
-### Three rewritten signatures
-
-#### 1. Customer lookup
-
-Bad:
-
-```swift
-func getCustomerById(
-    _ id: String,
-    completion: @escaping (Customer?, Error?) -> Void
-)
-```
-
-Better:
-
-```swift
-func customer(id: Customer.ID) async throws -> Customer
-```
-
-Why:
-
-```text
-- Removes redundant get.
-- Uses a typed ID.
-- Uses async throws instead of invalid optional/error tuple.
-- Reads naturally: customer(id:).
-```
-
-#### 2. Payment creation
-
-Bad:
-
-```swift
-func createPayment(
-    _ amount: Double,
-    _ currency: String,
-    _ save: Bool,
-    _ metadata: [String: Any]?
-)
-```
-
-Better:
-
-```swift
-func createPayment(
-    amount: Money,
-    options: PaymentOptions
-) async throws -> Payment
-```
-
-Why:
-
-```text
-- Avoids Double for money.
-- Avoids positional primitive parameters.
-- Replaces boolean/metadata sprawl with a named options value.
-- Gives the API room to evolve without overload explosion.
-```
-
-#### 3. Card deletion
-
-Bad:
-
-```swift
-func deleteCard(_ cardId: String, _ hardDelete: Bool)
-```
-
-Better:
-
-```swift
-func deleteCard(
-    id: Card.ID,
-    mode: CardDeletionMode
-) async throws
-```
-
-Why:
-
-```text
-- The ID is typed.
-- The deletion behavior is explicit.
-- The call site is self-documenting.
-```
-
-Call site:
-
-```swift
-try await cards.deleteCard(
-    id: cardID,
-    mode: .detachFromCustomer
-)
-```
-
-This is materially safer than:
-
-```swift
-deleteCard("card_123", false)
-```
-
----
-
-## 7. Production guidance
-
-Use this in production when:
-
-```text
-- Designing public SDKs, packages, modules, or app-internal service APIs.
-- Replacing callback-era APIs with async/await.
-- Reviewing PRs that add new public or widely used APIs.
-- Creating domain models for money, IDs, request configuration, analytics, routing, caching, or persistence.
-- Reducing overloads and boolean flags.
-```
-
-Be careful when:
-
-```text
-- A fluent API looks nice but hides required state or ordering constraints.
-- An options object becomes a junk drawer.
-- You add default parameters to public APIs without thinking about source and behavioral compatibility.
-- You expose concrete third-party dependency types in your own API.
-- You use Any, [String: Any], String IDs, Int modes, or Bool flags in public signatures.
-```
-
-Avoid when:
-
-```text
-- You are polishing names while the underlying model is wrong.
-- You are creating protocols for every type without a real abstraction boundary.
-- You are hiding important side effects behind property-looking APIs.
-- You are making call sites short at the cost of semantic clarity.
-```
-
-Debugging checklist:
-
-```text
-At the call site, can I tell what every argument means?
-Could two same-typed arguments be accidentally swapped?
-Does a Bool need to become an enum?
-Does a String/Int need to become a domain type?
-Is this operation naturally a method, property, initializer, or free function?
-Does the name reveal side effects?
-Is mutation obvious?
-Are there too many overloads?
-Can this public surface be smaller?
-Will this API still make sense after adding one more option?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> Swift APIs should have nice names and follow camelCase.
-
-### Senior answer
-
-> Swift API design is about clarity at the call site. I use labels to express parameter roles, avoid boolean blindness, choose mutating and nonmutating names consistently, and prefer domain types over primitive strings and ints.
-
-### Staff-level answer
-
-> Swift API design is a long-term maintenance and correctness problem. I review APIs from the call site, model domain concepts explicitly, reduce invalid states, minimize public surface area, and think about source compatibility before exposing symbols. I also adapt APIs to Swift’s modern idioms: async/await instead of callback tuples, `Sendable` value types where cross-concurrency use is expected, enum modes instead of booleans, and smaller protocols around real capability boundaries.
-
-Staff-level questions to ask:
-
-```text
-What misuse does this signature allow?
-Is this API clear from the call site alone?
-Are we exposing implementation detail or third-party dependency types?
-Can we replace primitive parameters with domain types?
-Should this be async throws, Result, AsyncSequence, or a synchronous value?
-Is this public API small enough to support for years?
-Will adding future options force overload sprawl?
-Does the name communicate mutation, allocation, caching, network access, or side effects?
-```
-
----
-
-## 9. Interview-ready summary
-
-Swift API design is not superficial naming. In Swift, names and labels carry semantic information at the call site, so they directly affect correctness, readability, and maintainability. A good API reads naturally, makes side effects and mutation clear, uses labels to express argument roles, replaces primitive flags with domain types, and keeps the public surface small. At senior/staff level, I would not just rename methods; I would question whether the abstraction, error model, concurrency shape, mutability, and evolution story are right.
-
----
-
-## 10. Flashcards
-
-Q: What is the most important goal of Swift API design?
-
-A: Clarity at the point of use.
-
-Q: Why are argument labels part of correctness?
-
-A: They express semantic roles at the call site and reduce misuse, especially when parameters share weak or identical types.
-
-Q: What is boolean blindness?
-
-A: A call-site problem where `true` or `false` does not explain the behavior being selected.
-
-Q: How should mutating and nonmutating pairs usually be named?
-
-A: Use imperative verbs for mutating methods and `-ed` / `-ing` forms for nonmutating variants, such as `sort()` / `sorted()`.
-
-Q: When should a `Bool` parameter become an enum?
-
-A: When the meaning is not obvious at the call site, when more modes may appear, or when the boolean encodes domain behavior.
-
-Q: What is a sign of mechanically ported API design?
-
-A: `get`/`set` noise, unlabeled positional parameters, primitive flags, callback tuples, and names that repeat type information instead of expressing roles.
-
-Q: Why is minimizing surface area part of API design?
-
-A: Every exposed symbol becomes a maintenance, documentation, testing, and compatibility commitment.
-
-Q: What is better than `[String: Any]` in a public Swift API?
-
-A: A domain-specific value type or typed dictionary, ideally with `Sendable` and `Hashable` when appropriate.
-
----
-
-## 11. Related sections
+### Related guides
 
 - [[A7 — Functions, Parameter Labels, Defaults, and API Surface]]
 - [[A10 — Extensions and Retroactive Modeling]]
 - [[A11 — Access Control]]
-- [[A15 — Type choices - struct, class, enum, protocol, and actor]]
-- [[B7 — Synthesized Conformances and Semantic Correctness]]
+- [[A13 — Error handling and typed throws]]
+- [[B7 — Synthesized conformances and semantic correctness]]
 - [[B11 — Library Evolution and Resilience-Aware API Design]]
+- [[C7 — Ownership modifiers - `borrowing`, `consuming`, and `consume`]]
+- [[C12 — `Span`, `InlineArray`, and modern low-level abstractions]]
 - [[D6 — `Sendable`, `@Sendable`, and `sending`]]
+- [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
+- [[D14 — Approachable Concurrency and Default Isolation]]
 - [[E6 — Import Visibility and Dependency Leakage]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B10: API design guidelines and Swift-native surface design.
-- Swift.org. "API Design Guidelines." https://swift.org/documentation/api-design-guidelines/
+- [API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/)
+- [SE-0518](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0518-tilde-sendable.md)
+- [SE-0377](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md)
+- [SE-0519](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0519-ref-mutableref-types.md)

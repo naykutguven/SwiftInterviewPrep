@@ -7,877 +7,128 @@ tags:
   - actor-isolation
   - swift6
 ---
+
 # D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`
 
-## 0. Rubric snapshot
+**Goal:** Choose an isolated operation or snapshot-based nonisolated helper without bypassing state protection.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Understand when behavior should or should not be isolated, and how to express that safely.
+## Mental model
 
-**Caveats**
+Isolation describes access permission. A nonisolated member opts out of its enclosing actor/global-actor protection and cannot freely read that protected mutable state. An isolated parameter borrows the supplied actor's isolation for the operation. AssumeIsolated asserts an existing executor context; it does not schedule a hop. [Isolated parameters](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md)
 
-Removing isolation just to satisfy the compiler can reintroduce races or make the concurrency model misleading. D8 specifically asks you to reason about `nonisolated`, `isolated` parameters, and `assumeIsolated`.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Prefer a compiler-checked boundary
 
-- What does `nonisolated` mean on a member of an actor or globally isolated type?
-- When is `assumeIsolated` appropriate, and what makes it dangerous?
+Keep state-reading behavior isolated, or pass an independent Sendable snapshot to a pure helper. Synchronous nonisolated code runs on its caller's execution context and can still occupy MainActor with expensive work.
 
-**You should be able to do**
+**Common pitfall:** Removing isolation to satisfy a protocol or suppress a diagnostic can expose protected state. Change the witness/consumer contract or use a snapshot instead of reading through the boundary.
 
-- Given an actor API, identify which helpers can be `nonisolated` because they do not touch isolated state.
+### Use runtime assertions only for established context
 
----
+AssumeIsolated is appropriate at a documented synchronous callback boundary whose executor guarantee is external to the compiler. It checks that assumption and traps when wrong.
 
-## 1. Core mental model
+**Common pitfall:** Main-thread observation alone is not a general proof of arbitrary actor isolation. Use an async actor call or an explicit actor-bound callback when possible. Under this baseline plain nonisolated async follows caller isolation; @concurrent intentionally switches off it.
 
-Actor isolation is Swift’s way of saying:
+## Interview questions
 
-> This mutable state may only be accessed while executing in the actor’s isolation domain.
+### What does `nonisolated` mean on a member of an actor or globally isolated type?
 
-For an `actor`, instance methods and mutable stored properties are actor-isolated by default. That means external callers must cross the actor boundary with `await`, and Swift serializes access to the actor-isolated state.
+It removes that member from the enclosing actor/global-actor isolation contract. A synchronous call can occur without an actor hop but cannot directly use protected mutable state. The annotation is meaningful on that member even though ordinary top-level declarations already default nonisolated.
 
-`nonisolated` does the opposite: it explicitly says a declaration is **not protected by that actor/global actor isolation**. A `nonisolated` member behaves like ordinary code outside the actor. Because it can be called from anywhere synchronously, it cannot touch isolated mutable state. Swift’s own documentation describes nonisolated actor members as executing like code outside the actor, without access to isolated state. ([Swift.org, "Declarations"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/))
+### When is `assumeIsolated` appropriate, and what makes it dangerous?
 
-`isolated` parameters let a free function, closure, or helper temporarily run inside a specific actor’s isolation domain. This is useful when you want to batch multiple operations on the same actor without repeated `await`s. SE-0313 introduced this as part of improved control over actor isolation, generalizing actor isolation beyond only `self`. ([GitHub, "Improved Control over Actor Isolation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md))
+Use it only when an existing callback/executor contract guarantees the required actor but the type system cannot express it. A wrong assumption traps; it does not make cross-actor access safe or dispatch to the actor. Prefer a compiler-expressed isolation requirement whenever available.
 
-`assumeIsolated` is the escape hatch. It says: “I know this synchronous code is already running on this actor’s executor; let me access isolated state synchronously.” Apple documents it as assuming and verifying that the current synchronous execution is on the actor’s serial executor. If that assumption is false, execution stops. ([Apple Developer, "assumeIsolated(_:file:line:)"](https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3afile%3aline%3a%29))
+### Why does a pure synchronous nonisolated helper still occupy its MainActor caller?
 
-The key idea:
+A synchronous helper executes inline in the caller's context. Removing declaration isolation changes access permission, not work placement. If the work is expensive and must leave MainActor, design an async @concurrent boundary with safely transferable inputs/results.
 
-```text
-isolated     = protected by an actor/global actor executor
-nonisolated  = outside that protection; cannot touch isolated state
-isolated T   = this parameter gives synchronous access to that actor's isolated state
-assumeIsolated = runtime-checked escape hatch for legacy synchronous boundaries
-```
+### Why may a function have only one isolated parameter even when a caller passes one actor twice?
 
-Keep this separate from value transfer. `isolated` and `nonisolated` describe where code executes; `sending` and `nonsending` describe whether arguments or results are transferred across isolation boundaries. D6 is the primary reference for `sending`.
+A function has one statically defined isolation domain, so the language permits only one isolated parameter. It cannot validate a declaration by relying on a particular call passing the same actor twice; other callers might pass different instances. Express the operation around one isolated owner.
 
-Swift guarantees data-race prevention around actor-isolated state. It does **not** guarantee your business logic is correct, and it does not make `nonisolated` code safe if you smuggle mutable shared state through it.
+### What does Hashable UnownedTaskExecutor identify, and why does it neither retain the owner nor prove actor isolation? Check OS 27 availability.
 
----
+It identifies an unowned executor reference under its equality/hash contract, available with the checked OS 27 support. It neither retains the actor/executor owner nor proves that current execution is actor-isolated. Use it for scoped diagnostics, not a lifetime owner or replacement for isolation checking.
 
-## 2. Essential mechanics
+## Focused exercise
 
-### 2.1 `nonisolated` on actors
+**Task:** Review an actor helper that reads stored state. Choose an isolated operation or a nonisolated snapshot-based helper and explain an invalid alternative.
 
-A `nonisolated` actor member can be called synchronously without `await`, but it cannot access actor-isolated state.
+**Acceptance checks:**
 
-```swift
-actor ImageCache {
-    let namespace: String
-    private var storage: [String: Int] = [:]
+- The state-reading operation crosses the actor boundary.
+- The nonisolated helper receives independent Int data.
+- A nonisolated member that directly reads count rejects.
 
-    init(namespace: String) {
-        self.namespace = namespace
-    }
+**Solution:**
 
-    nonisolated var displayName: String {
-        "cache:\(namespace)"
-    }
-
-    func store(_ value: Int, for key: String) {
-        storage[key] = value
-    }
-
-    func value(for key: String) -> Int? {
-        storage[key]
-    }
-}
-
-let cache = ImageCache(namespace: "avatars")
-
-// No await needed:
-print(cache.displayName)
-
-// Await needed:
-await cache.store(1, for: "user-1")
-```
-
-`displayName` is safe as `nonisolated` because it only depends on immutable state. `store` and `value(for:)` must remain isolated because they access `storage`.
-
-Bad:
-
-```swift
-actor ImageCache {
-    private var storage: [String: Int] = [:]
-
-    nonisolated var count: Int {
-        storage.count
-    }
-}
-```
-
-Swift 6.2 compiler error:
-
-```text
-error: actor-isolated property 'storage' can not be referenced from a nonisolated context
-```
-
-That error is the point. `count` would be callable from anywhere synchronously, so reading isolated mutable state there would break actor isolation.
-
----
-
-### 2.2 `nonisolated` on globally isolated types
-
-The same idea applies to globally isolated types:
-
-```swift
-import Foundation
-
-@MainActor
-final class ProfileViewModel {
-    private var name = "Aykut"
-
-    nonisolated static func normalize(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    func updateName(_ raw: String) {
-        name = Self.normalize(raw)
-    }
-}
-```
-
-`ProfileViewModel` is `@MainActor`, but `normalize(_:)` does not need UI state or main-actor state. Keeping it `nonisolated` avoids forcing pure string processing onto the main actor.
-
-This matters more in Swift 6.2-era projects because default actor isolation settings can make more code implicitly main-actor isolated. SE-0449 expanded `nonisolated` as a way to cut off global actor inference in more places, implemented in Swift 6.1. ([GitHub, "Allow nonisolated to Prevent Global Actor Inference"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0449-nonisolated-for-global-actor-cutoff.md))
-
-Use this carefully. Marking a helper `nonisolated` is good when the helper is genuinely pure or uses only safe immutable data. It is bad when you are trying to silence a diagnostic without fixing the underlying isolation model.
-
----
-
-### 2.3 `isolated` parameters
-
-An `isolated` actor parameter lets a helper execute in that actor’s isolation domain.
-
-```swift
-actor Ledger {
-    private var balance = 0
-
-    func deposit(_ amount: Int) {
-        balance += amount
-    }
-
-    func currentBalance() -> Int {
-        balance
-    }
-}
-
-func applyBonus(to ledger: isolated Ledger) {
-    ledger.deposit(10)
-}
-```
-
-Calling it from outside the actor still requires `await`:
-
-```swift
-let ledger = Ledger()
-
-await applyBonus(to: ledger)
-print(await ledger.currentBalance())
-```
-
-Output:
-
-```text
-10
-```
-
-Inside `applyBonus(to:)`, `ledger` is isolated, so you can call actor-isolated synchronous members without additional `await`.
-
-This is useful for batching:
-
-```swift
-func applyMonthlyInterest(to ledger: isolated Ledger) {
-    ledger.deposit(10)
-    ledger.deposit(20)
-    ledger.deposit(30)
-}
-```
-
-Without `isolated`, each cross-actor operation would need to be async and could introduce more suspension/interleaving points.
-
-Important limitation: a function can have only one `isolated` parameter. Swift cannot generally execute on two different actor executors at once. SE-0313 explicitly discusses this restriction. ([GitHub, "Improved Control over Actor Isolation"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md))
-
----
-
-### 2.4 `assumeIsolated`
-
-`assumeIsolated` is for synchronous code that is already dynamically executing on an actor’s executor, but where the compiler cannot prove that statically.
-
-Example that works:
+Standalone actor snapshot and explicit opt-out:
 
 ```swift
 actor Store {
-    private var value = 0
-
-    func runLegacyCallbackWhileOnExecutor() {
-        legacySynchronousCallback()
-    }
-
-    nonisolated func legacySynchronousCallback() {
-        assumeIsolated { isolatedSelf in
-            isolatedSelf.value += 1
-        }
-    }
-
-    func get() -> Int {
-        value
-    }
+    private var count = 3
+    func description() -> String { "count: \(count)" }
+    func snapshot() -> Int { count }
+    nonisolated func describe(snapshot: Int) -> String { "count: \(snapshot)" }
 }
-
-let store = Store()
-await store.runLegacyCallbackWhileOnExecutor()
-print(await store.get())
-```
-
-Output:
-
-```text
-1
-```
-
-This works because `legacySynchronousCallback()` is called while already executing on `Store`’s executor.
-
-Bad:
-
-```swift
-let store = Store()
-store.legacySynchronousCallback()
-```
-
-Runtime result:
-
-```text
-Incorrect actor executor assumption; expected 'Store' executor.
-```
-
-The danger is exactly in the name: you are making an assumption. If that assumption is wrong, your program traps. If you overuse it, you are fighting Swift’s isolation model instead of designing with it.
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: “`nonisolated` means thread-safe”
-
-No. `nonisolated` means **not isolated to this actor**.
-
-Bad:
-
-```swift
-actor Cache {
-    private var storage: [String: Int] = [:]
-
-    nonisolated func unsafeCount() -> Int {
-        storage.count
+@main struct Probe {
+    static func main() async {
+        let store = Store()
+        let value = await store.snapshot()
+        let first = await store.description()
+        precondition(store.describe(snapshot: value) == first)
     }
 }
 ```
 
-Better:
+A separate nonisolated func invalid() -> Int { count } inside Store intentionally rejects direct access to its isolated mutable property.
+
+**Reasoning:** Both valid operations can format the same snapshot, but the snapshot may become stale after a later mutation. The helper has no privileged access to live state and makes no offloading or synchronization promise.
+
+## In practice
+
+**Choose it when:** Expose the least isolation permission that preserves the operation's invariant.
+
+**Investigate by:** Identify the protected state, call context, and any external executor guarantee.
+
+**Strong evidence:** Keep boundaries compiler-checked and justify any runtime assertion with documented integration evidence.
+
+### Executor identity diagnostics — optional
+
+#### Swift 6.4 executor identity at specialist depth
+
+UnownedTaskExecutor is Hashable in the checked OS 27 library, so it can key a set or dictionary:
 
 ```swift
-actor Cache {
-    private var storage: [String: Int] = [:]
-
-    func count() -> Int {
-        storage.count
-    }
+@available(anyAppleOS 27.0, *)
+func distinctExecutors(_ executors: [UnownedTaskExecutor]) -> Int {
+    Set(executors).count
 }
 ```
 
-If the value depends on actor-isolated mutable state, keep it isolated.
+Hashing follows task-executor identity. Keep the owning executors alive while using their unowned handles; keys do not establish ownership or actor isolation. A task executor is not interchangeable with an actor's serial executor, and equality is not permission to call assumeIsolated. Do not persist hashValue as an identifier. This is a scheduling/resource-indexing tool for specialized infrastructure, not a normal UI isolation technique. [SE-0523](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0523-hashable-unownedtask-executor.md)
 
----
+## References
 
-### Trap 2: Marking helpers `@MainActor` because they are used by UI
+### Related guides
 
-This is unnecessary isolation:
-
-```swift
-@MainActor
-func normalizedSearchQuery(_ raw: String) -> String {
-    raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-}
-```
-
-Better:
-
-```swift
-nonisolated func normalizedSearchQuery(_ raw: String) -> String {
-    raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-}
-```
-
-A pure helper should not require the main actor merely because a view model calls it.
-
----
-
-### Trap 3: Using `assumeIsolated` as a compiler silencer
-
-Bad smell:
-
-```swift
-nonisolated func updateFromLegacyCallback() {
-    MainActor.assumeIsolated {
-        // mutate UI state
-    }
-}
-```
-
-This is only correct if the callback is **guaranteed** to run on the main actor’s executor. A legacy API saying “called on main thread” is not always the same as Swift’s actor executor model, especially around older Objective-C and callback-based APIs.
-
-Better default:
-
-```swift
-func updateFromCallback() {
-    Task { @MainActor in
-        // mutate UI state
-    }
-}
-```
-
-Use `assumeIsolated` only when you have a narrow, audited synchronous boundary and can prove the executor assumption.
-
----
-
-### Trap 4: Making protocol conformance work by removing isolation incorrectly
-
-Example:
-
-```swift
-protocol Displayable {
-    var displayName: String { get }
-}
-
-actor UserStore: Displayable {
-    private var users: [String] = []
-
-    var displayName: String {
-        "Users: \(users.count)"
-    }
-}
-```
-
-This fails because a synchronous protocol requirement cannot safely read actor-isolated mutable state.
-
-Bad “fix”:
-
-```swift
-nonisolated var displayName: String {
-    "Users: \(users.count)" // illegal
-}
-```
-
-Correct options:
-
-```swift
-protocol AsyncDisplayable {
-    var displayName: String { get async }
-}
-```
-
-or use immutable nonisolated data:
-
-```swift
-actor UserStore: Displayable {
-    nonisolated let displayName: String
-
-    private var users: [String] = []
-
-    init(displayName: String) {
-        self.displayName = displayName
-    }
-}
-```
-
-The design decision is semantic: does the property represent stable identity/metadata, or live isolated state?
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What does `nonisolated` mean on a member of an actor or globally isolated type?
-
-`nonisolated` means the declaration is not part of the actor/global actor isolation domain. It can be called without `await`, but it cannot access isolated mutable state.
-
-For an actor:
-
-```swift
-actor SessionStore {
-    nonisolated let namespace: String
-    private var token: String?
-
-    init(namespace: String) {
-        self.namespace = namespace
-    }
-
-    nonisolated var debugName: String {
-        "SessionStore(\(namespace))"
-    }
-
-    func updateToken(_ token: String) {
-        self.token = token
-    }
-}
-```
-
-`debugName` is safe as `nonisolated`. `updateToken(_:)` is not, because it mutates isolated state.
-
-For a globally isolated type:
-
-```swift
-@MainActor
-final class SearchViewModel {
-    private var query = ""
-
-    nonisolated static func sanitize(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    func updateQuery(_ raw: String) {
-        query = Self.sanitize(raw)
-    }
-}
-```
-
-`sanitize(_:)` does not need main-actor isolation.
-
-Interview version:
-
-> `nonisolated` removes a declaration from the surrounding actor or global actor isolation. That makes it synchronously callable from any context, so Swift prevents it from touching isolated state. I use it for pure helpers, immutable metadata, stable identity, or synchronous protocol requirements that can be satisfied without actor state. I avoid it when the value depends on mutable actor-isolated state.
-
----
-
-### Q2. When is `assumeIsolated` appropriate, and what makes it dangerous?
-
-`assumeIsolated` is appropriate at narrow legacy or callback boundaries where execution is already on the correct actor executor, but the compiler cannot prove it.
-
-Appropriate shape:
-
-```swift
-actor Parser {
-    private var events: [String] = []
-
-    func handleLegacyEventSynchronously(_ event: String) {
-        legacyCallback(event)
-    }
-
-    nonisolated private func legacyCallback(_ event: String) {
-        assumeIsolated { isolatedSelf in
-            isolatedSelf.events.append(event)
-        }
-    }
-}
-```
-
-Dangerous shape:
-
-```swift
-nonisolated func calledFromAnywhere() {
-    assumeIsolated { isolatedSelf in
-        isolatedSelf.mutateState()
-    }
-}
-```
-
-The second version is dangerous because callers can invoke it from outside the actor executor. Then the assumption is false and the program traps. Apple documents `assumeIsolated` as verifying that the current synchronous function is executing on the actor’s serial executor. ([Apple Developer, "assumeIsolated(_:file:line:)"](https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3afile%3aline%3a%29))
-
-Interview version:
-
-> `assumeIsolated` is a runtime-checked bridge for synchronous code that is already executing on an actor executor but cannot express that statically. It is appropriate for small audited interop boundaries. It is dangerous because the compiler stops protecting you at that point; if the executor assumption is wrong, you trap, and if the assumption is casually applied, the codebase loses clear isolation semantics.
-
----
-
-## 5. Code probe
-
-The rubric has no D8 code probe, so use these minimal probes instead.
-
-### Probe A — valid `nonisolated`
-
-Given:
-
-```swift
-actor ImageCache {
-    let namespace: String
-
-    init(namespace: String) {
-        self.namespace = namespace
-    }
-
-    nonisolated var displayName: String {
-        "cache:\(namespace)"
-    }
-}
-
-let cache = ImageCache(namespace: "avatars")
-print(cache.displayName)
-```
-
-What happens?
-
-```text
-cache:avatars
-```
-
-Why?
-
-`displayName` only reads immutable actor state. It does not touch isolated mutable state, so Swift allows it to be `nonisolated` and callable without `await`.
-
----
-
-### Probe B — invalid `nonisolated`
-
-Given:
-
-```swift
-actor ImageCache {
-    private var storage: [String: Int] = [:]
-
-    nonisolated func count() -> Int {
-        storage.count
-    }
-}
-```
-
-Swift 6.2 compiler error:
-
-```text
-error: actor-isolated property 'storage' can not be referenced from a nonisolated context
-```
-
-Why?
-
-`storage` is actor-isolated mutable state. A `nonisolated` function can be called from any context synchronously, so Swift cannot allow it to read `storage`.
-
-Fix:
-
-```swift
-actor ImageCache {
-    private var storage: [String: Int] = [:]
-
-    func count() -> Int {
-        storage.count
-    }
-}
-```
-
-Call site:
-
-```swift
-let count = await cache.count()
-```
-
----
-
-### Probe C — `isolated` parameter
-
-Given:
-
-```swift
-actor Ledger {
-    private var balance = 0
-
-    func deposit(_ amount: Int) {
-        balance += amount
-    }
-
-    func currentBalance() -> Int {
-        balance
-    }
-}
-
-func applyBonus(to ledger: isolated Ledger) {
-    ledger.deposit(10)
-}
-
-let ledger = Ledger()
-await applyBonus(to: ledger)
-print(await ledger.currentBalance())
-```
-
-Output:
-
-```text
-10
-```
-
-Why?
-
-`applyBonus(to:)` executes with `ledger` isolated. Inside the function, `ledger.deposit(10)` is a synchronous actor-isolated call. The caller still crosses into that actor domain with `await`.
-
----
-
-### Alternative fixes and tradeoffs
-
-|Option|When appropriate|Tradeoff|
-|---|---|---|
-|Keep member isolated|Member reads/writes actor mutable state|Requires `await` from outside|
-|Mark member `nonisolated`|Pure helper, immutable metadata, stable identity|Cannot access isolated state|
-|Use `isolated` parameter|Batch multiple operations on one actor|Function becomes tied to that actor isolation|
-|Use `assumeIsolated`|Narrow audited synchronous interop boundary|Runtime trap if assumption is wrong|
-|Redesign protocol as async|Requirement depends on isolated state|Protocol becomes async and affects callers|
-
----
-
-## 6. Exercise
-
-### Problem
-
-Given an actor API, identify which helpers can be `nonisolated` because they do not touch isolated state.
-
-### Bad / naive version
-
-```swift
-import Foundation
-
-actor AvatarCache {
-    private let namespace: String
-    private var images: [String: Data] = [:]
-
-    init(namespace: String) {
-        self.namespace = namespace
-    }
-
-    func cacheKey(for userID: String, size: Int) -> String {
-        "\(namespace):\(userID):\(size)"
-    }
-
-    func normalizedUserID(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    func store(_ data: Data, userID: String, size: Int) {
-        let key = cacheKey(for: userID, size: size)
-        images[key] = data
-    }
-
-    func image(userID: String, size: Int) -> Data? {
-        let key = cacheKey(for: userID, size: size)
-        return images[key]
-    }
-
-    func count() -> Int {
-        images.count
-    }
-}
-```
-
-### What is wrong?
-
-```text
-cacheKey(for:size:) depends only on immutable namespace.
-normalizedUserID(_:) is pure.
-Both are unnecessarily actor-isolated.
-store(_:userID:size:), image(userID:size:), and count() touch mutable isolated state and should stay isolated.
-```
-
-The naive design serializes pure work through the actor executor. That is not a data race, but it is unnecessary coupling and can make call sites awkward.
-
-### Improved version
-
-```swift
-import Foundation
-
-actor AvatarCache {
-    nonisolated let namespace: String
-    private var images: [String: Data] = [:]
-
-    init(namespace: String) {
-        self.namespace = namespace
-    }
-
-    nonisolated func cacheKey(for userID: String, size: Int) -> String {
-        "\(namespace):\(Self.normalizedUserID(userID)):\(size)"
-    }
-
-    nonisolated static func normalizedUserID(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
-
-    func store(_ data: Data, userID: String, size: Int) {
-        let key = cacheKey(for: userID, size: size)
-        images[key] = data
-    }
-
-    func image(userID: String, size: Int) -> Data? {
-        let key = cacheKey(for: userID, size: size)
-        return images[key]
-    }
-
-    func count() -> Int {
-        images.count
-    }
-}
-```
-
-### Why this is better
-
-`namespace`, `cacheKey(for:size:)`, and `normalizedUserID(_:)` are safe to call from anywhere. They do not need actor serialization.
-
-The mutable dictionary remains protected:
-
-```swift
-await cache.store(data, userID: " Aykut ", size: 128)
-let image = await cache.image(userID: "aykut", size: 128)
-let count = await cache.count()
-```
-
-This design communicates the real concurrency boundary:
-
-```text
-Pure/key-generation logic: nonisolated
-Mutable cache storage: actor-isolated
-```
-
-That is the production-level habit: isolate state, not every helper that happens to live near the state.
-
----
-
-## 7. Production guidance
-
-Use `nonisolated` when:
-
-```text
-- The member is pure.
-- The member reads only immutable Sendable state.
-- The member represents stable identity or metadata.
-- A synchronous protocol requirement can be satisfied without isolated state.
-- A helper is inside a @MainActor type but does not need UI/main-actor state.
-```
-
-Be careful when:
-
-```text
-- The member reads reference-typed storage.
-- The member returns a non-Sendable value.
-- The member exists only to satisfy a protocol.
-- The type is globally isolated because of Swift 6.2 default isolation settings.
-- You are tempted to add nonisolated just because the compiler asked for await.
-```
-
-Avoid when:
-
-```text
-- The member reads or writes actor mutable state.
-- The result must reflect live actor state.
-- The method starts unstructured work to get back into the actor.
-- You cannot explain why synchronous cross-isolation access is safe.
-```
-
-Use `isolated` parameters when:
-
-```text
-- A helper needs to perform multiple synchronous operations on one actor.
-- You want to reduce repeated await points.
-- The helper semantically belongs to one actor’s isolation domain but is better expressed outside the actor type.
-```
-
-Use `assumeIsolated` only when:
-
-```text
-- You are at a narrow synchronous legacy boundary.
-- You can prove the current execution is already on the actor executor.
-- The runtime trap is acceptable if the assumption is violated.
-- The call is documented and covered by tests or assertions.
-```
-
-Debugging checklist:
-
-```text
-1. Is this code isolated, nonisolated, or globally isolated?
-2. Does this member touch mutable actor state?
-3. Is this await crossing an actor boundary or merely calling async work?
-4. Is a protocol forcing a synchronous requirement onto actor state?
-5. Is nonisolated being used for clarity or as a diagnostic silencer?
-6. Could a pure helper be moved outside the actor instead?
-7. Is assumeIsolated backed by a real executor guarantee?
-8. Is the diagnostic about where code executes, or about a value being sent across a boundary? If it is value transfer, check D6's `sending` model.
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> `nonisolated` lets actor methods be called without `await`.
-
-This is incomplete. It misses the safety restriction and design implications.
-
-### Senior answer
-
-> `nonisolated` removes a member from actor isolation. It can be called synchronously, but it cannot access isolated mutable state. I use it for pure helpers, immutable metadata, and protocol requirements that do not depend on actor state. I keep anything that reads or writes mutable actor state isolated.
-
-### Staff-level answer
-
-> Isolation annotations are API design. I want the isolation boundary to match the ownership boundary of mutable state. I avoid actor-isolating pure helpers because it creates unnecessary serialization and awkward call sites, but I also avoid removing isolation to satisfy the compiler. For legacy synchronous APIs, I prefer redesigning toward async or actor-aware APIs; `assumeIsolated` is only for narrow audited bridges where the executor guarantee is real. When reviewing a Swift 6 migration, I look for accidental `@MainActor` spread, protocol conformance mismatches, and `nonisolated` annotations that are hiding shared mutable state rather than clarifying it.
-
-Staff-level questions to ask:
-
-```text
-Is this type isolated because of real mutable state, or because isolation leaked through annotations?
-Does this helper belong inside the actor, or should it be a pure free function/static function?
-Is this synchronous protocol requirement compatible with actor isolation?
-Would an async requirement better express the true dependency on actor state?
-Are we using assumeIsolated because of a proven executor guarantee or because migration is painful?
-```
-
----
-
-## 9. Interview-ready summary
-
-`nonisolated` means a declaration is outside the actor or global actor isolation domain, so it is synchronously callable but cannot touch isolated mutable state. `isolated` parameters let a helper run in a specific actor’s isolation domain, which is useful for batching operations without repeated `await`s. `assumeIsolated` is a runtime-checked escape hatch for synchronous legacy boundaries where you can prove you are already on the actor executor. The senior-level judgment is to isolate mutable state, keep pure helpers nonisolated, and never remove isolation just to silence Swift 6 diagnostics.
-
----
-
-## 10. Flashcards
-
-Q: What does `nonisolated` mean on an actor member?  
-A: The member is not actor-isolated. It can be called without `await`, but it cannot access actor-isolated mutable state.
-
-Q: Can a `nonisolated` actor method read a `var` stored property?  
-A: No, not if that property is actor-isolated. Swift rejects it because the method can run outside the actor executor.
-
-Q: What is a good use of `nonisolated`?  
-A: Pure helpers, immutable metadata, stable identity, or synchronous protocol requirements that do not depend on actor-isolated state.
-
-Q: What does an `isolated` parameter do?  
-A: It makes the function execute in that actor parameter’s isolation domain, allowing synchronous access to that actor’s isolated members inside the function.
-
-Q: Why can a function have only one `isolated` parameter?  
-A: Swift generally cannot execute on two different actor executors at the same time.
-
-Q: What is `assumeIsolated` for?  
-A: A narrow runtime-checked bridge where synchronous code is already executing on the actor executor but the compiler cannot prove it.
-
-Q: What happens if `assumeIsolated` is wrong?  
-A: The program stops execution because the executor assumption fails.
-
-Q: Why is adding `nonisolated` to silence compiler errors dangerous?  
-A: It may remove the isolation that was protecting mutable state, or make the API imply synchronous safety that does not exist.
-
----
-
-## 11. Related sections
-
-- [[D4 — Actors and actor isolation]]
-- [[D5 — Global actors and `@MainActor`]]
+- [[D4 — Actors and Actor Isolation]]
+- [[D5 — Global Actors and `@MainActor`]]
 - [[D6 — `Sendable`, `@Sendable`, and `sending`]]
-- [[D7 — Actor reentrancy and logic races]]
-- [[D11 — Detached tasks, task inheritance, and isolation loss]]
-- [[D13 — Swift 6 strict concurrency migration]]
-- [[D14 — Swift 6.2 approachable concurrency and new defaults]]
+- [[D7 — Actor Reentrancy and Logic Races]]
+- [[D11 — Detached Tasks, Task Inheritance, and Isolation Loss]]
+- [[D13 — Swift 6 Strict Concurrency Migration]]
+- [[D14 — Approachable Concurrency and Default Isolation]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D8 — Isolation control.
-- GitHub. "Improved Control over Actor Isolation." Swift Evolution SE-0313. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md
-- Swift.org. "Declarations." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/
-- Apple Developer. "assumeIsolated(_:file:line:)." Apple Developer Documentation. https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3afile%3aline%3a%29
-- GitHub. "Allow nonisolated to Prevent Global Actor Inference." Swift Evolution SE-0449. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0449-nonisolated-for-global-actor-cutoff.md
+- [Isolated parameters](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md)
+- [SE-0523](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0523-hashable-unownedtask-executor.md)
+- [Swift.org. "Declarations." The Swift Programming Language](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/declarations/)
+- [Apple Developer. "assumeIsolated(_:file:line:)." Apple Developer Documentation](https://developer.apple.com/documentation/swift/actor/assumeisolated%28_%3afile%3aline%3a%29)
+- [GitHub. "Allow nonisolated to Prevent Global Actor Inference." Swift Evolution SE-0449](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0449-nonisolated-for-global-actor-cutoff.md)
+- [SE-0461 — Async function isolation](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md)

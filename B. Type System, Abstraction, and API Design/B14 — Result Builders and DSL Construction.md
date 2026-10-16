@@ -8,891 +8,236 @@ tags:
   - result-builders
   - dsl
 ---
+
 # B14 — Result Builders and DSL Construction
 
-## 0. Rubric snapshot
+**Goal:** Build a small ordered list DSL and identify the transformations required for an optional branch.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Understand how result builders transform syntax and why they are useful for declarative APIs. The rubric calls out B14 as a senior-level topic in Type System, Abstraction, and API Design.
+## Mental model
 
-**Caveats**
+A result builder transforms selected bodies into calls to static builder methods. Expressions produce components, control-flow hooks combine alternatives, and a final conversion may produce another result type. The expressions and generated calls still execute at runtime. Builder syntax alone does not establish purity, lazy evaluation, isolation, or Sendable safety. [SE-0289](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md)
 
-Result builders can create cryptic type-checking failures and hide control-flow semantics from readers.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Define expression and component types explicitly
 
-- What problem does a result builder solve better than plain closures?
-- What are the readability and compile-time costs of overusing builders?
+A builder can turn String expressions into [String] components, combine them, and map an absent branch to an empty component. A helper returning several values also needs a supported expression conversion. buildArray handles loop-produced components, not arbitrary array expressions automatically.
 
-**You should be able to do**
+**Common pitfall:** Adding a for loop without buildArray or a branch without the required hook fails because the transform has no operation for that syntax. Add only the language constructs the DSL should support.
 
-- Design a tiny builder-based DSL and explain whether it is actually better than an array of closures or plain structs.
+### Justify the DSL boundary
 
----
+A builder helps nested structural composition; a flat array of meaningful values is often clearer. Changes to accepted expressions, overloads, and combination hooks can alter client inference and source compatibility.
 
-## 1. Core mental model
+**Common pitfall:** Assuming Swift 6.4 supplies a universal ArrayBuilder confuses parsing with APIs. The new array-expression trailing-closure syntax still requires a matching initializer; see [[A14 — Operators, Literals, and Language Affordances]].
 
-A result builder is a compile-time transformation for a closure or function body. It lets a sequence of expressions inside a block be collected into a single result value. The feature was formalized by SE-0289 and implemented in Swift 5.4. The proposal describes result builders as a way for specially annotated functions or closures to “implicitly build up a result value from a sequence of components.” ([GitHub, "Result Builders"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md))
+## Interview questions
 
-The important part: the syntax still looks like Swift. A builder does not create a new runtime language. It rewrites selected statements into calls like `buildExpression`, `buildBlock`, `buildOptional`, `buildEither`, and `buildArray`. SE-0289 explicitly frames this as a limited transformation that preserves the dynamic semantics of the original code. ([GitHub, "Result Builders"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md))
+### Which hooks transform a list expression, an optional branch, a for-in loop, and the final result?
 
-In normal Swift, a closure has one return value. A result builder lets many expression statements contribute to that return value. That is why SwiftUI can let you write:
+buildExpression converts each supported expression to a component; buildOptional handles an if without else; buildArray combines loop results; buildFinalResult optionally converts the combined component to the declared result. buildBlock or partial-block methods combine ordered components. Each hook has a separate role.
 
-```swift
-VStack {
-    Text("Title")
-    Text("Subtitle")
-}
-```
+### Why does an explicit return of the required array compile, and when does the compiler warn that the builder is disabled?
 
-instead of manually constructing a tuple, array, or nested tree. Apple’s `ViewBuilder` is itself a `@resultBuilder`, and Apple describes it as a custom parameter attribute that constructs views from closures. ([Apple Developer, "ViewBuilder"](https://developer.apple.com/documentation/swiftui/viewbuilder))
+An explicit return can disable builder transformation and return the required array directly. The compiler can warn when a declared builder attribute is effectively bypassed by that return. A type-correct explicit return is therefore not evidence that every builder hook was used.
 
-The key idea:
+### What must exist for [String] { ... } to type-check, and what changed from the older .init spelling?
 
-```text
-Builder block syntax -> compiler transform -> builder method calls -> one final result value
-```
+Array must have an applicable initializer accepting that trailing closure with the intended builder attribute. Swift 6.4 permits the expression syntax to parse without the older .init spelling in the supported situation; it does not add the initializer or builder implementation.
 
-Result builders are best when the domain is naturally declarative and structural: UI trees, HTML/XML trees, routes, menus, command lists, validation rules, layout descriptions, test scenarios, or query definitions. Apple’s WWDC21 DSL session describes result builders as one of the main Swift features for embedded DSLs, especially when a DSL gathers values and builds a tree or structure from them. ([Apple Developer, "Write a DSL in Swift Using Result Builders"](https://developer.apple.com/videos/play/wwdc2021/10253/))
+### When are a plain array or model constructors clearer, and which builder changes could break a client's source?
 
-They are bad when they merely hide ordinary imperative code. If the reader has to reverse-engineer what `if`, `for`, variables, side effects, and overloads mean in your builder, the DSL is probably too clever.
+Use plain arrays or model constructors when they already show the domain clearly. Builder hook, overload, component, or expression-conversion changes can break source or change inference. Evaluate the maintenance and diagnostic cost before choosing a DSL.
 
----
+## Focused exercise
 
-## 2. Essential mechanics
+**Task:** Build a small list DSL supporting expressions and an optional branch. Check empty input and output order, then compare plain array construction.
 
-### 2.1 A result builder is a type with static builder methods
+**Acceptance checks:**
 
-At minimum, a result builder type needs enough methods for the syntax you want to support. The Swift language reference says a result builder must implement either `buildBlock(_:)` or both `buildPartialBlock(first:)` and `buildPartialBlock(accumulated:next:)`. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
+- Empty input produces an empty list.
+- Optional inclusion preserves output order.
+- The same result can be expressed with a plain array and conditional append.
+
+**Solution:**
+
+Standalone ordered list builder:
 
 ```swift
 @resultBuilder
-enum StringListBuilder {
-    static func buildExpression(_ expression: String) -> [String] {
-        [expression]
-    }
-
-    static func buildBlock(_ components: [String]...) -> [String] {
-        components.flatMap { $0 }
+struct ListBuilder {
+    static func buildExpression(_ value: String) -> [String] { [value] }
+    static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
+    static func buildOptional(_ part: [String]?) -> [String] { part ?? [] }
+}
+func list(@ListBuilder _ body: () -> [String]) -> [String] { body() }
+func make(include: Bool) -> [String] {
+    list {
+        "first"
+        if include { "optional" }
+        "last"
     }
 }
+precondition(list {} == [])
+precondition(make(include: false) == ["first", "last"])
+precondition(make(include: true) == ["first", "optional", "last"])
+```
 
-func makeList(@StringListBuilder _ content: () -> [String]) -> [String] {
+**Reasoning:** String is the expression type and [String] is the component and result type. buildOptional supplies an empty component for the absent branch. The closure executes when list calls it; the builder does not make it a stored or asynchronous description.
+
+## In practice
+
+**Choose it when:** Nested composition becomes clearer and supported control flow is worth the API cost.
+
+**Investigate by:** Reduce a diagnostic to expression conversion, combination, branch, or final-result types.
+
+**Strong evidence:** Compare the DSL against plain construction and test client inference before changing hooks.
+
+### Partial blocks and syntax boundaries — optional
+
+#### Partial blocks and final conversion
+
+```swift
+@resultBuilder
+enum SumBuilder {
+    static func buildExpression(_ value: Int) -> Int { value }
+    static func buildBlock() -> Int { 0 }
+    static func buildBlock(_ values: Int...) -> Int { -1 }
+    static func buildPartialBlock(first: Int) -> Int { first }
+    static func buildPartialBlock(accumulated: Int, next: Int) -> Int {
+        accumulated + next
+    }
+    static func buildFinalResult(_ value: Int) -> String { "total=\(value)" }
+}
+
+func total(@SumBuilder _ content: () -> String) -> String {
     content()
 }
-
-let values = makeList {
-    "A"
-    "B"
-    "C"
-}
-
-print(values)
 ```
 
-Output:
+`total {}` returns `"total=0"`; `total { 1; 2; 3 }` returns `"total=6"`. The deliberately recognizable -1 overload is not selected for the nonempty block: the available partial-block pair takes precedence. These methods combine already-produced components; they do not imply that later expression evaluation waits for each accumulation step. A temporary trace checks that ordering. [SE-0348](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0348-buildpartialblock.md)
 
-```text
-["A", "B", "C"]
-```
+Partial blocks can reduce fixed-arity overload families. They are not an automatic complexity improvement: repeatedly concatenating an ever-growing array can still copy substantial data. This sum example makes no benchmark claim and follows ordinary Int overflow behavior.
 
-Conceptually, the compiler rewrites the builder body roughly like this:
-
-```swift
-let v0 = StringListBuilder.buildExpression("A")
-let v1 = StringListBuilder.buildExpression("B")
-let v2 = StringListBuilder.buildExpression("C")
-return StringListBuilder.buildBlock(v0, v1, v2)
-```
-
-Not exactly source-generated Swift, but this is the right mental model.
-
----
-
-### 2.2 Control flow only works if the builder supports it
-
-Builder syntax support is opt-in through static methods:
+A pack-based alternative preserves heterogeneous positions:
 
 ```swift
 @resultBuilder
-enum StringListBuilder {
-    static func buildExpression(_ expression: String) -> [String] {
-        [expression]
-    }
-
-    static func buildBlock(_ components: [String]...) -> [String] {
-        components.flatMap { $0 }
-    }
-
-    static func buildOptional(_ component: [String]?) -> [String] {
-        component ?? []
-    }
-
-    static func buildEither(first component: [String]) -> [String] {
-        component
-    }
-
-    static func buildEither(second component: [String]) -> [String] {
-        component
-    }
-
-    static func buildArray(_ components: [[String]]) -> [String] {
-        components.flatMap { $0 }
-    }
-}
-```
-
-These unlock common syntax:
-
-```swift
-let isAdmin = true
-let names = ["Aykut", "Emma"]
-
-let result = makeList {
-    "Users"
-
-    if isAdmin {
-        "Admin"
-    }
-
-    for name in names {
-        name
+enum TupleBuilder {
+    static func buildBlock<each Value>(
+        _ values: repeat each Value
+    ) -> (repeat each Value) {
+        (repeat each values)
     }
 }
 
-print(result)
-```
-
-Output:
-
-```text
-["Users", "Admin", "Aykut", "Emma"]
-```
-
-The `if` still runs like an `if`. The `for` still loops normally. The builder does not virtualize control flow. It collects produced values.
-
----
-
-### 2.3 Builder blocks are not arbitrary imperative closures
-
-You cannot always write whatever you would write in a normal closure. The builder controls what statements are valid.
-
-Example without `buildArray(_:)`:
-
-```swift
-@resultBuilder
-enum StringListBuilder {
-    static func buildExpression(_ expression: String) -> [String] { [expression] }
-    static func buildBlock(_ components: [String]...) -> [String] { components.flatMap { $0 } }
-}
-
-func make(@StringListBuilder _ content: () -> [String]) -> [String] {
+func makeTuple<Value>(@TupleBuilder _ content: () -> Value) -> Value {
     content()
 }
-
-let values = ["A", "B"]
-
-let result = make {
-    for value in values {
-        value
-    }
-}
 ```
 
-Compiler error with Swift 6.2.1:
+`makeTuple {}` can produce Void, `makeTuple { 42 }` produces Int, and `makeTuple { 1; "a"; true }` produces `(Int, String, Bool)`. It supports neither arbitrary runtime arity nor control-flow forms without their hooks. See B12 for pack inference, shape, and ownership limits.
 
-```text
-no_build_array.swift:13:5: error: closure containing control flow statement cannot be used with result builder 'StringListBuilder'
- 1 | @resultBuilder
- 2 | enum StringListBuilder {
-   |      |- note: add 'buildArray(_:)' to the result builder 'StringListBuilder' to add support for 'for'..'in' loops
-   |      `- note: enum 'StringListBuilder' declared here
- 3 |     static func buildExpression(_ expression: String) -> [String] { [expression] }
- 4 |     static func buildBlock(_ components: [String]...) -> [String] { components.flatMap { $0 } }
-   :
-11 | let values = ["A", "B"]
-12 | let result = make {
-13 |     for value in values {
-   |     `- error: closure containing control flow statement cannot be used with result builder 'StringListBuilder'
-14 |         value
-15 |     }
-```
+#### Array-expression trailing closures still need an API
 
-Explicit `return` is also usually wrong inside builder bodies:
+Use the ListBuilder in this independent syntax fixture. It accepts both a String expression and a [String] helper result, unlike the narrower focused builder:
 
 ```swift
-let result = make {
-    return "A"
+@resultBuilder struct ListBuilder {
+    static func buildExpression(_ value: String) -> [String] { [value] }
+    static func buildExpression(_ value: [String]) -> [String] { value }
+    static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
 }
 ```
 
-Compiler error with Swift 6.2.1:
-
-```text
-return_builder.swift:12:5: error: cannot use explicit 'return' statement in the body of result builder 'StringListBuilder'
-10 | 
-11 | let result = make {
-12 |     return "A"
-   |     |- error: cannot use explicit 'return' statement in the body of result builder 'StringListBuilder'
-   |     `- note: remove 'return' statements to apply the result builder
-13 | }
-14 | print(result)
-```
-
----
-
-### 2.4 Modern Swift removed older local-variable limitations
-
-Older Swift result builders had annoying restrictions around local variables. SE-0373 lifted those limitations so local declarations in result-builder-transformed functions are treated more like ordinary local declarations. ([GitHub, "Lift All Limitations on Variables in Result Builders"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0373-vars-without-limits-in-result-builders.md))
-
-Modern Swift lets you write clearer builder bodies:
+Define a user initializer:
 
 ```swift
-let result = makeList {
-    let title = "Users"
-    title
-
-    let subtitle: String? = "Active"
-    if let subtitle {
-        subtitle
+extension Array where Element == String {
+    init(@ListBuilder<String> build: () -> [String]) {
+        self = build()
     }
+}
+
+func arraySyntaxExample() -> [[String]] {
+    let concise = [String] {
+        "A"
+        "B"
+    }
+    let explicit = [String].init {
+        "A"
+        "B"
+    }
+    return [concise, explicit]
 }
 ```
 
-This matters in production because you should not contort a builder body into unreadable expression soup just to satisfy older compiler behavior.
+Both arrays are `["A", "B"]`. The direct `[String] { ... }` spelling is the 6.4 parser change; the explicit `.init` form remains useful for 6.2/6.3 source compatibility. Without the custom initializer, the new spelling still fails type checking. No built-in result builder is supplied. [SE-0508](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0508-array-expression-trailing-closures.md)
 
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: Thinking result builders are runtime magic
-
-Bad mental model:
-
-```text
-SwiftUI somehow changes how if/for/closures execute at runtime.
-```
-
-Better mental model:
-
-```text
-The compiler rewrites expression statements into builder method calls.
-Runtime control flow still behaves like Swift control flow.
-```
-
-Apple’s WWDC explanation is explicit: result builders gather values produced by code and combine them into a single result; the feature is compile-time and works independently of OS runtime support. ([Apple Developer, "Write a DSL in Swift Using Result Builders"](https://developer.apple.com/videos/play/wwdc2021/10253/))
-
----
-
-### Trap 2: Using a builder when plain data is clearer
-
-Bad:
+Dictionary expressions benefit too. This separate example uses an ordinary closure, with an explicit last-value-wins duplicate-key policy:
 
 ```swift
-let rules = validate {
-    required("email")
-    minLength("password", 8)
-    matches("email", emailRegex)
+extension Dictionary where Key == String, Value == Int {
+    init(buildEntries: () -> [(String, Int)]) {
+        self.init(buildEntries(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+func dictionarySyntaxExample() -> [String: Int] {
+    [String: Int] {
+        [("attempts", 1), ("attempts", 2)]
+    }
 }
 ```
 
-This may look nice, but if the rules are just data, this is often clearer:
+It returns `["attempts": 2]`. The parser change is not tied to builders, nor does it dictate duplicate handling. Array/dictionary values with a suitable user-defined callAsFunction can also use the syntax; ordinary arrays are not callable without such an API.
+
+#### Recheck standalone closure expressions after literals
+
+A newline alone does not necessarily separate a following closure from an array/dictionary expression under the new parser. For a DSL accumulating closures, make the intended closure value explicit:
 
 ```swift
-let rules: [ValidationRule] = [
-    .required("email"),
-    .minLength("password", 8),
-    .matches("email", emailRegex)
-]
-```
-
-A result builder earns its keep when it improves structural expression, nesting, conditional inclusion, or domain readability. It is not automatically better because it removes commas.
-
----
-
-### Trap 3: Hiding expensive work or side effects inside declarative syntax
-
-Bad:
-
-```swift
-screen {
-    Header()
-
-    loadUserFromNetwork() // This looks declarative but does real work.
-
-    Footer()
-}
-```
-
-Better:
-
-```swift
-let user = try await userService.loadUser()
-
-screen {
-    Header()
-    UserSection(user)
-    Footer()
-}
-```
-
-Builder bodies should usually describe structure. Side effects inside them make evaluation order and lifecycle harder to reason about.
-
----
-
-### Trap 4: Fighting the type checker with huge builder expressions
-
-This happens often in SwiftUI:
-
-```swift
-var body: some View {
-    VStack {
-        // 300 lines of nested conditionals, generic modifiers, overloads, and closures
+func deferredCounts() -> [() -> Int] {
+    makeList {
+        let numbers = [1, 2, 3]
+        let action = { numbers.count }
+        action
     }
 }
 ```
 
-Better:
+This stores one closure, whose later invocation returns 3. Naming the action separates data initialization from the contributing expression. The migration probe also checks the fragile bare-closure form and a statement-terminator repair. SE-0508 documents this narrow source-compatibility edge and an init-accessor ordering edge; it does not change the ABI. [SE-0508](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0508-array-expression-trailing-closures.md)
 
-```swift
-var body: some View {
-    VStack {
-        header
-        content
-        footer
-    }
-}
+#### Building a description does not execute its domain
 
-private var header: some View { ... }
-private var content: some View { ... }
-private var footer: some View { ... }
-```
+The route example below only constructs data. It does not install a router or enforce authentication. Likewise, a builder storing a closure has not necessarily executed that closure. Conversely, calling a synchronous side-effecting function to produce a component executes that call while the body runs. Test the wrapper's invocation count and the component effects separately.
 
-Result builders amplify generic type inference. Large builder bodies can produce poor diagnostics and slow type-checking. Swift 5.8 improved result-builder type-checking and diagnostics, but the design issue still exists in large DSL-heavy code. ([SwiftGG, "Swift 5.8 Released!"](https://swift.swiftgg.team/blog/swift-5.8-released/))
+The checked compiler fails to produce a useful diagnostic for two malformed generic calls: an inline closure returning String where a list is required, and a conditional in the pack builder without an optional hook. Separating the ordinary closure type or applying the tuple builder directly produces the expected type/missing-hook diagnostics. The validation record retains both forms.
 
----
+Break large ambiguous expressions into explicitly typed helpers or smaller model/view declarations. Treat overload changes as public API changes. Adding a broad buildExpression overload may change inference or accept mistakes; returning a final array does not guarantee the compiler can infer every earlier expression backward from it.
 
-## 4. Direct answers to rubric questions
+## References
 
-### Q1. What problem does a result builder solve better than plain closures?
+### Related guides
 
-A result builder solves the problem of turning a block of multiple expressions into one structured result without forcing the caller to manually assemble arrays, tuples, trees, or nested containers.
-
-Plain closure:
-
-```swift
-func makePage(_ content: () -> [Node]) -> Node {
-    .element("body", content())
-}
-
-let page = makePage {
-    [
-        .element("h1", [.text("Title")]),
-        .element("p", [.text("Hello")])
-    ]
-}
-```
-
-Builder closure:
-
-```swift
-let page = element("body") {
-    element("h1") {
-        "Title"
-    }
-
-    element("p") {
-        "Hello"
-    }
-}
-```
-
-The builder version is better when the shape of the code mirrors the shape of the domain.
-
-Interview version:
-
-> A result builder is useful when the API wants a structured result from many child expressions. A plain closure gives me one explicit return value, so I usually need array literals, commas, or manual tree construction. A builder lets the compiler collect the expression statements and combine them through builder methods. That is valuable for declarative APIs like SwiftUI, HTML builders, routes, menus, and validation rules where the syntax should resemble the domain structure.
-
----
-
-### Q2. What are the readability and compile-time costs of overusing builders?
-
-Overusing builders makes code harder to debug because the visible code is not the code the type checker is actually checking. Errors often point at the outer builder block instead of the real invalid child expression. Large builder bodies can also stress type inference, especially with heavily generic APIs like SwiftUI.
-
-The readability cost is also real: a DSL requires readers to learn what expressions mean, how `if`/`for` are handled, whether expressions are evaluated immediately or stored, and what side effects are allowed.
-
-Interview version:
-
-> The cost is that result builders hide a transformation. That can be good for declarative structure, but bad when the builder becomes a private language. Diagnostics can become indirect, type-checking can slow down, and readers may not know whether they are looking at data construction, lazy work, side effects, or control flow. I would use builders for APIs whose structure is obvious from the syntax, and avoid them for ordinary procedural logic.
-
----
-
-## 5. Code probe
-
-The rubric has no dedicated code probe for B14. This section uses a minimal probe-style example instead.
-
-Given:
-
-```swift
-enum Node: CustomStringConvertible {
-    case text(String)
-    case element(String, [Node])
-
-    var description: String {
-        switch self {
-        case .text(let value):
-            value
-        case .element(let name, let children):
-            "<\(name)>" + children.map(\.description).joined(separator: ",") + "</\(name)>"
-        }
-    }
-}
-
-@resultBuilder
-enum NodeBuilder {
-    static func buildExpression(_ expression: Node) -> [Node] {
-        [expression]
-    }
-
-    static func buildExpression(_ expression: String) -> [Node] {
-        [.text(expression)]
-    }
-
-    static func buildBlock(_ components: [Node]...) -> [Node] {
-        components.flatMap { $0 }
-    }
-
-    static func buildOptional(_ component: [Node]?) -> [Node] {
-        component ?? []
-    }
-
-    static func buildEither(first component: [Node]) -> [Node] {
-        component
-    }
-
-    static func buildEither(second component: [Node]) -> [Node] {
-        component
-    }
-
-    static func buildArray(_ components: [[Node]]) -> [Node] {
-        components.flatMap { $0 }
-    }
-}
-
-func element(_ name: String, @NodeBuilder children: () -> [Node] = { [] }) -> Node {
-    .element(name, children())
-}
-
-let loggedIn = true
-let names = ["Aykut", "Emma"]
-
-let page = element("ul") {
-    "Users"
-
-    if loggedIn {
-        for name in names {
-            element("li") { name }
-        }
-    }
-}
-
-print(page)
-```
-
-### What happens?
-
-Output with Swift 6.2.1:
-
-```text
-<ul>Users,<li>Aykut</li>,<li>Emma</li></ul>
-```
-
-### Why?
-
-The block passed to `element("ul")` is transformed by `NodeBuilder`.
-
-Roughly:
-
-```text
-"Users"
-    -> buildExpression("Users")
-    -> [.text("Users")]
-
-if loggedIn { ... }
-    -> buildOptional(...)
-    -> list of child nodes or []
-
-for name in names { ... }
-    -> buildArray(...)
-    -> flattened list of li nodes
-
-whole block
-    -> buildBlock(component0, component1)
-    -> [Node]
-```
-
-The important semantic point: `loggedIn` is checked normally, and the `for` loop iterates normally. The builder only decides how produced values are collected.
-
-### Equivalent non-builder version
-
-```swift
-var children: [Node] = []
-children.append(.text("Users"))
-
-if loggedIn {
-    for name in names {
-        children.append(.element("li", [.text(name)]))
-    }
-}
-
-let page = Node.element("ul", children)
-print(page)
-```
-
-The builder version is nicer only because the domain is structural and nested.
-
----
-
-## 6. Exercise
-
-### Problem
-
-Design a tiny builder-based DSL and explain whether it is actually better than an array of closures or plain structs.
-
-### Bad / naive version
-
-Suppose we want to define request routes:
-
-```swift
-struct Route {
-    var method: String
-    var path: String
-    var requiresAuth: Bool
-}
-
-let routes = [
-    Route(method: "GET", path: "/profile", requiresAuth: true),
-    Route(method: "POST", path: "/logout", requiresAuth: true),
-    Route(method: "GET", path: "/health", requiresAuth: false)
-]
-```
-
-This is already clear. A builder here may be overkill if all routes are flat data.
-
-A worse builder would be:
-
-```swift
-let routes = routes {
-    route("GET", "/profile", true)
-    route("POST", "/logout", true)
-    route("GET", "/health", false)
-}
-```
-
-### What is wrong?
-
-```text
-The builder adds ceremony but does not improve the model.
-The boolean argument is still unclear.
-The DSL does not express meaningful structure.
-Plain data was already readable.
-```
-
-### Improved version
-
-A builder starts to make sense if the domain has grouping, defaults, and conditional inclusion:
-
-```swift
-struct Route: CustomStringConvertible {
-    enum Method: String {
-        case get = "GET"
-        case post = "POST"
-    }
-
-    var method: Method
-    var path: String
-    var requiresAuth: Bool
-
-    var description: String {
-        "\(method.rawValue) \(path) auth=\(requiresAuth)"
-    }
-}
-
-struct RouteGroup {
-    var prefix: String
-    var requiresAuth: Bool
-    var routes: [Route]
-}
-
-@resultBuilder
-enum RouteBuilder {
-    static func buildExpression(_ expression: Route) -> [Route] {
-        [expression]
-    }
-
-    static func buildBlock(_ components: [Route]...) -> [Route] {
-        components.flatMap { $0 }
-    }
-
-    static func buildOptional(_ component: [Route]?) -> [Route] {
-        component ?? []
-    }
-
-    static func buildArray(_ components: [[Route]]) -> [Route] {
-        components.flatMap { $0 }
-    }
-}
-
-func route(_ method: Route.Method, _ path: String, requiresAuth: Bool) -> Route {
-    Route(method: method, path: path, requiresAuth: requiresAuth)
-}
-
-func group(
-    _ prefix: String,
-    requiresAuth: Bool,
-    @RouteBuilder routes: () -> [Route]
-) -> [Route] {
-    routes().map {
-        Route(
-            method: $0.method,
-            path: prefix + $0.path,
-            requiresAuth: $0.requiresAuth || requiresAuth
-        )
-    }
-}
-
-func routes(@RouteBuilder _ content: () -> [Route]) -> [Route] {
-    content()
-}
-
-let includeDebugRoutes = false
-
-let apiRoutes = routes {
-    group("/user", requiresAuth: true) {
-        route(.get, "/profile", requiresAuth: false)
-        route(.post, "/logout", requiresAuth: false)
-    }
-
-    if includeDebugRoutes {
-        route(.get, "/debug", requiresAuth: true)
-    }
-
-    route(.get, "/health", requiresAuth: false)
-}
-
-for route in apiRoutes {
-    print(route)
-}
-```
-
-Output:
-
-```text
-GET /user/profile auth=true
-POST /user/logout auth=true
-GET /health auth=false
-```
-
-### Why this is better
-
-This builder is defensible because it expresses actual domain structure:
-
-```text
-route list
-  group /user
-    inherited auth requirement
-    nested routes
-  optional debug route
-  standalone health route
-```
-
-The builder removes noise only after the domain has hierarchy and conditional inclusion. It is not just replacing commas.
-
-### Is it better than an array?
-
-For a flat list, no:
-
-```swift
-let routes: [Route] = [
-    route(.get, "/health", requiresAuth: false)
-]
-```
-
-For grouped route declarations with defaults and conditional inclusion, yes:
-
-```swift
-let apiRoutes = routes {
-    group("/user", requiresAuth: true) {
-        route(.get, "/profile", requiresAuth: false)
-        route(.post, "/logout", requiresAuth: false)
-    }
-
-    if includeDebugRoutes {
-        route(.get, "/debug", requiresAuth: true)
-    }
-}
-```
-
-The staff-level judgment: introduce the builder only when it makes invalid or noisy construction patterns disappear without hiding important behavior.
-
----
-
-## 7. Production guidance
-
-Use this in production when:
-
-```text
-The domain is naturally declarative.
-The syntax mirrors a tree, list, pipeline, or structured declaration.
-Call sites become meaningfully clearer.
-The builder has a small, documented set of supported statement forms.
-The result type is explicit and testable outside the DSL.
-```
-
-Good candidates:
-
-```text
-SwiftUI-style view trees
-Menus and command declarations
-HTML/XML/Markdown builders
-Navigation route declarations
-Validation rule groups
-Test scenario setup
-Query/filter descriptions
-Feature flag or experiment configuration
-```
-
-Be careful when:
-
-```text
-The builder body contains side effects.
-The builder body becomes very large.
-The DSL relies on overload-heavy generic inference.
-The result type is hidden behind too many opaque types.
-The builder supports complex control flow that readers cannot predict.
-The builder appears in public SDK API and becomes hard to change later.
-```
-
-Avoid when:
-
-```text
-An array literal is clearer.
-Plain structs communicate the model better.
-The DSL only saves commas.
-The builder hides networking, persistence, locks, tasks, or mutation.
-The team cannot easily debug the generated type errors.
-```
-
-Debugging checklist:
-
-```text
-What is the builder's Component type?
-What is the final Result type?
-Which build methods are being used?
-Is the failing expression accepted by buildExpression?
-Does if require buildOptional or buildEither?
-Does for require buildArray?
-Can I extract subexpressions into local variables?
-Can I split the builder into smaller computed properties/functions?
-Is the error caused by the DSL or by an overloaded child expression?
-Would plain structs make this easier to inspect?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> Result builders let SwiftUI-like APIs return multiple values from a closure.
-
-### Senior answer
-
-> Result builders are compile-time transformations. The compiler rewrites a block of expression statements into calls to static builder methods such as `buildExpression`, `buildBlock`, `buildOptional`, `buildEither`, and `buildArray`. They are useful for declarative APIs where syntax should mirror structure, but they can hurt diagnostics, compile time, and readability if overused.
-
-### Staff-level answer
-
-> I treat result builders as API surface design tools, not syntax candy. They are justified when the domain is structural and the builder removes real accidental complexity, such as manual tree assembly, conditional child inclusion, or grouped declarations. I avoid them when plain data is clearer or when the DSL hides side effects. In public APIs, I also consider source compatibility: once clients write DSL bodies, changing supported expression types or control-flow behavior can become a breaking change. For large SwiftUI or DSL-heavy code, I design escape hatches: plain model types, smaller sub-builders, testable intermediate values, and diagnostics-friendly overloads.
-
-Staff-level questions to ask:
-
-```text
-What domain structure does this builder make clearer?
-What exact statement forms should the builder support?
-What is the concrete Component type, and can it be tested directly?
-What diagnostics will users see when they make common mistakes?
-Can this be expressed with plain structs or arrays more clearly?
-Will this builder become public API, and what changes become breaking?
-Are side effects allowed inside the builder body?
-How will this behave under strict concurrency and actor isolation?
-```
-
----
-
-## 9. Interview-ready summary
-
-Result builders are a compile-time Swift feature for building one result from a block of expressions. A builder type marked with `@resultBuilder` defines static methods that tell the compiler how to collect expressions, optional branches, either branches, and loops into a final value. They are powerful for declarative, structural APIs like SwiftUI, menus, routes, validation rules, or HTML trees because the call-site syntax mirrors the domain. The tradeoff is that builders hide a transformation, so diagnostics, compile time, and readability can suffer. I would use them when they remove real structural noise, not just to avoid commas or make ordinary imperative code look fancy.
-
----
-
-## 10. Flashcards
-
-Q: What is a result builder?
-
-A: A compile-time transformation that turns a block of expressions into calls to static builder methods, producing one final result.
-
-Q: What method is commonly required in a basic result builder?
-
-A: `buildBlock(_:)`, or the newer partial-block pair `buildPartialBlock(first:)` and `buildPartialBlock(accumulated:next:)`.
-
-Q: What method supports `if` without `else`?
-
-A: `buildOptional(_:)`.
-
-Q: What methods support `if/else` and `switch`-like branching?
-
-A: `buildEither(first:)` and `buildEither(second:)`.
-
-Q: What method supports `for` loops?
-
-A: `buildArray(_:)`.
-
-Q: Does a result builder change runtime control-flow semantics?
-
-A: No. `if` still branches normally, and `for` still loops normally. The builder collects the produced values.
-
-Q: Why can result-builder errors be cryptic?
-
-A: The compiler type-checks the transformed form, so the reported error may involve builder methods, opaque result types, generic overloads, or an outer block rather than the real invalid expression.
-
-Q: When is a result builder worse than an array literal?
-
-A: When the data is flat, simple, and already readable as plain structs or arrays.
-
-Q: What is a good production rule for custom builders?
-
-A: Use them when the syntax mirrors real domain structure and the intermediate result type remains explicit, testable, and understandable.
-
----
-
-## 11. Related sections
-
-- [[A14 — Operators, literals, and language affordances]]
-- [[B10 — API design guidelines and Swift-native surface design]]
-- [[B11 — Library evolution and resilience-aware API design]]
-- [[B13 — Property wrappers and generated storage semantics]]
+- [[A7 — Functions, Parameter Labels, Defaults, and API Surface]]
+- [[A8 — Closures, Escaping, and Capture Semantics]]
+- [[A14 — Operators, Literals, and Language Affordances]]
+- [[B10 — API Design Guidelines and Swift-Native Surface Design]]
+- [[B11 — Library Evolution and Resilience-Aware API Design]]
 - [[B12 — Variadic generics and parameter packs]]
+- [[B13 — Property Wrappers and Generated Storage Semantics]]
+- [[D5 — Global Actors and `@MainActor`]]
 - [[F2 — Debugging Swift code with LLDB and compiler diagnostics]]
 - [[F4 — Macros and compile-time code generation]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — B14 rubric and exercise.
-- Swift.org. "Attributes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/
-- GitHub. "Result Builders." Swift Evolution SE-0289. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md
-- GitHub. "Lift All Limitations on Variables in Result Builders." Swift Evolution SE-0373. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0373-vars-without-limits-in-result-builders.md
-- Apple Developer. "ViewBuilder." Apple Developer Documentation. https://developer.apple.com/documentation/swiftui/viewbuilder
-- Apple Developer. "Write a DSL in Swift Using Result Builders." WWDC21. https://developer.apple.com/videos/play/wwdc2021/10253/
+- [SE-0289](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md)
+- [SE-0348](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0348-buildpartialblock.md)
+- [SE-0508](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0508-array-expression-trailing-closures.md)
+- [SE-0373: Local variables in result builders](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0373-vars-without-limits-in-result-builders.md)
+- [Swift language reference: Attributes](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/)
+- [Apple: ViewBuilder](https://developer.apple.com/documentation/swiftui/viewbuilder)

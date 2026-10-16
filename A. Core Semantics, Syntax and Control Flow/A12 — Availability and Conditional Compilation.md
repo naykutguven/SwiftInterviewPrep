@@ -7,788 +7,134 @@ tags:
   - availability
   - conditional-compilation
 ---
+
 # A12 — Availability and Conditional Compilation
 
-## 0. Rubric snapshot
+**Goal:** Select a runtime guard and fallback without confusing SDK, compiler, or module availability.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Know `@available`, deprecation messaging, `#available`, `#if`, `canImport`, and source-compatibility guards. The main caveat is that runtime availability and compile-time conditional compilation solve different problems.
+## Mental model
 
-**Caveats**
+Compiler support, language mode, SDK declarations, and runtime support are independent requirements. An installed SDK can describe APIs unavailable on the deployment target. Runtime guards narrow availability inside a branch; compile-time conditions exclude source before type checking. A runtime guard cannot teach an older compiler a new syntax or manufacture an absent module. [Attributes: availability](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/)
 
-`#available` answers:
+## Rules and pitfalls
 
-```text
-Can this already-compiled program safely execute this API on the current OS/runtime?
-```
+### Match the guard to the missing capability
 
-`#if` / `#if canImport` answers:
+Use #if compiler for compiler syntax support, #if swift for the effective language version, canImport for module visibility, and #available or an enclosing @available declaration for runtime API availability. Inspect the selected SDK's exact introduction versions.
 
-```text
-Should this source code be compiled into this target at all?
-```
+**Common pitfall:** canImport confirms a module, not every member or a supported runtime. Nest the appropriate runtime guard around newer API use and keep a fallback with the same public behavior.
 
-Swift’s language reference documents `@available` as a declaration attribute for describing a declaration’s availability lifecycle, including introduced, deprecated, obsoleted, unavailable, message, and renamed information. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
+### Make deprecation actionable
 
-**You should be able to answer**
+Mark an old declaration deprecated with a useful message or renamed replacement when semantics align. Keep a compatibility adapter long enough for supported clients, and test warning policy separately from runtime behavior.
 
-- What is the difference between `#available` and `#if canImport`?
-- How would you deprecate an API while giving users an actionable migration path?
+**Common pitfall:** Removing or silently changing the old operation while adding a deprecation message is still a compatibility break. Document the replacement's behavioral differences and adoption period.
 
-**You should be able to do**
+## Interview questions
 
-- Write an API that uses a modern framework when available and a fallback otherwise, without duplicating the public surface.
+### What is the difference between `#available` and `#if canImport`?
 
----
+#available checks runtime platform versions and gives the compiler a narrowed availability context. #if canImport selects source based on module availability during compilation. A module can import successfully while a particular call still requires a newer SDK or runtime, so one guard does not replace the other.
 
-## 1. Core mental model
+### Why can a call guarded by anyAppleOS 26 still fail for macOS, and why is that guard not a test for an Apple target?
 
-Availability is about **time** and **environment**.
+The shorthand's aligned version can be lower than a specific API's macOS introduction, requiring an explicit macOS override. The wildcard also makes availability conditions true on unlisted platforms; it is not an Apple-target test. Combine os/canImport source guards with exact platform availability when needed.
 
-A Swift codebase can be constrained by at least four different dimensions:
+### How would you deprecate an API while giving users an actionable migration path?
 
-```text
-compiler version
-Swift language mode
-SDK/module availability
-runtime OS availability
-```
+Introduce a replacement with a clear contract, annotate the old declaration with deprecated and an actionable message or renamed entry, and provide a forwarding adapter if behavior is equivalent. Compile a consumer to check the diagnostic and test both paths; do not use deprecation to conceal a new policy.
 
-Those are not the same thing.
+## Focused exercise
 
-For example, with Xcode 26, your compiler may understand a new syntax and your SDK may contain an iOS 26 API, but your app may still run on iOS 18 because your minimum deployment target is iOS 18. In that case, the code can compile only if the compiler can prove the iOS 26 API is guarded by a runtime availability check.
+**Task:** Guard one newer API behind a fallback. Explain runtime availability versus compiler/module guards and compile for the older deployment target.
 
-The key idea:
+**Acceptance checks:**
 
-```text
-#if decides what source exists for this build.
-#available decides which already-compiled path is safe at runtime.
-@available describes the lifecycle and use constraints of a declaration.
-```
+- The source compiles against the current SDK with the older deployment target.
+- The newer call has a sufficient availability context.
+- The fallback exposes the same units; older-runtime execution is reported separately.
 
-`@available` belongs on declarations. It tells clients and the compiler when something was introduced, deprecated, obsoleted, renamed, or unavailable. ([Swift.org, "Attributes"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/))
+**Solution:**
 
-`#available` belongs in control flow. It lets you use a newer API inside a guarded block while still supporting older OS versions. Apple’s Xcode documentation says Swift uses `#available` to run code conditionally for a specific platform or OS version. ([Apple Developer, "Running Code on a Specific Platform or OS Version"](https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version))
-
-`#if` belongs to compilation. Swift’s language reference says conditional compilation blocks are compiler control statements; only code in the active branch is compiled for that build. ([Swift.org, "Statements"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/statements/))
-
----
-
-## 2. Essential mechanics
-
-### 2.1 `@available`: annotate declaration lifecycle
-
-Use `@available` to describe when a declaration can be used.
+Standalone macOS example, Foundation required. Compile with a macOS 12 deployment target using the installed SDK; ContinuousClock requires macOS 13.
 
 ```swift
-@available(iOS 26.0, *)
-func useNewSystemFeature() {
-    // Calls APIs introduced in iOS 26.
-}
-```
-
-That means the function itself is only available on iOS 26 or newer. A caller in code that supports iOS 18 must guard the call:
-
-```swift
-if #available(iOS 26.0, *) {
-    useNewSystemFeature()
-} else {
-    // Fallback for iOS 18–25.
-}
-```
-
-Use `@available` for deprecation too:
-
-```swift
-@available(
-    *,
-    deprecated,
-    renamed: "loadUserProfile(id:)",
-    message: "Use loadUserProfile(id:) to get async cancellation and clearer labeling."
-)
-func fetchUserProfile(userID: User.ID) async throws -> UserProfile {
-    try await loadUserProfile(id: userID)
-}
-
-func loadUserProfile(id: User.ID) async throws -> UserProfile {
-    // New implementation.
-}
-```
-
-Good deprecations are not passive warnings. They provide:
-
-```text
-new symbol
-reason
-migration path
-compatibility bridge if possible
-planned removal only when justified
-```
-
-### 2.2 `#available`: runtime availability check
-
-Use `#available` when the source can compile against the SDK, but the app might run on an older OS.
-
-```swift
-func configureButton(_ button: UIButton) {
-    if #available(iOS 26.0, *) {
-        // iOS 26-only behavior.
-        button.configuration?.buttonSize = .large
+import Foundation
+func elapsedWork() -> Double {
+    if #available(macOS 13, *) {
+        let start = ContinuousClock.now
+        let duration = start.duration(to: .now)
+        return Double(duration.components.seconds)
+            + Double(duration.components.attoseconds) / 1e18
     } else {
-        // iOS 18–25 fallback.
-        button.contentEdgeInsets = UIEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
+        let start = ProcessInfo.processInfo.systemUptime
+        return ProcessInfo.processInfo.systemUptime - start
+    }
+}
+precondition(elapsedWork() >= 0)
+```
+
+This measures an intentionally empty interval to demonstrate guarding, not a performance benchmark. An older-runtime fallback must also run on that runtime before claiming deployment validation.
+
+**Reasoning:** SDK compilation checks guarded use, while executing on a current OS only exercises the modern branch. A production elapsed-time abstraction should use an injected Clock or equivalent dependency when tests need deterministic time.
+
+## In practice
+
+**Choose it when:** Maintain one public contract across supported compiler and runtime combinations.
+
+**Investigate by:** Record compiler version, SDK, deployment target, and module imports independently.
+
+**Strong evidence:** Compile the supported matrix and run both branches on eligible runtimes rather than equating guarded compilation with deployment success.
+
+### Aligned Apple versions — optional
+
+#### `anyAppleOS` in Swift 6.4
+
+`@available(anyAppleOS 27.0, *)` and `#available(anyAppleOS 27.0, *)` cover the aligned Apple OS versions. Use versions 26.0 or later; older OS releases need their original platform-specific numbers. A specific platform requirement overrides the shared value. [Apple’s announcement](https://forums.swift.org/t/introducing-anyappleos/85728)
+
+The following compile-only probe deliberately needs a stronger guard on macOS:
+
+```swift
+@available(anyAppleOS 26.0, macOS 27.0, *)
+func modernFeature() {}
+
+func useFeature() {
+    if #available(anyAppleOS 26.0, *) {
+        modernFeature() // error when targeting macOS 13; accepted targeting iOS 18
     }
 }
 ```
 
-`#available` does **not** hide syntax from an older compiler. It only guards runtime execution.
+For that declaration, fix the call with `if #available(anyAppleOS 26.0, macOS 27.0, *)`. Do not silently lower its macOS requirement.
 
-That matters for library authors supporting multiple Xcode versions. If a declaration or syntax does not exist in an older compiler, `#available` is too late. You need `#if compiler(...)`, `#if swift(...)`, `#if canImport(...)`, or a source split.
-
-### 2.3 `#if`: compile-time source selection
-
-Use `#if` when one branch should not be compiled for a target.
+`#if os(anyAppleOS)` is compile-time platform selection. An availability check with `*` is not an Apple-platform selection test and does not establish that UIKit, AppKit, or another module exists. Keep `canImport` where module availability is the condition:
 
 ```swift
-#if os(iOS)
-import UIKit
-
-typealias PlatformImage = UIImage
-#elseif os(macOS)
-import AppKit
-
-typealias PlatformImage = NSImage
+#if os(anyAppleOS)
+@available(anyAppleOS 27.0, *)
+func appleOnlyFeature() {}
 #endif
 ```
 
-This is not runtime branching. The nonmatching branch is removed from that build.
+Migration from 6.2/6.3: keep explicit platform lists when older compilers must build the source, or isolate the newer spelling behind an appropriate compiler-version branch. The older spelling remains valid in 6.4.
 
-Common conditions:
+## References
 
-```swift
-#if os(iOS)
-#endif
+### Related guides
 
-#if targetEnvironment(simulator)
-#endif
-
-#if canImport(UIKit)
-#endif
-
-#if compiler(>=6.2)
-#endif
-
-#if swift(>=6)
-#endif
-
-#if DEBUG
-#endif
-```
-
-`canImport` tests whether a module can be imported. It does not import the module by itself. Swift’s language reference documents conditional compilation conditions including `os`, `arch`, `swift`, `compiler`, `canImport`, and `targetEnvironment`. ([Swift.org, "Statements"](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/statements/))
-
-### 2.4 `#unavailable`: clearer fallback-first code
-
-Use `#unavailable` when the old path is the main branch you want to explain.
-
-```swift
-func configureFeature() {
-    guard #unavailable(iOS 26.0) else {
-        configureModernFeature()
-        return
-    }
-
-    configureFallbackFeature()
-}
-```
-
-This often reads better when the fallback is the real implementation and the new API is a narrow fast path.
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: Using `#available` when the framework might not compile
-
-Bad:
-
-```swift
-if #available(iOS 26.0, *) {
-    let engine = ModernFrameworkEngine()
-}
-```
-
-This only works if the compiler and SDK know `ModernFrameworkEngine`.
-
-If the module itself might not exist for some builds, guard the import and implementation:
-
-```swift
-#if canImport(ModernTextFramework)
-import ModernTextFramework
-#endif
-
-func makeTextService() -> any TextServiceBackend {
-    #if canImport(ModernTextFramework)
-    if #available(iOS 26.0, macOS 26.0, *) {
-        return ModernTextFrameworkBackend()
-    }
-    #endif
-
-    return FallbackTextServiceBackend()
-}
-```
-
-The point is not the specific framework. The point is the two-level guard:
-
-```text
-Can this module/type compile?
-Can this code safely run on the current OS?
-```
-
-### Trap 2: Thinking `canImport` means “this API exists”
-
-`canImport(UIKit)` means UIKit can be imported. It does **not** mean a specific UIKit API exists, nor that the current runtime OS supports it.
-
-Bad:
-
-```swift
-#if canImport(UIKit)
-button.someIOS26OnlyAPI()
-#endif
-```
-
-Better:
-
-```swift
-#if canImport(UIKit)
-if #available(iOS 26.0, *) {
-    button.someIOS26OnlyAPI()
-} else {
-    fallback()
-}
-#endif
-```
-
-Use both dimensions when necessary:
-
-```text
-can the module compile?
-can this API run on this OS?
-```
-
-### Trap 3: Duplicating public API across availability branches
-
-Bad:
-
-```swift
-#if canImport(ModernTextFramework)
-public struct TextGenerator {
-    public func generate(prompt: String) async throws -> String {
-        // Modern framework implementation.
-    }
-}
-#else
-public struct TextGenerator {
-    public func generate(prompt: String) async throws -> String {
-        // Fallback implementation.
-    }
-}
-#endif
-```
-
-This creates two public declarations that can drift.
-
-Better:
-
-```swift
-public struct TextGenerator {
-    private let backend: any TextGeneratingBackend
-
-    public init() {
-        self.backend = Self.makeBackend()
-    }
-
-    public func generate(prompt: String) async throws -> String {
-        try await backend.generate(prompt: prompt)
-    }
-
-    private static func makeBackend() -> any TextGeneratingBackend {
-        #if canImport(ModernTextFramework)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            return ModernTextFrameworkBackend()
-        }
-        #endif
-
-        return FallbackTextGeneratingBackend()
-    }
-}
-```
-
-One public surface. Multiple private implementations.
-
-### Trap 4: Using `#if os(iOS)` when `canImport` is the real constraint
-
-Bad:
-
-```swift
-#if os(iOS)
-import UIKit
-#endif
-```
-
-This often works in app code, but packages and cross-platform code can be more precise with capability checks:
-
-```swift
-#if canImport(UIKit)
-import UIKit
-#endif
-```
-
-Use `os(...)` when the platform itself is the semantic condition. Use `canImport(...)` when the module is the real dependency boundary.
-
-### Trap 5: Deprecating without a migration path
-
-Bad:
-
-```swift
-@available(*, deprecated)
-func loadData() async throws -> Data
-```
-
-Better:
-
-```swift
-@available(
-    *,
-    deprecated,
-    renamed: "data(for:)",
-    message: "Use data(for:) because it preserves cancellation and returns response metadata."
-)
-func loadData() async throws -> Data {
-    try await data(for: defaultRequest).data
-}
-```
-
-A deprecation should reduce migration ambiguity. A warning that only says “deprecated” is usually noise.
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What is the difference between `#available` and `#if canImport`?
-
-`#available` is a **runtime availability check**. It lets already-compiled code choose a safe execution path depending on the OS version. `#if canImport` is a **compile-time conditional compilation check**. It decides whether source code that depends on a module should be compiled at all.
-
-Interview version:
-
-> `#available` protects calls to APIs that exist in the SDK but might not exist on the runtime OS. `#if canImport` protects source that depends on a module that may not be available for the current build target. They answer different questions: “Can I run this API now?” versus “Can this code be compiled for this target?” In real code, using a new optional framework often needs both: `#if canImport` around the import and implementation, and `#available` around the runtime path.
-
-### Q2. How would you deprecate an API while giving users an actionable migration path?
-
-Use `@available(*, deprecated, renamed:message:)` when there is a replacement symbol. Keep a compatibility wrapper where reasonable. The message should explain the replacement and why users should migrate.
-
-```swift
-@available(
-    *,
-    deprecated,
-    renamed: "fetchProfile(id:)",
-    message: "Use fetchProfile(id:) because it supports cancellation and avoids ambiguous userID labeling."
-)
-public func getUser(_ userID: User.ID) async throws -> Profile {
-    try await fetchProfile(id: userID)
-}
-
-public func fetchProfile(id: User.ID) async throws -> Profile {
-    // New implementation.
-}
-```
-
-Interview version:
-
-> I would avoid a vague deprecation. I would introduce the new API first, make the old API forward to it if possible, and annotate the old symbol with `@available(*, deprecated, renamed:message:)`. The warning should tell clients exactly what to call and why. For a public SDK, I would also document the removal timeline and avoid `obsoleted` until a major version or clearly communicated breaking-change window.
-
----
-
-## 5. Code probe / examples
-
-There is no rubric code probe for A12. Use these three examples instead.
-
-### 5.1 Minimal example
-
-```swift
-func configureSearchExperience() {
-    if #available(iOS 26.0, *) {
-        configureModernSearchExperience()
-    } else {
-        configureLegacySearchExperience()
-    }
-}
-
-@available(iOS 26.0, *)
-private func configureModernSearchExperience() {
-    // Use iOS 26-only APIs here.
-}
-
-private func configureLegacySearchExperience() {
-    // iOS 18-compatible fallback.
-}
-```
-
-What happens:
-
-```text
-The iOS 26-only function is callable only inside an iOS 26 availability context.
-The fallback remains valid for the iOS 18 minimum deployment target.
-```
-
-Why:
-
-```text
-The compiler uses the #available branch to prove that iOS 26-only APIs are reached only on iOS 26+.
-```
-
-### 5.2 Counterexample
-
-```swift
-func configureSearchExperience() {
-    configureModernSearchExperience()
-}
-
-@available(iOS 26.0, *)
-private func configureModernSearchExperience() {
-    // Use iOS 26-only APIs here.
-}
-```
-
-Representative compiler diagnostic with an iOS 18 deployment target:
-
-```text
-error: 'configureModernSearchExperience()' is only available in iOS 26.0 or newer
-```
-
-Why:
-
-```text
-The caller is available on iOS 18, but it unconditionally calls a function that is only available on iOS 26+.
-```
-
-Fix:
-
-```swift
-func configureSearchExperience() {
-    if #available(iOS 26.0, *) {
-        configureModernSearchExperience()
-    } else {
-        configureLegacySearchExperience()
-    }
-}
-```
-
-### 5.3 Production example: one public API, modern framework when available
-
-```swift
-public struct TextGenerator {
-    private let backend: any TextGeneratingBackend
-
-    public init() {
-        self.backend = Self.makeBackend()
-    }
-
-    public func generate(prompt: String) async throws -> String {
-        try await backend.generate(prompt: prompt)
-    }
-
-    private static func makeBackend() -> any TextGeneratingBackend {
-        #if canImport(ModernTextFramework)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            return ModernTextFrameworkBackend()
-        }
-        #endif
-
-        return FallbackTextGeneratingBackend()
-    }
-}
-
-private protocol TextGeneratingBackend {
-    func generate(prompt: String) async throws -> String
-}
-
-private struct FallbackTextGeneratingBackend: TextGeneratingBackend {
-    func generate(prompt: String) async throws -> String {
-        "Fallback response for: \(prompt)"
-    }
-}
-
-#if canImport(ModernTextFramework)
-import ModernTextFramework
-
-@available(iOS 26.0, macOS 26.0, *)
-private struct ModernTextFrameworkBackend: TextGeneratingBackend {
-    func generate(prompt: String) async throws -> String {
-        // Real ModernTextFramework integration would live here.
-        // Keep ModernTextFramework types out of the public API.
-        "Modern response for: \(prompt)"
-    }
-}
-#endif
-```
-
-Why this design is correct:
-
-```text
-Public API:
-TextGenerator.generate(prompt:)
-
-Private implementation choices:
-ModernTextFrameworkBackend on supported SDK + runtime
-FallbackTextGeneratingBackend otherwise
-```
-
-The public surface does not duplicate. The optional framework does not leak into the public API. The fallback remains available for iOS 18.
-
----
-
-## 6. Exercise
-
-### Problem
-
-Write an API that uses a modern framework when available and a fallback otherwise, without duplicating the public surface.
-
-### Bad / naive version
-
-```swift
-#if canImport(ModernTextFramework)
-import ModernTextFramework
-
-public struct TextGenerator {
-    public init() {}
-
-    public func generate(prompt: String) async throws -> String {
-        // Modern framework implementation.
-        "Modern: \(prompt)"
-    }
-}
-#else
-public struct TextGenerator {
-    public init() {}
-
-    public func generate(prompt: String) async throws -> String {
-        // Fallback implementation.
-        "Fallback: \(prompt)"
-    }
-}
-#endif
-```
-
-### What is wrong?
-
-```text
-1. The public type is declared twice.
-2. The two versions can drift.
-3. Documentation, tests, and symbol behavior can diverge.
-4. The optional dependency shape leaks into the module design.
-5. Runtime availability is not handled if the module exists but the OS is older.
-```
-
-### Improved version
-
-```swift
-public struct TextGenerator {
-    private let backend: any TextGeneratingBackend
-
-    public init() {
-        self.backend = Self.defaultBackend()
-    }
-
-    public func generate(prompt: String) async throws -> String {
-        try await backend.generate(prompt: prompt)
-    }
-
-    private static func defaultBackend() -> any TextGeneratingBackend {
-        #if canImport(ModernTextFramework)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            return ModernTextFrameworkBackend()
-        }
-        #endif
-
-        return RuleBasedTextGeneratingBackend()
-    }
-}
-
-private protocol TextGeneratingBackend {
-    func generate(prompt: String) async throws -> String
-}
-
-private struct RuleBasedTextGeneratingBackend: TextGeneratingBackend {
-    func generate(prompt: String) async throws -> String {
-        "Fallback response for: \(prompt)"
-    }
-}
-
-#if canImport(ModernTextFramework)
-import ModernTextFramework
-
-@available(iOS 26.0, macOS 26.0, *)
-private struct ModernTextFrameworkBackend: TextGeneratingBackend {
-    func generate(prompt: String) async throws -> String {
-        // Integrate ModernTextFramework here.
-        "Modern framework response for: \(prompt)"
-    }
-}
-#endif
-```
-
-### Why this is better
-
-The public API is stable:
-
-```swift
-TextGenerator.generate(prompt:)
-```
-
-The implementation is flexible:
-
-```text
-new SDK + new OS       -> modern framework backend
-old OS or unavailable  -> fallback backend
-```
-
-The design also respects module boundaries. Callers do not need to import the modern framework, and your public SDK does not expose modern framework types. That matters for source compatibility, binary distribution, and dependency hygiene.
-
----
-
-## 7. Production guidance
-
-Use this in production when:
-
-```text
-You support an older minimum deployment target.
-You adopt newly introduced Apple APIs.
-You build cross-platform packages.
-You support multiple Xcode or Swift language versions.
-You maintain public APIs and need deprecation paths.
-You ship SDKs that must avoid leaking optional dependencies.
-```
-
-Be careful when:
-
-```text
-A new API exists in the SDK but not on your minimum runtime OS.
-A module exists on some platforms but not others.
-The code must compile with multiple compiler versions.
-A public API signature mentions types from optional frameworks.
-You use conditional compilation around public declarations.
-```
-
-Avoid when:
-
-```text
-A normal runtime feature flag would be clearer.
-You are using #if DEBUG to hide correctness problems.
-You are duplicating entire public types across #if branches.
-You are using #if os(...) when capability or module availability is the actual condition.
-You are using deprecation warnings without a replacement or rationale.
-```
-
-Debugging checklist:
-
-```text
-Is this a compiler-version problem, SDK problem, module-import problem, or runtime OS problem?
-Does the symbol need @available?
-Does the call site need #available?
-Does the import or implementation need #if canImport?
-Does a public API expose an optional dependency type?
-Are old and new implementations tested through the same public API?
-Does the deprecation tell users exactly what to do next?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> `#available` checks OS versions, and `#if` compiles code conditionally.
-
-### Senior answer
-
-> `#available` is a runtime guard used when the code can compile but may run on an older OS. `#if` is compile-time source selection. `canImport` checks module availability, not individual API availability. I avoid duplicating public APIs across conditional branches and keep conditional logic behind stable internal abstractions.
-
-### Staff-level answer
-
-> Availability is part of API and release engineering. I separate compiler, language mode, SDK, module, and runtime constraints. For public libraries, I keep optional dependencies out of public signatures, use `@available` and deprecation annotations as client-facing contracts, and centralize fallback selection behind one public surface. I also test both modern and fallback paths, because availability code often rots when teams only run on the latest OS.
-
-Staff-level questions to ask:
-
-```text
-What is the minimum deployment target?
-Which Xcode and SDK versions must compile this package?
-Is the dependency optional at compile time, runtime, or both?
-Does the public API expose types from a framework that may not exist everywhere?
-Can the fallback and modern implementation share the same tests?
-Is the deprecation source-compatible, binary-compatible, and actually actionable?
-```
-
----
-
-## 9. Interview-ready summary
-
-Availability in Swift has three different layers. `@available` annotates declarations and communicates lifecycle: introduced, deprecated, obsoleted, renamed, or unavailable. `#available` is runtime control flow that lets code safely call newer APIs while supporting older OS versions. `#if`, including `#if canImport`, is compile-time source selection that decides whether code exists in a build at all. A senior design keeps one public API surface and hides platform/framework variation behind private implementations. A staff-level design also treats availability as part of compatibility strategy: migration messages, fallback testing, dependency boundaries, and long-term source stability.
-
----
-
-## 10. Flashcards
-
-Q: What does `@available` do?
-
-A: It annotates a declaration’s lifecycle or constraints, such as introduced version, deprecation, obsoletion, unavailability, rename, or platform-specific availability.
-
-Q: What does `#available` do?
-
-A: It checks runtime OS availability in control flow and lets the compiler verify that newer APIs are only used in safe branches.
-
-Q: What does `#if canImport(Module)` do?
-
-A: It checks at compile time whether a module can be imported for the current build target. It does not import the module by itself.
-
-Q: Why is `#available` not enough when a framework might not exist?
-
-A: Because the compiler still needs to parse and type-check the code. If the module or type is absent from the SDK, the source cannot compile unless excluded with conditional compilation.
-
-Q: Why can `canImport` be insufficient for a new API?
-
-A: Because the module may exist while a specific API is available only on newer OS versions. You still need `#available` for runtime safety.
-
-Q: What is the difference between `compiler(>=6.2)` and `swift(>=6)`?
-
-A: `compiler` checks the compiler version. `swift` checks the Swift language mode being compiled.
-
-Q: What makes a deprecation actionable?
-
-A: It names the replacement, explains the reason, preserves compatibility where possible, and gives clients a clear migration path.
-
-Q: Why avoid duplicating public declarations in `#if` branches?
-
-A: Duplicated public surfaces drift over time and create inconsistent behavior, documentation, tests, and compatibility guarantees.
-
----
-
-## 11. Related sections
-
-- [[A7 — Functions, parameter labels, defaults, and API surface]]
-- [[A10 — Extensions and retroactive modeling]]
-- [[A11 — Access control]]
-- [[B10 — API design guidelines and Swift-native surface design]]
-- [[B11 — Library evolution and resilience-aware API design]]
-- [[E6 — Import visibility and dependency leakage]]
+- [[A7 — Functions, Parameter Labels, Defaults, and API Surface]]
+- [[A10 — Extensions and Retroactive Modeling]]
+- [[A11 — Access Control]]
+- [[B10 — API Design Guidelines and Swift-Native Surface Design]]
+- [[B11 — Library Evolution and Resilience-Aware API Design]]
+- [[E6 — Import Visibility and Dependency Leakage]]
 - [[F5 — Language mode, build settings, and migration flags]]
 
----
+### Official sources
 
-## 12. Sources
-
-- "Swift Senior/Staff Rubric and Prioritized Study Checklist." A12 availability and conditional compilation.
-- Swift.org. "Attributes." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/
-- Swift.org. "Statements." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/statements/
-- Apple Developer. "Running Code on a Specific Platform or OS Version." Apple Developer Documentation. https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version
+- [Attributes: availability](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/attributes/)
+- [Apple’s announcement](https://forums.swift.org/t/introducing-anyappleos/85728)
+- [Swift.org. "Statements." The Swift Programming Language](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/statements/)
+- [Apple Developer. "Running Code on a Specific Platform or OS Version." Apple Developer Documentation](https://developer.apple.com/documentation/xcode/running-code-on-a-specific-version)

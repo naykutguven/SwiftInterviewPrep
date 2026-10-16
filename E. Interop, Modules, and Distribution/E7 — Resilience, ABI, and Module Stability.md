@@ -9,768 +9,290 @@ tags:
   - module-stability
   - binary-frameworks
 ---
+
 # E7 — Resilience, ABI, and Module Stability
 
-## 0. Rubric snapshot
+**Goal:** Compare an unchanged executable and rebuilt consumer against a compatible resilient library replacement.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Know the practical distinction between **source compatibility**, **ABI stability**, and **module stability**. The rubric frames this as a strong senior / emerging staff topic, and as part of staff-level public SDK design under SemVer and binary compatibility constraints.
+## Mental model
 
-**Caveats**
+Source, ABI, module-interface, behavioral, and deployment compatibility are different release contracts. An unchanged executable can use a new resilient representation while retaining caller-emitted defaults or bodies. A successful XCFramework build packages artifacts; it does not prove all consumers, runtime paths, or supported compilers work. [Library evolution](https://www.swift.org/blog/library-evolution/)
 
-Many teams confuse these and accidentally promise compatibility they do not actually provide.
+## Rules and pitfalls
 
-**You should be able to answer**
+### Choose resilience before promising binary replacement
 
-- What is the difference between ABI stability and source compatibility?
-- Why does module stability matter for binary-distributed frameworks?
+Build with library evolution when independent library/client updates require it. Keep frozen-layout commitments deliberate, including private storage. Public signatures can remain source-identical while a frozen representation change breaks ABI.
 
-**You should be able to do**
+**Common pitfall:** Rebuilding the client during replacement hides binary incompatibility and caller-emitted behavior. Hash and preserve the executable, replace only the compatible dylib between process runs, then rebuild as a separate comparison.
 
-- Explain how to ship a binary SDK across Xcode versions.
-- Identify which API and implementation changes are breaking.
-- Decide when to enable library evolution / `BUILD_LIBRARY_FOR_DISTRIBUTION`.
+### Test distribution at the consumer
 
----
+Check supported architecture/platform slices, textual interface imports, linked dependencies, embedding, runtime search paths, resources, and deployment availability. A link failure and a loader failure occur at different stages.
 
-## 1. Core mental model
+**Common pitfall:** One installed compiler importing an interface cannot establish every supported Xcode version. Maintain a claimed compiler/platform matrix and report untested combinations honestly.
 
-There are three different compatibility questions:
+## Interview questions
 
-```text
-Source compatibility:
-Can client source code still compile after the library changes?
+### Why does an unchanged client retain its old default argument while calling a new protocol default witness?
 
-ABI compatibility:
-Can an already-compiled client binary keep running with a newer library binary?
+The default argument expression was emitted by the original client, while the new requirement's default witness is resolved through the evolved protocol/library machinery in this fixture. Those are different locations of behavior. ABI viability does not imply that every old client observes the rebuilt client's defaults.
 
-Module stability:
-Can a Swift compiler import a prebuilt Swift module produced by a different Swift compiler version?
-```
+### What does an interface-only import prove with one installed compiler, and what still needs a supported-Xcode matrix?
 
-These solve different problems.
+It proves that the supplied textual interface is sufficient for that selected compiler and configuration, rather than accidentally relying on a binary swiftmodule. Import with every supported compiler, SDK, and target slice to justify a module-stability claim. One successful compiler remains one data point.
 
-**Source compatibility** is about the user’s code. If they update your SDK and recompile, does their source still build? Renaming a public method, changing an argument label, removing an enum case, or tightening a generic constraint can break source compatibility.
+### Why can a successfully built binary package still fail to load its framework? What evidence would distinguish linking, embedding, and runtime search-path failures?
 
-**ABI compatibility** is about already-compiled binaries. If an app was compiled against SDK version 1.0, can it load SDK version 1.1 without recompiling? This is what matters for OS frameworks, plug-in systems, and binary SDKs distributed separately from clients.
+The package can build while its framework is missing, incorrectly embedded, incompatible with the process slice, or unreachable at runtime. Inspect link commands and symbols for link failures, bundle contents for embedding, and loader diagnostics/install names/rpaths for launch-time resolution. Execute the actual distributed consumer.
 
-**Module stability** is about Swift compiler compatibility. Swift’s binary `.swiftmodule` format is compiler-version-specific, so a client using a different Xcode / Swift compiler may fail to import a prebuilt Swift framework unless the framework ships a stable textual module interface, usually a `.swiftinterface`. Swift.org describes module stability as allowing Swift modules built with different compiler versions to be used together in one app. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
+## Focused exercise
 
-The key idea:
+**Task:** Build a consumer against a resilient library, replace it with a compatible version, and compare that unchanged executable with a rebuilt consumer.
 
-```text
-Source compatibility protects recompilation.
-ABI stability protects already-compiled binaries.
-Module stability protects cross-compiler import of prebuilt Swift modules.
-```
+**Acceptance checks:**
 
-Swift 5.0 introduced stable ABI for Swift itself on Apple platforms, meaning apps can use the Swift runtime and standard library from the OS instead of bundling their own copy. That does **not** automatically make every third-party Swift framework ABI-stable. For your own binary SDK, you need to build and evolve it under the library-evolution model. ([Swift.org, "ABI Stability and More"](https://swift.org/blog/abi-stability-and-more/))
+- The executable hash stays unchanged during library replacement.
+- The old fallback and default argument behave as stated; the rebuilt client uses the new default.
+- A maintained source switch adds the new known case; no incompatible frozen-layout executable is run.
 
----
+**Solution:**
 
-## 2. Essential mechanics
+Build v1 and v2 as separate versions of E7SDK with library evolution. Use the source and client below; never compile both library versions into one module.
 
-### Source compatibility
+Compile LibraryV1.swift and LibraryV2.swift as separate versions of the same E7SDK module, never together.
 
-Source compatibility means the client can update the dependency and recompile without changing their source.
-
-Source-compatible additive change:
+LibraryV1.swift:
 
 ```swift
-// SDK v1
-public struct AnalyticsClient {
-    public func track(_ event: Event) {}
+public struct Reading {
+    private let raw: Int
+    public init(_ value: Int) { raw = value }
+    public var value: Int { raw }
 }
+public enum DeliveryState { case queued, finished }
+public func currentState() -> DeliveryState { .queued }
+public protocol MessageProvider { func title() -> String }
+public func render(_ provider: any MessageProvider) -> String { provider.title() }
+public func attempts(_ count: Int = 1) -> Int { count }
+```
 
-// SDK v2
-public struct AnalyticsClient {
-    public func track(_ event: Event) {}
+LibraryV2.swift:
 
-    // Additive public API: usually source-compatible.
-    public func flush() async throws {}
+```swift
+public struct Reading {
+    private let implementationLabel: String
+    private let storage: [Int]
+    public init(_ value: Int) { implementationLabel = "v2"; storage = [value, 99] }
+    public var value: Int { storage[0] }
 }
-```
-
-Source-breaking change:
-
-```swift
-// SDK v1
-public func track(_ event: Event)
-
-// SDK v2
-public func track(event: Event)
-// Existing client code calling track(myEvent) no longer compiles.
-```
-
-Source compatibility is not the same as behavioral compatibility. This can be source-compatible but still dangerous:
-
-```swift
-// SDK v1
-public func retry(count: Int = 1)
-
-// SDK v2
-public func retry(count: Int = 5)
-```
-
-Existing source still compiles, but behavior changes after recompilation. For SDKs, changing defaults is often a behavioral breaking change even if the compiler accepts it.
-
----
-
-### ABI stability and library evolution
-
-ABI compatibility means already-compiled clients can keep working with a newer framework binary.
-
-Without library evolution, the compiler can make aggressive assumptions about public type layout and implementation details. That is good for optimization but bad for binary replacement.
-
-With library evolution enabled, the compiler preserves flexibility across the resilience boundary. Swift.org describes library evolution support as allowing binary frameworks to make certain additive API changes while remaining binary-compatible with previous versions. It should be used when a framework is built and updated separately from its clients. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
-
-In Xcode, this is enabled with:
-
-```text
-BUILD_LIBRARY_FOR_DISTRIBUTION = YES
-```
-
-Swift.org states that this Xcode setting turns on both library evolution and module stability. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
-
-Command-line equivalent:
-
-```bash
-swiftc Sources/*.swift \
-  -module-name MySDK \
-  -emit-library \
-  -emit-module \
-  -emit-module-interface \
-  -enable-library-evolution
-```
-
-Important implication:
-
-```text
-Do not wait until v2.0 to enable library evolution for a binary SDK.
-Turning it on later is itself binary-incompatible.
-```
-
-Swift.org explicitly notes that frameworks built without library evolution do not provide binary compatibility guarantees, and enabling it later is binary-incompatible. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
-
----
-
-### Module stability
-
-Module stability lets clients import a prebuilt Swift module even when their compiler is not the exact same one used to build the framework.
-
-Without module stability:
-
-```text
-Vendor builds MySDK.swiftmodule with Swift compiler A.
-Client tries to import it with Swift compiler B.
-Import may fail because .swiftmodule is compiler-version-specific.
-```
-
-With module stability:
-
-```text
-Vendor ships MySDK.swiftinterface.
-Client compiler reads the textual interface.
-Client can import the binary framework across supported Swift compiler versions.
-```
-
-This matters for `.xcframework` distribution:
-
-```text
-MySDK.xcframework
-├── ios-arm64
-│   ├── MySDK.framework
-│   └── Modules/MySDK.swiftmodule
-│       ├── arm64-apple-ios.swiftinterface
-│       └── arm64-apple-ios.abi.json / related metadata
-```
-
-Module stability is not a promise that every future Swift language feature can be consumed by older compilers. A `.swiftinterface` is source-like Swift; if it exposes syntax or declarations the client compiler does not understand, import can still fail. The practical rule is: build binary SDKs with a toolchain and public interface compatible with the client Xcode versions you claim to support.
-
----
-
-### Resilience boundaries
-
-A resilience boundary is the boundary between a library and a client where the client compiler must not assume too much about the library’s future implementation.
-
-For example, with library evolution enabled, a public non-`@frozen` struct can add stored properties later without breaking ABI:
-
-```swift
-// SDK v1
-public struct UserProfile {
-    public var id: String
-    public var displayName: String
+public enum DeliveryState { case queued, finished, paused }
+public func currentState() -> DeliveryState { .paused }
+public protocol MessageProvider {
+    func title() -> String
+    func suffix() -> String
 }
-
-// SDK v2, resilient if built correctly
-public struct UserProfile {
-    public var id: String
-    public var displayName: String
-
-    // ABI-resilient for a non-frozen struct under library evolution.
-    private var experimentBucket: Int = 0
+extension MessageProvider {
+    public func suffix() -> String { " + default" }
 }
+public func render(_ provider: any MessageProvider) -> String {
+    provider.title() + provider.suffix()
+}
+public func attempts(_ count: Int = 5) -> Int { count }
 ```
 
-But if the struct is `@frozen`, you promised its stored layout will not change:
+The public Reading initializer/accessor remain intact; its private representation changes. DeliveryState adds a case, MessageProvider gains a defaulted requirement, and the default argument to attempts changes. These deliberately separate ABI viability from behavioral identity.
+
+Client.swift, compiled against v1:
 
 ```swift
-@frozen
-public struct UserProfile {
-    public var id: String
-    public var displayName: String
+import E7SDK
+
+struct ClientProvider: MessageProvider {
+    func title() -> String { "hello" }
 }
-```
-
-Adding, removing, or reordering stored properties in a frozen public struct is ABI-breaking. SE-0260 defines library evolution mode and explains that `@frozen` opts a type out of layout flexibility for optimization. ([GitHub, "Library Evolution for Stable ABIs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md))
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: “Swift has ABI stability, so my SDK is ABI-stable”
-
-Bad assumption:
-
-```text
-Swift ABI stability exists on Apple platforms.
-Therefore, my third-party Swift framework can be safely replaced without recompiling clients.
-```
-
-Better:
-
-```text
-Swift's runtime / standard library ABI stability is not the same as my SDK's ABI stability.
-A binary SDK needs library evolution enabled from the beginning and must avoid ABI-breaking public changes.
-```
-
-Swift 5 ABI stability on Apple platforms means the OS can provide Swift runtime and standard library compatibility. It does not mean your framework’s public ABI is automatically resilient. ([Swift.org, "ABI Stability and More"](https://swift.org/blog/abi-stability-and-more/))
-
----
-
-### Trap 2: “Source-compatible means binary-compatible”
-
-A change can be source-compatible but ABI-breaking.
-
-Example:
-
-```swift
-// SDK v1
-@frozen
-public struct Point {
-    public var x: Double
-    public var y: Double
+func label(_ state: DeliveryState) -> String {
+    switch state {
+    case .queued: "queued"
+    case .finished: "finished"
+    @unknown default: "unrecognized"
+    }
 }
-
-// SDK v2
-@frozen
-public struct Point {
-    public var x: Double
-    public var y: Double
-    public var z: Double
-}
-```
-
-Client source may still compile after adjustments or if it never constructs `Point` directly, but an already-compiled client may have assumptions about layout. For a frozen public struct, adding a stored property breaks ABI.
-
----
-
-### Trap 3: “Module stability means I can use any Swift feature in a binary SDK”
-
-Module stability helps compilers import prebuilt modules across compiler versions, but the public `.swiftinterface` still has to be understandable to the client compiler.
-
-Risky:
-
-```swift
-// SDK public interface built with a newer compiler feature
-public func transform<T: ~Copyable>(_ value: consuming T)
-```
-
-A client using an older Swift compiler that does not understand the exposed syntax cannot import the interface.
-
-Better:
-
-```swift
-// Keep the public interface within the supported compiler matrix.
-public func transform(_ value: Data) -> Data
-```
-
-Use newer language features internally where possible. Avoid exposing them publicly unless you intentionally raise your minimum supported compiler version.
-
----
-
-### Trap 4: “`@frozen` is just an optimization annotation”
-
-`@frozen` is a promise. It tells clients they may rely on the enum cases or struct stored layout not changing in ways that would require resilience.
-
-Risky:
-
-```swift
-@frozen
-public enum PaymentState {
-    case pending
-    case paid
-}
-```
-
-Later:
-
-```swift
-@frozen
-public enum PaymentState {
-    case pending
-    case paid
-    case refunded // Breaks the frozen promise.
-}
-```
-
-For non-frozen public enums in resilient libraries, clients should switch with `@unknown default`. SE-0192 introduced handling for future enum cases and explains why plain `default` hides useful exhaustiveness diagnostics. ([GitHub, "Handling Future Enum Cases"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md))
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What is the difference between ABI stability and source compatibility?
-
-**Source compatibility** means client source code still compiles after updating the library.
-
-**ABI stability** means an already-compiled client binary can keep running with a newer version of the library binary, without recompilation.
-
-Example:
-
-```swift
-// SDK v1
-public struct Config {
-    public var timeout: TimeInterval
-}
-
-// SDK v2
-public struct Config {
-    public var timeout: TimeInterval
-    private var retryJitter: TimeInterval = 0.1
-}
-```
-
-This can be ABI-compatible if `Config` is resilient and the SDK was built with library evolution enabled. But if the struct was `@frozen`, the same change is ABI-breaking.
-
-Interview version:
-
-> Source compatibility asks whether clients can recompile their source after a library update. ABI stability asks whether already-compiled clients can run against a newer binary without recompiling. They often overlap, but they are not the same. For a Swift binary SDK, I need library evolution enabled and I need to treat ABI-public declarations as a contract, especially public types, protocol requirements, frozen structs/enums, public symbols, and inlinable code.
-
----
-
-### Q2. Why does module stability matter for binary-distributed frameworks?
-
-Because Swift’s normal `.swiftmodule` files are tied to a specific compiler version. A binary SDK vendor cannot assume all clients use the exact same Xcode version.
-
-Module stability lets the SDK ship a stable textual `.swiftinterface` so the client’s compiler can import the framework across supported compiler versions. Swift.org describes module stability as allowing Swift modules built with different compiler versions to be used together in one app. ([Swift.org, "Library Evolution in Swift"](https://swift.org/blog/library-evolution/))
-
-Interview version:
-
-> Module stability matters because binary frameworks are consumed at compile time. If I ship only compiler-specific `.swiftmodule` files, clients may fail to import the framework when they use a different Xcode. Building for distribution emits stable module interfaces, so clients can import the SDK across supported compiler versions. It solves the compiler-import problem; it does not by itself make all API changes binary-compatible.
-
----
-
-## 5. Code probe
-
-There is no code probe in the rubric for E7. Following the section template’s fallback style, use a minimal example, counterexample, and production example instead.
-
-### Minimal example: resilient public type
-
-```swift
-// SDK v1
-public struct AccountSummary {
-    public let id: String
-    public let balance: Decimal
-
-    public init(id: String, balance: Decimal) {
-        self.id = id
-        self.balance = balance
+@main struct Client {
+    static func main() {
+        let reading = Reading(42)
+        let copy = reading
+        precondition(copy.value == 42)
+        print(copy.value, label(currentState()), render(ClientProvider()), attempts(), separator: " | ")
     }
 }
 ```
 
-SDK built with:
+Observed with the same optimized Swift 6.4 client binary in the earlier recorded macOS builds:
 
-```text
-BUILD_LIBRARY_FOR_DISTRIBUTION = YES
-```
+| Loaded library / client | Output |
+| --- | --- |
+| v1 / original client | 42 \| queued \| hello \| 1 |
+| v2 / identical original client | 42 \| unrecognized \| hello + default \| 1 |
+| v2 / original source recompiled | 42 \| unrecognized \| hello + default \| 5 |
+| v2 / updated switch source | 42 \| paused \| hello + default \| 5 |
 
-Later:
+The executable hash stays identical across the first two runs. Each run starts a new process after selecting the library; no in-process replacement is performed. Reading still copies/accesses correctly, the new enum value reaches the old fallback, and the old conformance uses the new default witness. The unchanged client keeps its caller-side default argument.
+
+Updated ClientV2.swift:
 
 ```swift
-// SDK v2
-public struct AccountSummary {
-    public let id: String
-    public let balance: Decimal
+import E7SDK
 
-    // Private implementation detail.
-    private let riskScore: Int
-
-    public init(id: String, balance: Decimal) {
-        self.id = id
-        self.balance = balance
-        self.riskScore = 0
+struct ClientProvider: MessageProvider {
+    func title() -> String { "hello" }
+}
+func label(_ state: DeliveryState) -> String {
+    switch state {
+    case .queued: "queued"
+    case .finished: "finished"
+    case .paused: "paused"
+    @unknown default: "unrecognized"
+    }
+}
+@main struct Client {
+    static func main() {
+        let reading = Reading(42)
+        let copy = reading
+        precondition(copy.value == 42)
+        print(copy.value, label(currentState()), render(ClientProvider()), attempts(), separator: " | ")
     }
 }
 ```
 
-### What happens?
+The original source rebuild warns about the newly known paused case. This revised switch is warning-free. A consumer that interprets every unknown value as success would still be behaviorally wrong even if the ABI works; unrecognized makes the lack of knowledge explicit.
 
-```text
-No runtime output.
+**Reasoning:** The fixture changes resilient storage, adds an enum case, and adds a suitable defaulted protocol requirement. It demonstrates these chosen compatible changes, not every possible protocol evolution. Exact observed output belongs to the recorded configuration, with behavior review in addition to ABI checks.
 
-Compatibility result:
-- Source compatibility: usually preserved.
-- ABI compatibility: preserved only if the type is resilient and the framework was built with library evolution.
-- Module stability: preserved only if the framework ships a stable module interface compatible with the client's compiler.
-```
+## In practice
 
-### Why?
+**Choose it when:** Distribute binaries that can update independently of their clients.
 
-The client interacts through public accessors and metadata instead of assuming the exact stored layout. Across a resilience boundary, the compiler is more conservative so the library can change certain implementation details later.
+**Investigate by:** Keep unchanged and rebuilt consumers, interface-only imports, and packaged runtime execution as separate gates.
 
-```text
-Client source
-   |
-   | imports stable .swiftinterface
-   v
-Client binary
-   |
-   | calls ABI-public symbols/accessors
-   v
-SDK binary
-   |
-   | owns resilient layout/implementation
-   v
-Runtime behavior
-```
+**Strong evidence:** Define a supported release matrix and inspect diagnostics as well as process exit codes.
 
----
+### Frozen-layout rejection evidence and binary packaging — optional
 
-### Counterexample: frozen layout promise
+#### Frozen-layout counterexample
+
+Build these as separate FrozenSDK versions for comparison only.
+
+FrozenV1.swift:
 
 ```swift
-// SDK v1
-@frozen
-public struct AccountSummary {
-    public let id: String
-    public let balance: Decimal
+@frozen public struct FrozenReading {
+    public let value: Int
+    public init(_ value: Int) { self.value = value }
 }
 ```
 
-Later:
+FrozenV2.swift:
 
 ```swift
-// SDK v2
-@frozen
-public struct AccountSummary {
-    public let id: String
-    public let balance: Decimal
-    private let riskScore: Int
+@frozen public struct FrozenReading {
+    public let value: Int
+    private let reserved: Int
+    public init(_ value: Int) { self.value = value; reserved = 0 }
 }
 ```
 
-### What happens?
+Both definitions compile, and their explicit initializer keeps the same source call shape. The second adds layout to a frozen type, violating the ABI promise. Its private reserved field appears in the emitted interface because clients need the frozen shape.
 
-```text
-No direct compiler error necessarily at the point of editing the source.
+The checked swift-api-digester ABI comparison reports that reserved was added to a non-resilient type. It returns exit status zero and warning diagnostics even with -error-on-abi-breakage. Retain and inspect the diagnostic output; a release gate cannot rely only on that invocation's status. No incompatible frozen-layout binary is executed.
 
-Compatibility result:
-- This is an ABI-breaking change for a frozen ABI-public struct.
-- Existing binaries may have layout assumptions that are no longer valid.
-- The SDK has broken its @frozen promise.
+Build the two SDK versions, preserve the original consumer, and compare recompilation, binary replacement, interface import, and packaging as separate tests. Keep all sources, binaries, and caches in a temporary directory.
+
+A minimal host recipe, using the selected Swift 6.4 compiler:
+
+```sh
+mkdir -p v1 v2 live
+swiftc -swift-version 6 -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-upcoming-feature InferIsolatedConformances -default-isolation nonisolated -parse-as-library -O -enable-library-evolution -emit-module -emit-library -module-name E7SDK -emit-module-path v1/E7SDK.swiftmodule -emit-module-interface-path v1/E7SDK.swiftinterface -Xlinker -install_name -Xlinker @rpath/libE7SDK.dylib LibraryV1.swift -o v1/libE7SDK.dylib
+swiftc -swift-version 6 -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-upcoming-feature InferIsolatedConformances -default-isolation nonisolated -parse-as-library -O -enable-library-evolution -emit-module -emit-library -module-name E7SDK -emit-module-path v2/E7SDK.swiftmodule -emit-module-interface-path v2/E7SDK.swiftinterface -Xlinker -install_name -Xlinker @rpath/libE7SDK.dylib LibraryV2.swift -o v2/libE7SDK.dylib
+cp v1/libE7SDK.dylib live/libE7SDK.dylib
+swiftc -swift-version 6 -enable-upcoming-feature NonisolatedNonsendingByDefault -enable-upcoming-feature InferIsolatedConformances -default-isolation nonisolated -parse-as-library -O -I v1 Client.swift -L live -lE7SDK -Xlinker -rpath -Xlinker "$PWD/live" -o client
+shasum -a 256 client
+./client
+cp v2/libE7SDK.dylib live/libE7SDK.dylib
+./client
+shasum -a 256 client
 ```
 
-### Why?
+The earlier validation record includes additional macOS/iOS compilation configurations with explicit annotations for its comparison settings. This revised source uses the shared nonisolated baseline; see [[Guide Revision Validation]] for the current reruns. Earlier iOS/Simulator evidence is compilation, not execution.
 
-`@frozen` trades future layout flexibility for optimization. SE-0260 describes `@frozen` as a promise that stored properties for a struct, or cases for an enum, will not be added, removed, or reordered. ([GitHub, "Library Evolution for Stable ABIs"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md))
+Further acceptance checks:
 
----
+1. Recompile the same old client source against v2, observe the missing-known-case warning and the new default argument, then compile the updated switch.
+2. Stage only the v2 .swiftinterface and compile a client without its binary .swiftmodule. Do this with every toolchain you actually claim to support; only 6.4 is locally checked here.
+3. Remove the default suffix implementation from a separate v2 control; confirm the old source no longer conforms. Do not run a knowingly incompatible replacement.
+4. Compare frozen-layout ABI dumps and inspect diagnostics, including warnings returned with a successful status.
+5. Build distinct framework slices, create an XCFramework, inspect its platform metadata, and compile a consumer against every included slice. Confirm the wrong device/Simulator pairing fails.
+6. Run a real binary-package consumer and verify dynamic-framework delivery.
 
-### Production example: binary SDK distribution
+#### Checked SwiftPM binary consumer
 
-```text
-Goal:
-Ship MyAnalyticsSDK.xcframework to clients using multiple Xcode versions.
+Copy the generated E7SDK.xcframework into BinaryConsumer/Artifacts. Package.swift:
 
-Required:
-- Build as XCFramework.
-- Enable BUILD_LIBRARY_FOR_DISTRIBUTION.
-- Ship .swiftinterface files.
-- Keep public interface compatible with supported Swift compiler versions.
-- Avoid exposing implementation-only dependency types.
-- Treat public ABI as a SemVer-governed contract.
-- Run CI import tests using each supported Xcode version.
+```swift
+// swift-tools-version: 6.4
+import PackageDescription
+let package = Package(name: "BinaryConsumer", platforms: [.macOS(.v13), .iOS(.v16)],
+    targets: [
+        .binaryTarget(name: "E7SDK", path: "Artifacts/E7SDK.xcframework"),
+        .executableTarget(name: "BinaryConsumer", dependencies: ["E7SDK"],
+                          swiftSettings: [.defaultIsolation(nil), .enableUpcomingFeature("NonisolatedNonsendingByDefault"), .enableUpcomingFeature("InferIsolatedConformances")],
+                          linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker",
+                              "@executable_path"], .when(platforms: [.macOS]))])
+    ], swiftLanguageModes: [.v6])
 ```
 
-A production SDK release pipeline should test at least:
+Sources/BinaryConsumer/Consumer.swift:
 
-```bash
-# Pseudocode: each CI job uses a different supported Xcode.
-xcodebuild \
-  -scheme MySDK-Package-Consumer \
-  -destination "generic/platform=iOS" \
-  build
+```swift
+import E7SDK
+
+@main struct BinaryConsumer {
+    static func main() {
+        let reading = Reading(42)
+        precondition(reading.value == 42)
+        print("XCFramework consumer:", reading.value)
+    }
+}
 ```
 
-And for app integration:
+Run swift run BinaryConsumer on macOS. With this final manifest, the checked default Swift Build backend copies the macOS framework beside the executable, the explicit relative runpath resolves it, and the process prints XCFramework consumer: 42.
 
-```bash
-xcodebuild \
-  -workspace ConsumerApp.xcworkspace \
-  -scheme ConsumerApp \
-  -destination "generic/platform=iOS" \
-  build
-```
+The runpath is deliberate configuration for this local command-line consumer. Without it, the default backend built successfully and copied the framework, but the process failed to load @rpath/E7SDK.framework/E7SDK. The deprecated native backend passed the original-manifest diagnostic control. A separate DYLD_FRAMEWORK_PATH control also ran the unchanged original executable, confirming the runtime-resolution issue; that environment override is diagnostic evidence, not the published deployment recipe.
 
----
+The final recipe uses no manual framework copy or environment override. It establishes this arm64/macOS fixture under Swift Build, not a guarantee about every binary target or app embedding layout. An iOS/macOS app should use its normal framework embedding/signing configuration and verify the resulting application. The manifest's unsafe linker flags belong to this root executable example, not a recommended universal dependency setting.
 
-## 6. Exercise
+## References
 
-### Problem
+### Related guides
 
-You need to ship a binary SDK across Xcode versions. Explain what guarantees matter and which changes are breaking.
-
-### Bad / naive version
-
-```text
-"We will ship an XCFramework. Swift is ABI-stable now, so clients should be fine across Xcode versions."
-```
-
-### What is wrong?
-
-```text
-This confuses Swift runtime ABI stability with the SDK's own ABI stability.
-
-It ignores:
-- module stability
-- library evolution
-- dependency stability
-- .swiftinterface compatibility
-- public ABI promises
-- SemVer boundaries
-- client Xcode compatibility testing
-```
-
-### Improved version
-
-```text
-Binary SDK compatibility plan
-
-1. Distribution format
-   - Ship an XCFramework.
-   - Include device and simulator slices as needed.
-   - Sign/notarize as required by the distribution channel.
-
-2. Swift build settings
-   - Enable BUILD_LIBRARY_FOR_DISTRIBUTION=YES from the first public binary release.
-   - This emits stable module interfaces and enables library evolution behavior.
-
-3. Public API policy
-   - Treat every public/open declaration as source API.
-   - Treat every ABI-public declaration as binary API.
-   - Avoid exposing third-party dependency types in public signatures.
-   - Avoid @frozen unless the layout/cases are truly permanent.
-   - Avoid @inlinable unless cross-module optimization is worth freezing implementation details.
-
-4. Compatibility matrix
-   - Define supported Xcode / Swift compiler versions.
-   - Define minimum OS deployment target. For modern iOS app work here: iOS 18+.
-   - Test importing and building from a sample consumer app under every supported Xcode.
-
-5. SemVer policy
-   - Patch: bug fixes, no public source/ABI break.
-   - Minor: additive APIs, ABI-compatible additions, behavior changes only when safe.
-   - Major: source-breaking or ABI-breaking changes.
-
-6. Dependency policy
-   - Dependencies used in public API become part of the SDK contract.
-   - Binary Swift dependencies must also be module-stable if clients import them.
-   - Prefer wrapping dependency types behind SDK-owned public types.
-
-7. Release validation
-   - Build old client against SDK v1.
-   - Replace runtime SDK binary with SDK v2.
-   - Confirm old client still launches and exercises the SDK.
-   - Rebuild client source against SDK v2.
-   - Confirm source compatibility and warnings.
-```
-
-### Breaking-change matrix
-
-|Change|Source-breaking?|ABI-breaking?|Notes|
-|---|--:|--:|---|
-|Add a new public function|Usually no|Usually no|Can still create overload ambiguity|
-|Remove a public function|Yes|Yes|Existing source and binaries depend on it|
-|Rename a public type|Yes|Yes|Equivalent to remove + add|
-|Change argument label|Yes|Usually yes|Swift labels are part of API shape|
-|Change return type|Yes|Yes|Existing call sites and symbols change|
-|Add defaulted parameter to existing function|Often yes/no depending overloads|Risky|Prefer adding overloads carefully|
-|Change default argument value|No|Usually no symbol break|Behavioral break after recompilation|
-|Add requirement to public protocol|Yes|ABI-breaking for conformers|Existing conforming types may fail|
-|Add case to non-frozen public enum|Usually source-compatible with `@unknown default`|ABI-compatible under resilience|Clients must handle future cases|
-|Add case to `@frozen` public enum|Yes/risky|Yes|Breaks frozen promise|
-|Add private stored property to resilient public struct|No|No, if library evolution enabled|Layout stays opaque across boundary|
-|Add stored property to `@frozen` public struct|Maybe source-compatible|Yes|Layout promise broken|
-|Change internal helper not ABI-public|No|No|Unless used by `@inlinable` code|
-|Change `@usableFromInline` symbol|Usually no source break|Can be ABI-breaking|It is ABI-public despite not being source-public|
-|Enable library evolution after v1|N/A|Yes|Swift.org notes this is binary-incompatible|
-|Expose new Swift syntax in `.swiftinterface`|Maybe|Import-breaking for older compilers|Raises minimum supported compiler|
-
-### Why this is better
-
-It separates the three actual compatibility dimensions:
-
-```text
-Can source recompile?
-Can old binaries run?
-Can supported compilers import?
-```
-
-That is the difference between casually shipping a framework and operating a serious binary SDK.
-
----
-
-## 7. Production guidance
-
-Use this in production when:
-
-```text
-- Shipping a closed-source Swift SDK.
-- Shipping an XCFramework to external clients.
-- Supporting multiple client Xcode versions.
-- Maintaining public APIs under SemVer.
-- Building SDKs consumed by multiple app teams on different release schedules.
-- Designing OS-like frameworks, plugin APIs, analytics SDKs, payments SDKs, or enterprise SDKs.
-```
-
-Be careful when:
-
-```text
-- Marking structs/enums @frozen.
-- Adding @inlinable for performance.
-- Exposing third-party types in public signatures.
-- Adding public protocol requirements.
-- Changing default arguments.
-- Changing public generic constraints.
-- Relying on generated Codable/Equatable/Hashable behavior in public models.
-- Using new Swift language features in public APIs while claiming older Xcode support.
-```
-
-Avoid when:
-
-```text
-- The library is always built from source together with the app.
-- The package is internal and all clients recompile together.
-- You do not need binary distribution.
-- You want maximum optimization and have no binary-compatibility boundary.
-```
-
-Debugging checklist:
-
-```text
-1. Is the failure at compile time, link time, load time, or runtime?
-2. Is the client consuming source, .swiftmodule, or .swiftinterface?
-3. Was the framework built with BUILD_LIBRARY_FOR_DISTRIBUTION?
-4. Did a public or ABI-public symbol change?
-5. Did a public dependency type leak into the interface?
-6. Did the .swiftinterface expose syntax unsupported by the client compiler?
-7. Did a non-frozen enum require @unknown default at client switch sites?
-8. Did a supposedly internal helper become ABI-public through @usableFromInline?
-9. Did a frozen struct/enum change layout or cases?
-10. Was the old client binary tested against the new framework binary without recompilation?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> ABI stability means Swift apps work across versions, and module stability means modules work across compiler versions.
-
-This is too vague and risks mixing runtime, compiler, and library promises.
-
-### Senior answer
-
-> Source compatibility means clients can recompile after an SDK update. ABI compatibility means already-built clients can run with a new SDK binary. Module stability means a client compiler can import a prebuilt Swift framework from another compiler version via stable interfaces. For binary frameworks, I would enable `BUILD_LIBRARY_FOR_DISTRIBUTION`, avoid freezing public layout too early, and test supported Xcode versions.
-
-### Staff-level answer
-
-> I separate compatibility into source, ABI, and compiler-import dimensions. For a binary Swift SDK, Swift’s platform ABI stability is only the baseline; my SDK still needs library evolution enabled from its first binary release, stable module interfaces, dependency hygiene, and a SemVer policy that distinguishes source breaks, ABI breaks, and behavioral breaks. I would design public types to preserve resilience, avoid exposing dependency types, treat `@frozen`, `@inlinable`, and `@usableFromInline` as long-term contracts, and run CI that validates both recompilation and binary replacement across supported Xcode versions.
-
-Staff-level questions to ask:
-
-```text
-Which Xcode / Swift compiler versions do we explicitly support?
-Are clients consuming source, binary frameworks, or both?
-Can clients recompile, or must old binaries continue to run?
-Do public signatures mention third-party dependency types?
-Which public structs/enums are truly stable enough to freeze?
-Are we using @inlinable for measured performance reasons or prematurely?
-Do we test old-client/new-framework binary replacement?
-What is our SemVer policy for source, ABI, and behavioral changes?
-```
-
----
-
-## 9. Interview-ready summary
-
-Source compatibility, ABI stability, and module stability answer different questions. Source compatibility means client code still compiles after a library update. ABI stability means an already-compiled client binary can run with a newer library binary. Module stability means a Swift compiler can import a prebuilt module built with a different Swift compiler version, usually through `.swiftinterface` files. For a binary Swift SDK, I would enable `BUILD_LIBRARY_FOR_DISTRIBUTION` from the first release, avoid unnecessary `@frozen` and `@inlinable`, keep dependency types out of public signatures, and test both recompilation and binary replacement across the supported Xcode matrix.
-
----
-
-## 10. Flashcards
-
-Q: What is source compatibility?
-A: Client source code still compiles after updating the dependency.
-
-Q: What is ABI compatibility?
-A: An already-compiled client binary can run with a newer compatible library binary without recompilation.
-
-Q: What is module stability?
-A: The ability for Swift modules built with one compiler version to be imported by clients using another supported compiler version, typically through `.swiftinterface` files.
-
-Q: Does Swift ABI stability automatically make a third-party SDK ABI-stable?
-A: No. Swift’s ABI stability covers the Swift runtime / standard library on Apple platforms. A third-party binary SDK needs library evolution and careful public ABI management.
-
-Q: What does `BUILD_LIBRARY_FOR_DISTRIBUTION` do?
-A: In Xcode, it enables library evolution and module stability for framework distribution.
-
-Q: Why is enabling library evolution later dangerous?
-A: Frameworks built without library evolution provide no binary compatibility guarantee; enabling it later is itself binary-incompatible.
-
-Q: What does `@frozen` promise?
-A: A public struct’s stored properties or enum’s cases will not change in layout-relevant ways, allowing client-side optimizations but reducing future evolution flexibility.
-
-Q: Why is `@unknown default` important?
-A: It handles future enum cases while still letting the compiler warn when known cases are not explicitly handled.
-
-Q: Can a source-compatible change be ABI-breaking?
-A: Yes. For example, adding a stored property to a `@frozen` public struct may not obviously break source but breaks the ABI promise.
-
-Q: Can an ABI-compatible change be behavior-breaking?
-A: Yes. Changing a default retry count, timeout, sorting order, or error behavior may preserve ABI but still break client expectations.
-
----
-
-## 11. Related sections
-
-- [[B11 — Library evolution and resilience-aware API design]]
-- [[E6 — Import visibility and dependency leakage]]
+- [[A5 — Pattern Matching and Exhaustive Control Flow]]
+- [[A7 — Functions, Parameter Labels, Defaults, and API Surface]]
+- [[A12 — Availability and Conditional Compilation]]
+- [[B11 — Library Evolution and Resilience-Aware API Design]]
+- [[E5 — Modules, packages, targets, products, and resources]]
+- [[E6 — Import Visibility and Dependency Leakage]]
 - [[E8 — Binary frameworks, inlineability, and public implementation detail leakage]]
-- [[A7 — Functions, parameter labels, defaults, and API surface]]
-- [[A12 — Availability and conditional compilation]]
+- [[F2 — Debugging Swift code with LLDB and compiler diagnostics]]
 - [[F5 — Language mode, build settings, and migration flags]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — E7, tier placement, and staff-level compatibility emphasis.
-- Swift.org. "Library Evolution in Swift." Swift.org Blog. https://swift.org/blog/library-evolution/
-- Swift.org. "ABI Stability and More." Swift.org Blog. https://swift.org/blog/abi-stability-and-more/
-- GitHub. "Library Evolution for Stable ABIs." Swift Evolution SE-0260. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md
-- GitHub. "Handling Future Enum Cases." Swift Evolution SE-0192. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md
+- [Library evolution](https://www.swift.org/blog/library-evolution/)
+- [ABI background](https://www.swift.org/blog/abi-stability-and-more/)
+- [SE-0260](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0260-library-evolution.md)
+- [SE-0192](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md)
+- [SE-0487](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md)
+- [Apple XCFramework workflow](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle)
+- [Module tracking in debug info](https://www.swift.org/blog/module-tracking-in-debug-info/)

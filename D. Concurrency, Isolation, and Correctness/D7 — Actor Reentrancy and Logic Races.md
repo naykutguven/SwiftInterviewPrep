@@ -8,779 +8,178 @@ tags:
   - actor-reentrancy
   - logic-races
 ---
+
 # D7 — Actor Reentrancy and Logic Races
 
-## 0. Rubric snapshot
+**Goal:** Force out-of-order actor completions and prevent an older request from replacing current state.
 
-**Rubric expectation**
+> **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
-Understand that actor methods can interleave at suspension points, and that actor reentrancy is a central design concern for correctness.
+## Mental model
 
-**Caveats**
+Actor isolation serializes synchronous access, not an entire async method. At a suspension, another actor operation can change the state on which the first relied. When it resumes, its earlier assumptions may be stale. This logic race can occur in a program with no data race. Await marks potential suspension; a particular call need not actually pause. [Actor reentrancy](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md#actor-reentrancy)
 
-Actors prevent low-level data races on actor-isolated mutable state, but they do **not** make a whole async method atomic. Swift Evolution SE-0306 states that actor-isolated functions are reentrant: when such a function suspends, other work may execute on the same actor before the original function resumes. It also explicitly warns that actor state can change across an `await`. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
+## Rules and pitfalls
 
-**You should be able to answer**
+### Revalidate the invariant at publication
 
-- What does actor reentrancy mean in practice?
-- How can an `await` in the middle of an actor method invalidate assumptions made earlier in the method?
+Assign a unique operation identity before suspension, then check it before publishing success, error, or cleanup. Alternatively reserve/commit state before suspension when that matches the domain. Moving work outside the actor does not remove the need to revalidate.
 
-**You should be able to do**
+**Common pitfall:** Checking only the input string cannot distinguish repeated requests for the same input. Track the operation, not merely its parameters.
 
-- Debug an actor method that checks a cache, awaits network work, then writes stale data.
-- Predict whether the `Counter.incrementIfZero()` code probe can produce `2`.
+### Separate freshness, deduplication, and cancellation
 
----
+First-result caching can still perform duplicate work. A retained shared producer can deduplicate but needs consumer-cancellation and invalidation policy. An older producer must not clear or repopulate a replacement's slot.
 
-## 1. Core mental model
+**Common pitfall:** Async deferred cleanup can itself suspend and then overwrite newer state. Guard cleanup ownership just as carefully as successful publication; see [[D4 — Actors and Actor Isolation]].
 
-An actor gives you **serialized access to actor-isolated state while code is actively executing on the actor**. It does not guarantee that an entire `async` method runs as one uninterrupted transaction.
+## Interview questions
 
-The important boundary is `await`.
+### Can old deferred cleanup overwrite newer actor state while an async function is exiting? Why must that cleanup finish before the function returns?
 
-Before an `await`, your actor method has exclusive access to its isolated state. At the `await`, the method may suspend. While it is suspended, the actor is free to process other queued work. That other work can mutate the same actor-isolated state. When the original method resumes, all assumptions it made before the `await` may be stale.
+Yes. An awaited defer can interleave with newer actor work before it resumes and writes. The enclosing function must still await that cleanup before returning under Swift 6.4. Tag cleanup with its operation identity and revalidate after its own suspension before touching shared state.
 
-Swift Evolution describes this as **interleaving**: no two pieces of actor-isolated code execute at the exact same time on the same actor, but different partial executions may interleave at suspension points. This preserves the “single-threaded illusion” at the low level while still allowing high-level logic races. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
+### What does actor reentrancy mean in practice?
 
-The key idea:
+One method can run a synchronous segment, suspend, allow another operation to run, and later resume. Isolated state remains protected against simultaneous access, but a multi-segment business operation is not indivisible. Design the state transition to tolerate that interleaving.
 
-```text
-Actor isolation protects memory safety.
-Actor reentrancy can still break logical invariants across await.
-```
+### How can an `await` in the middle of an actor method invalidate assumptions made earlier in the method?
 
-A good senior-level shorthand:
+Another operation can invalidate a cache, replace a request, change a balance, or update a revision while the first is suspended. Re-read or compare the relevant identity/version before committing; simply retaining a pre-await local does not keep its underlying assumption current.
 
-```text
-Inside an actor:
-- synchronous region before await = critical section
-- await = critical section ends
-- code after await = must revalidate assumptions
-```
+## Focused exercise
 
-Apple’s WWDC actor guidance uses the cache/download example: checking a cache, awaiting a download, and then writing into the cache can be wrong because another task may have populated the cache while the first task was suspended. Apple’s suggested principle is to check assumptions after `await` and keep actor-state mutation in synchronous actor code where possible. ([Apple Developer, "Protect Mutable State with Swift Actors"](https://developer.apple.com/videos/play/wwdc2021/10133/))
+**Task:** Gate two actor operations so they complete out of order. Check that an older completion cannot replace the selected current result.
 
----
+**Acceptance checks:**
 
-## 2. Essential mechanics
+- The first request is known to have entered before the second starts.
+- The second completes before the first is released.
+- The late first result cannot replace the selected current result; both tasks are joined.
 
-### 2.1 Actor-isolated synchronous code runs uninterrupted
+**Solution:**
+
+Reuse the Gate actor from [[D2 — Task Hierarchy, Cancellation, and Priorities#Focused exercise]]. The rest is a standalone executable with that dependency; identities 1 and 2 are distinct operations in this fixture.
 
 ```swift
-actor Counter {
-    private var value = 0
-
-    func increment() {
-        value += 1
+actor Latest {
+    private var current = 0
+    private var value: Int?
+    func load(id: Int, started: Gate, release: Gate) async {
+        current = id
+        await started.open()
+        await release.wait()
+        guard current == id else { return }
+        value = id
     }
-
-    func resetAndIncrement() {
-        value = 0
-        increment()
+    func snapshot() -> Int? { value }
+}
+@main struct Probe {
+    static func main() async {
+        let model = Latest()
+        let firstStarted = Gate(), firstRelease = Gate()
+        let secondStarted = Gate(), secondRelease = Gate()
+        let first = Task { await model.load(id: 1, started: firstStarted, release: firstRelease) }
+        await firstStarted.wait()
+        let second = Task { await model.load(id: 2, started: secondStarted, release: secondRelease) }
+        await secondStarted.wait()
+        await secondRelease.open()
+        await second.value
+        await firstRelease.open()
+        await first.value
+        let result = await model.snapshot()
+        precondition(result == 2)
     }
 }
 ```
 
-`resetAndIncrement()` contains no suspension point. While it is executing on the actor, another task cannot interleave and mutate `value` halfway through this synchronous sequence.
+**Reasoning:** The gates establish the interleaving directly, with no scheduler-speed assumption. The guard restores the freshness invariant after suspension. This does not deduplicate requests or stop old work; those are separate resource policies.
 
-This is the safe mental model:
+## In practice
 
-```text
-No await inside actor-isolated method body
-→ no reentrancy inside that method body
-→ local actor-state reasoning is sequential
-```
+**Choose it when:** An async workflow reads actor state before awaiting external work.
 
-### 2.2 `await` splits the method into separate actor turns
+**Investigate by:** Control suspension points and test late success, error, cancellation, and cleanup.
 
-```swift
-actor TokenStore {
-    private var token: String?
+**Strong evidence:** State and validate independent freshness, sharing, invalidation, and task-ownership policies.
 
-    func refreshIfNeeded() async throws -> String {
-        if let token {
-            return token
-        }
+### Awaited cleanup interleaving — optional
 
-        let newToken = try await fetchTokenFromNetwork()
+#### Checked Swift 6.4 cleanup interleaving
 
-        token = newToken
-        return newToken
-    }
-
-    private func fetchTokenFromNetwork() async throws -> String {
-        "fresh-token"
-    }
-}
-```
-
-The method looks sequential, but actor execution is effectively split:
-
-```text
-Turn 1:
-- check token
-- observe nil
-- start await fetchTokenFromNetwork()
-- suspend
-
-Other actor work may run here.
-
-Turn 2:
-- resume
-- write token
-- return
-```
-
-If two tasks call `refreshIfNeeded()` concurrently, both can observe `token == nil`, both can fetch, and the later resumed task can overwrite the earlier result.
-
-No memory race occurs. The bug is a **logic race**.
-
-### 2.3 Reentrancy is intentional, not an accident
-
-Non-reentrant actors sound simpler, but they can cause deadlocks and unnecessary blocking. SE-0306 explains that reentrancy avoids deadlocks where actors wait on each other, improves scheduling, and prevents one suspended call from blocking unrelated actor work. ([GitHub, "Actors"](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md))
-
-So the answer is not “Swift actors are broken.” The answer is:
-
-```text
-Actors are safe for isolated mutable state.
-You still design async actor methods around suspension points.
-```
-
----
-
-## 3. Common traps and misconceptions
-
-### Trap 1: “Actors make async methods atomic”
-
-Bad:
+This standalone -parse-as-library probe coordinates the exact interleaving with a one-use gate; it does not depend on a sleep. The gate is test support and has one waiter for each operation.
 
 ```swift
-actor ImageCache {
-    private var cache: [URL: Data] = [:]
+actor CleanupGate {
+    private var paused = false
+    private var arrival: CheckedContinuation<Void, Never>?
+    private var release: CheckedContinuation<Void, Never>?
 
-    func data(for url: URL) async throws -> Data {
-        if let cached = cache[url] {
-            return cached
-        }
-
-        let downloaded = try await download(url)
-
-        cache[url] = downloaded
-        return downloaded
-    }
-}
-```
-
-Problem:
-
-```text
-The cache check happened before await.
-The cache write happened after await.
-Another task may have filled cache[url] during the await.
-```
-
-Better:
-
-```swift
-actor ImageCache {
-    private var cache: [URL: Data] = [:]
-
-    func data(for url: URL) async throws -> Data {
-        if let cached = cache[url] {
-            return cached
-        }
-
-        let downloaded = try await download(url)
-
-        if let cached = cache[url] {
-            return cached
-        }
-
-        cache[url] = downloaded
-        return downloaded
-    }
-}
-```
-
-This is the minimal “revalidate after await” fix.
-
-### Trap 2: “No data race means no race”
-
-Actors prevent simultaneous unsynchronized mutation of actor-isolated state. They do **not** prevent stale reads, duplicated work, check-then-act bugs, or overwrites caused by stale assumptions.
-
-```text
-Data race:
-Two threads/tasks access the same memory concurrently, at least one writes.
-
-Logic race:
-The program is memory-safe, but the result depends on timing/interleaving.
-```
-
-Actor reentrancy bugs are usually logic races.
-
-### Trap 3: “Just move the await outside the actor”
-
-Sometimes moving work outside the actor helps, but doing it blindly can make the invariant worse.
-
-Bad instinct:
-
-```swift
-let downloaded = try await download(url)
-await cache.store(downloaded, for: url)
-```
-
-This removes the suspension from the actor, but it does not solve duplicate downloads or stale writes by itself. You still need an explicit policy:
-
-```text
-- first writer wins
-- last writer wins
-- reuse in-flight work
-- version-check before write
-- invalidate old results
-```
-
-### Trap 4: “Use Task.detached to avoid actor blocking”
-
-`Task.detached` loses task hierarchy, actor context, priority inheritance, and task-local assumptions. It is usually the wrong fix for actor reentrancy. Reentrancy is a design problem around invariants, not a reason to escape structured concurrency.
-
----
-
-## 4. Direct answers to rubric questions
-
-### Q1. What does actor reentrancy mean in practice?
-
-Actor reentrancy means an actor-isolated async method can suspend at an `await`, and while it is suspended, the same actor can run other queued actor-isolated work. When the suspended method resumes, actor state may no longer match what it observed before suspension.
-
-Interview version:
-
-> Actor reentrancy means an actor does not lock itself for the full duration of an async method. It serializes access only while code is actively running on the actor. At an `await`, the method can suspend, and another task can enter the actor and mutate its state. So actors prevent data races, but they do not make async methods transactional.
-
-### Q2. How can an `await` in the middle of an actor method invalidate assumptions made earlier in the method?
-
-Any state read before `await` may be stale after `await`.
-
-```swift
-actor Cart {
-    private var items: [String] = []
-
-    func checkout() async throws {
-        guard !items.isEmpty else { return }
-
-        try await authorizePayment()
-
-        // Wrong assumption:
-        // items may have changed while authorizePayment() was suspended.
-        items.removeAll()
-    }
-}
-```
-
-The method assumes that the cart after authorization is the same cart that was checked before authorization. That assumption is not guaranteed.
-
-Interview version:
-
-> `await` is a boundary where the actor can process other messages. If I check a condition before `await`, I either need to commit the relevant state before suspending, snapshot the state, or revalidate after the await. Otherwise, I have a classic check-then-act race, just in actor form.
-
----
-
-## 5. Code probe
-
-Given:
-
-```swift
-actor Counter {
-    var value = 0
-
-    func incrementIfZero() async {
-        if value == 0 {
-            try? await Task.sleep(nanoseconds: 10_000_000)
-            value += 1
+    func pause() async {
+        await withCheckedContinuation { continuation in
+            release = continuation
+            paused = true
+            arrival?.resume()
+            arrival = nil
         }
     }
-}
-```
-
-### What happens?
-
-As written, this code only declares an actor and method.
-
-```text
-No output.
-No compiler error.
-```
-
-If two tasks call `incrementIfZero()` concurrently, then yes, `value` can become `2`.
-
-Example driver:
-
-```swift
-let counter = Counter()
-
-async let first: Void = counter.incrementIfZero()
-async let second: Void = counter.incrementIfZero()
-
-await first
-await second
-
-print(await counter.value)
-```
-
-Possible output:
-
-```text
-2
-```
-
-But the final value is timing-dependent. It can also be:
-
-```text
-1
-```
-
-### Why?
-
-The interleaving that produces `2`:
-
-```text
-Initial:
-value = 0
-
-Task A enters incrementIfZero()
-A checks value == 0       ✅
-A reaches await sleep
-A suspends
-
-Task B enters incrementIfZero()
-B checks value == 0       ✅
-B reaches await sleep
-B suspends
-
-A resumes
-A executes value += 1
-value = 1
-
-B resumes
-B executes value += 1
-value = 2
-```
-
-The bug is here:
-
-```swift
-if value == 0 {
-    try? await Task.sleep(nanoseconds: 10_000_000)
-    value += 1
-}
-```
-
-The condition `value == 0` was checked before suspension. The mutation happens after suspension. The method assumes the condition is still true after `await`, but actor reentrancy makes that assumption invalid.
-
-### Fix or redesign
-
-#### Fix 1: Revalidate after suspension
-
-Use this when the semantics are “increment only if the value is still zero after the async work.”
-
-```swift
-actor Counter {
-    var value = 0
-
-    func incrementIfZero() async {
-        guard value == 0 else { return }
-
-        try? await Task.sleep(nanoseconds: 10_000_000)
-
-        guard value == 0 else { return }
-
-        value += 1
+    func waitUntilPaused() async {
+        if paused { return }
+        await withCheckedContinuation { arrival = $0 }
     }
+    func open() { release?.resume(); release = nil }
 }
-```
 
-Now the interleaving becomes safe:
+actor OperationOwner {
+    private(set) var current: Int?
+    func start(_ id: Int) { current = id }
 
-```text
-A checks 0, suspends.
-B checks 0, suspends.
-A resumes, checks 0, increments to 1.
-B resumes, checks again, sees 1, returns.
-```
-
-Final value:
-
-```text
-1
-```
-
-#### Fix 2: Commit state before suspension
-
-Use this when the semantics are “claim the right to increment before doing async work.”
-
-```swift
-actor Counter {
-    var value = 0
-
-    func incrementIfZero() async {
-        guard value == 0 else { return }
-
-        value = 1
-
-        try? await Task.sleep(nanoseconds: 10_000_000)
-    }
-}
-```
-
-This turns the check-and-mutation into one synchronous actor turn.
-
-### Why this fix is correct
-
-Both fixes make the invariant explicit.
-
-The invariant is:
-
-```text
-value must only transition from 0 to 1 once.
-```
-
-The original code splits the invariant across an `await`:
-
-```text
-check value == 0
-await
-mutate value
-```
-
-That is unsafe.
-
-The corrected versions either:
-
-```text
-check → await → recheck → mutate
-```
-
-or:
-
-```text
-check → mutate → await
-```
-
-Both avoid relying on a pre-`await` fact after suspension.
-
-### Alternative fixes and tradeoffs
-
-|Option|When it is appropriate|Tradeoff|
-|---|---|---|
-|Revalidate after `await`|Async work result should only apply if state is still compatible|May waste duplicated async work|
-|Commit/reserve before `await`|You can represent “in progress” synchronously|Requires a state model beyond simple values|
-|Store in-flight `Task`|Multiple callers should share one async operation|More complex cancellation/error handling|
-|Version/check token|You need stale-result suppression|Requires careful version ownership|
-|Separate pure async work from actor mutation|Network/CPU work should not be actor-isolated|Still requires a safe write policy|
-
----
-
-## 6. Exercise
-
-### Problem
-
-Debug an actor method that checks a cache, awaits network work, then writes stale data.
-
-### Bad / naive version
-
-```swift
-import Foundation
-
-actor DataCache {
-    private var cache: [URL: Data] = [:]
-
-    func data(for url: URL) async throws -> Data {
-        if let cached = cache[url] {
-            return cached
+    func finish(_ id: Int, gate: CleanupGate) async {
+        guard current == id else { return }
+        defer {
+            await gate.pause()
+            if current == id { current = nil }
         }
-
-        let downloaded = try await download(url)
-
-        cache[url] = downloaded
-        return downloaded
+        print("finishing", id)
     }
+}
 
-    private func download(_ url: URL) async throws -> Data {
-        try await URLSession.shared.data(from: url).0
+@main struct Main {
+    static func main() async {
+        let owner = OperationOwner()
+        let gate = CleanupGate()
+        await owner.start(1)
+        let cleanup = Task { await owner.finish(1, gate: gate) }
+        await gate.waitUntilPaused()
+        await owner.start(2)
+        await gate.open()
+        await cleanup.value
+        print(await owner.current as Any)
     }
 }
 ```
 
-### What is wrong?
+Output is finishing 1, then Optional(2). Removing the identity check after awaited teardown produces nil instead: cleanup from operation 1 erases operation 2. The gate only demonstrates ordering; real cleanup still needs error, cancellation, and termination policies. The plain async-defer syntax compiles for the older targets recorded in the validation record; it does not require a cancellation shield.
 
-```text
-1. Task A checks cache[url] and sees nil.
-2. Task A starts download and suspends.
-3. Task B checks cache[url] and also sees nil.
-4. Task B starts another download and suspends.
-5. Task A resumes and writes cache[url].
-6. Task B resumes later and overwrites cache[url].
-```
+## References
 
-This code is memory-safe but logically unstable.
+### Related guides
 
-The stale assumption:
-
-```text
-"cache[url] was nil before await, therefore I should write after await."
-```
-
-That does not hold.
-
-### Improved version: first cached result wins
-
-```swift
-import Foundation
-
-actor DataCache {
-    private var cache: [URL: Data] = [:]
-
-    func data(for url: URL) async throws -> Data {
-        if let cached = cache[url] {
-            return cached
-        }
-
-        let downloaded = try await download(url)
-
-        if let cached = cache[url] {
-            return cached
-        }
-
-        cache[url] = downloaded
-        return downloaded
-    }
-
-    private func download(_ url: URL) async throws -> Data {
-        try await URLSession.shared.data(from: url).0
-    }
-}
-```
-
-### Why this is better
-
-After the `await`, it rechecks the actor state before writing. That makes the post-suspension decision depend on current actor state, not stale pre-suspension state.
-
-However, it still allows duplicate downloads.
-
-### Improved version: single-flight cache
-
-Use this when duplicate downloads are wasteful or semantically wrong.
-
-```swift
-import Foundation
-
-actor DataCache {
-    private enum Entry {
-        case ready(Data)
-        case inFlight(Task<Data, Error>)
-    }
-
-    private var entries: [URL: Entry] = [:]
-
-    func data(
-        for url: URL,
-        fetch: @Sendable @escaping (URL) async throws -> Data
-    ) async throws -> Data {
-        if let entry = entries[url] {
-            switch entry {
-            case .ready(let data):
-                return data
-
-            case .inFlight(let task):
-                return try await task.value
-            }
-        }
-
-        let task = Task {
-            try await fetch(url)
-        }
-
-        entries[url] = .inFlight(task)
-
-        do {
-            let data = try await task.value
-
-            if case .ready(let cached)? = entries[url] {
-                return cached
-            }
-
-            entries[url] = .ready(data)
-            return data
-        } catch {
-            entries[url] = nil
-            throw error
-        }
-    }
-}
-```
-
-Call site:
-
-```swift
-let cache = DataCache()
-let url = URL(string: "https://example.com/image.png")!
-
-let data = try await cache.data(for: url) { url in
-    try await URLSession.shared.data(from: url).0
-}
-```
-
-### Why this is better
-
-This models the real state machine:
-
-```text
-missing → inFlight(task) → ready(data)
-```
-
-That prevents impossible or ambiguous states. Multiple callers for the same URL share the same in-flight task instead of starting duplicate downloads.
-
-Production caveat: cancellation policy needs thought. If one caller is cancelled, should the shared download continue for other callers or be cancelled when nobody is waiting? That is a product/API decision, not just a syntax detail.
-
----
-
-## 7. Production guidance
-
-Use actor reentrancy awareness in production when:
-
-```text
-- actor methods contain await between reading and writing actor state
-- caches perform check → fetch → write
-- token refresh logic performs check → refresh → store
-- UI models suppress stale search results
-- download managers deduplicate in-flight work
-- payment/order/checkout flows depend on state remaining stable
-```
-
-Be careful when:
-
-```text
-- an actor method has more than one await
-- state is read before await and used after await
-- you use "if missing, fetch, then store" patterns
-- multiple callers may request the same resource concurrently
-- cancellation can leave "in progress" state behind
-- actor methods mutate several related properties across suspension points
-```
-
-Avoid:
-
-```text
-- assuming actors make async methods atomic
-- storing partial invariants across await without a state machine
-- fixing reentrancy by sprinkling Task.detached
-- hiding reentrancy bugs behind @MainActor
-- using @unchecked Sendable to silence a logic race
-```
-
-Debugging checklist:
-
-```text
-1. Where are the await points inside the actor method?
-2. Which actor-isolated values are read before each await?
-3. Which of those values are used after the await?
-4. Can another actor method mutate those values while this method is suspended?
-5. Should the code revalidate, reserve state, snapshot, version-check, or share in-flight work?
-6. What is the intended conflict policy: first writer wins, last writer wins, latest request wins, or single-flight?
-7. Does cancellation clean up in-progress state?
-8. Do tests force interleaving, or do they merely hope timing exposes the bug?
-```
-
----
-
-## 8. Senior vs staff-level signal
-
-### Basic answer
-
-> Actors prevent race conditions because they serialize access to state.
-
-This is incomplete and dangerous.
-
-### Senior answer
-
-> Actors prevent low-level data races on isolated state, but actor methods are reentrant at suspension points. If I read state before an `await`, I cannot assume it is still true afterward. I need to revalidate, snapshot, or update state synchronously before suspending.
-
-### Staff-level answer
-
-> Actor reentrancy is an API design concern. I avoid encoding long-lived invariants across suspension points. For cache/token/download flows, I usually model explicit states like missing, in-flight, ready, failed, or stale. I also define conflict and cancellation policy. Strict concurrency can catch unsafe cross-isolation transfers, but it will not prove that my actor’s business logic is transactionally correct.
-
-Staff-level questions to ask:
-
-```text
-What invariant is expected to survive across await?
-Should this operation be idempotent?
-Should concurrent callers share in-flight work?
-What happens if the first caller is cancelled?
-Should stale results be discarded, merged, or allowed to overwrite?
-Can the actor state machine make invalid states unrepresentable?
-Do tests deterministically force the dangerous interleaving?
-```
-
----
-
-## 9. Interview-ready summary
-
-Actor reentrancy means an actor-isolated async method may suspend at `await`, allowing other work to run on the same actor before the original method resumes. Actors still prevent low-level data races because isolated state is not accessed concurrently, but they do not make async methods atomic. Any actor state read before `await` may be stale after `await`, so production actor code must revalidate assumptions, commit state before suspension, snapshot intentionally, or model in-flight operations explicitly. The classic bug is a cache method that checks for a missing value, awaits a download, then overwrites a value that another task already cached.
-
----
-
-## 10. Flashcards
-
-Q: What does actor reentrancy mean?
-
-A: An actor-isolated async method can suspend at `await`, and while suspended, other work can execute on the same actor before the original method resumes.
-
-Q: Do actors make async methods atomic?
-
-A: No. Actors serialize access while code is executing on the actor, but `await` breaks the method into separate execution turns.
-
-Q: What kind of bug does actor reentrancy commonly cause?
-
-A: Logic races: stale reads, duplicated work, check-then-act bugs, and stale result overwrites.
-
-Q: What is the safest rule for actor state across `await`?
-
-A: Do not rely on actor state observed before `await` unless you revalidate it, snapshot it intentionally, or commit/reserve state before suspending.
-
-Q: Can two concurrent calls to `incrementIfZero()` make the value `2`?
-
-A: Yes. Both calls can check `value == 0`, suspend, then resume and increment.
-
-Q: What is the difference between a data race and an actor reentrancy bug?
-
-A: A data race is unsafe concurrent memory access. An actor reentrancy bug is memory-safe but logically wrong because state changes between suspension and resumption.
-
-Q: What is a single-flight pattern?
-
-A: A design where concurrent callers share one in-flight async operation instead of starting duplicate work.
-
-Q: Does Swift 6 strict concurrency catch actor reentrancy logic races?
-
-A: Not generally. Strict concurrency catches many data-race and isolation violations, but high-level stale-state logic remains a design and testing responsibility.
-
----
-
-## 11. Related sections
-
-- [[D1 — Structured concurrency fundamentals]]
-- [[D2 — Task hierarchy, cancellation, and priorities]]
-- [[D3 — `async let`, task groups, and choosing the right concurrency primitive]]
-- [[D4 — Actors and actor isolation]]
-- [[D5 — Global actors and `@MainActor`]]
+- [[D1 — Structured Concurrency Fundamentals]]
+- [[D2 — Task Hierarchy, Cancellation, and Priorities]]
+- [[D3 — `async let`, Task Groups, and Choosing the Right Concurrency Primitive]]
+- [[D4 — Actors and Actor Isolation]]
+- [[D5 — Global Actors and `@MainActor`]]
 - [[D6 — `Sendable`, `@Sendable`, and `sending`]]
 - [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]]
-- [[D10 — `AsyncSequence`, streams, and backpressure-aware design]]
-- [[D11 — Detached tasks, task inheritance, and isolation loss]]
-- [[F1 — Testing async and concurrent code]]
+- [[D10 — `AsyncSequence`, Streams, and Backpressure-Aware Design]]
+- [[D11 — Detached Tasks, Task Inheritance, and Isolation Loss]]
+- [[F1 — Testing Strategy in Modern Swift]]
 
----
+### Official sources
 
-## 12. Sources
-
-- [Project Notes, "Swift Senior & Staff Rubric and Prioritized Study Checklist"](<../Swift Senior & Staff Rubric and Prioritized Study Checklist.md>) — D7 Actor reentrancy and logic races.
-- GitHub. "Actors." Swift Evolution SE-0306. https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md
-- Apple Developer. "Protect Mutable State with Swift Actors." WWDC21. https://developer.apple.com/videos/play/wwdc2021/10133/
-- Swift.org. "Concurrency." The Swift Programming Language. https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/
+- [Actor reentrancy](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md#actor-reentrancy)
+- [GitHub. "Actors." Swift Evolution SE-0306](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md)
+- [Apple Developer. "Protect Mutable State with Swift Actors." WWDC21](https://developer.apple.com/videos/play/wwdc2021/10133/)
+- [Swift.org. "Concurrency." The Swift Programming Language](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/)
+- [SE-0493 — Async calls in defer](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0493-defer-async.md)
