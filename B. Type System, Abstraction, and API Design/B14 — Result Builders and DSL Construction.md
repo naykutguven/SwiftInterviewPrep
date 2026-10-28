@@ -11,93 +11,341 @@ tags:
 
 # B14 — Result Builders and DSL Construction
 
-**Goal:** Build a small ordered list DSL and identify the transformations required for an optional branch.
+**Learning goals:**
+
+- Translate a small builder body into expression, component, combination, control-flow, and final-result steps.
+- Explain eager evaluation, explicit-return opt-out, partial blocks, and typed pack-based construction.
+- Justify a DSL against plain data construction and distinguish builder APIs from Swift 6.4 trailing-closure parsing.
+
+**Prerequisites:** [[A7 — Functions, Parameter Labels, Defaults, and API Surface]]/[[A8 — Closures, Escaping, and Capture Semantics]] for closure parameters and evaluation, [[A14 — Operators, Literals, and Language Affordances]] for literal/type syntax, and [[B12 — Variadic generics and parameter packs]] before the pack-based extension.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-A result builder transforms selected bodies into calls to static builder methods. Expressions produce components, control-flow hooks combine alternatives, and a final conversion may produce another result type. The expressions and generated calls still execute at runtime. Builder syntax alone does not establish purity, lazy evaluation, isolation, or Sendable safety. [SE-0289](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md)
+A menu can be built from an ordered list of labels, with an optional item in the middle. A **result builder** lets a closure spell those contributions as separate expressions. The compiler translates the selected body into calls to static builder methods; those calls decide which expression types are accepted and how values combine.
+
+Keep three types distinct: the **expression** you write (String), the **component** produced for combination ([String]), and the **final result** (perhaps [String], perhaps a Menu). The generated calls still execute at runtime when the receiving API invokes the closure. Builder syntax supplies no purity, laziness, actor isolation, or Sendable policy. [Result-builder transform](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0289-result-builders.md#the-result-builder-transform)
+
+## Essential mechanics
+
+### Example setup
+
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; potentially trapping or deadlocking code is never run.
+
+### Convert expressions, then combine components
+
+Standalone minimal builder. list executes its nonescaping closure once; the builder determines how that closure produces [String].
+
+```swift
+@resultBuilder
+enum ListBuilder {
+    static func buildExpression(_ value: String) -> [String] { [value] }
+    static func buildBlock(_ parts: [String]...) -> [String] {
+        parts.flatMap { $0 }
+    }
+}
+func list(@ListBuilder _ body: () -> [String]) -> [String] { body() }
+let labels = list {
+    "first"
+    "last"
+}
+let expanded = ListBuilder.buildBlock(
+    ListBuilder.buildExpression("first"),
+    ListBuilder.buildExpression("last")
+)
+precondition(labels == ["first", "last"] && labels == expanded)
+precondition(list {} == [])
+```
+
+**Walkthrough:** Each String becomes a one-element component. buildBlock flattens components in order, including zero components for the empty body. expanded spells the important calls directly; result-builder transformation is not a new collection type.
+
+### Control flow needs its own hooks
+
+Shared MenuBuilder setup. This builder accepts individual labels and an array-returning helper, supports branches and loops, and converts its [String] component to a Menu result.
+
+```swift
+struct Menu: Equatable { let labels: [String] }
+@resultBuilder
+enum MenuBuilder {
+    static func buildExpression(_ value: String) -> [String] { [value] }
+    static func buildExpression(_ value: [String]) -> [String] { value }
+    static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
+    static func buildOptional(_ part: [String]?) -> [String] { part ?? [] }
+    static func buildEither(first: [String]) -> [String] { first }
+    static func buildEither(second: [String]) -> [String] { second }
+    static func buildArray(_ parts: [[String]]) -> [String] { parts.flatMap { $0 } }
+    static func buildFinalResult(_ part: [String]) -> Menu { Menu(labels: part) }
+}
+func menu(@MenuBuilder _ body: () -> Menu) -> Menu { body() }
+func extras() -> [String] { ["help", "about"] }
+let showAdmin = false
+let result = menu {
+    "home"
+    if showAdmin { "admin" }
+    if showAdmin { "sign out" } else { "sign in" }
+    for label in ["search", "settings"] { label }
+    extras()
+}
+precondition(result.labels == ["home", "sign in", "search", "settings", "help", "about"])
+```
+
+**Walkthrough:** The absent if contributes []; buildEither selects sign in; the loop supplies an array of components to buildArray. extras is accepted by buildExpression([String]), independently of loop support. buildFinalResult then wraps the combined labels in Menu.
 
 ## Rules and pitfalls
 
-### Define expression and component types explicitly
+### A loop is not an ordinary array expression
 
-A builder can turn String expressions into [String] components, combine them, and map an absent branch to an empty component. A helper returning several values also needs a supported expression conversion. buildArray handles loop-produced components, not arbitrary array expressions automatically.
+**Common pitfall:** Adding a for loop to a builder that only defines expression conversion and block combination.
 
-**Common pitfall:** Adding a for loop without buildArray or a branch without the required hook fails because the transform has no operation for that syntax. Add only the language constructs the DSL should support.
+**Mistake:** Compile-only; intentionally rejected.
 
-### Justify the DSL boundary
+```swift
+@resultBuilder
+enum SmallBuilder {
+    static func buildExpression(_ value: String) -> [String] { [value] }
+    static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
+}
+@SmallBuilder func labels() -> [String] {
+    for label in ["A", "B"] { label }
+}
+```
 
-A builder helps nested structural composition; a flat array of meaningful values is often clearer. Changes to accepted expressions, overloads, and combination hooks can alter client inference and source compatibility.
+**Consequence:** The compiler rejects the unsupported control-flow construct.
 
-**Common pitfall:** Assuming Swift 6.4 supplies a universal ArrayBuilder confuses parsing with APIs. The new array-expression trailing-closure syntax still requires a matching initializer; see [[A14 — Operators, Literals, and Language Affordances]].
+**Why:** The loop produces multiple component results, and the transform needs buildArray to combine them. Having [String] components alone does not supply that hook.
+
+**Correction:** Add the specific loop operation. This standalone correction keeps the same expression/component types.
+
+```swift
+@resultBuilder
+enum SmallBuilder {
+    static func buildExpression(_ value: String) -> [String] { [value] }
+    static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
+    static func buildArray(_ parts: [[String]]) -> [String] { parts.flatMap { $0 } }
+}
+@SmallBuilder func labels() -> [String] {
+    for label in ["A", "B"] { label }
+}
+precondition(labels() == ["A", "B"])
+```
+
+**What changes:** The loop results can now combine. An if without else would separately need buildOptional; an array-valued helper still needs a matching expression conversion.
+
+### Trailing-closure parsing does not supply an Array builder API
+
+**Common pitfall:** Assuming Swift 6.4 provides a universal Array initializer accepting a builder closure.
+
+**Mistake:** Compile-only; intentionally rejected.
+
+```swift
+let labels = [String] {
+    "A"
+    "B"
+}
+```
+
+**Consequence:** The syntax parses, but no matching standard Array initializer accepts this closure.
+
+**Why:** SE-0508 adds a spelling for an applicable initializer or callable value. The initializer and any builder must still exist in the program.
+
+**Correction:** Provide the API explicitly. The nongeneric StringListBuilder is used as @StringListBuilder, with no invented generic argument.
+
+```swift
+@resultBuilder
+enum StringListBuilder {
+    static func buildExpression(_ value: String) -> [String] { [value] }
+    static func buildExpression(_ value: [String]) -> [String] { value }
+    static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
+}
+extension Array where Element == String {
+    init(@StringListBuilder build: () -> [String]) { self = build() }
+}
+let concise = [String] {
+    "A"
+    "B"
+}
+let explicit = [String].init {
+    "A"
+    "B"
+}
+precondition(concise == ["A", "B"] && explicit == concise)
+```
+
+**What changes:** Both spellings now call the same user-defined initializer. The direct spelling is new in 6.4; .init remains useful for older compiler source compatibility. The library policy comes from this code. [Array-expression trailing closures](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0508-array-expression-trailing-closures.md)
+
+## Worked example
+
+### Construction effects and stored actions occur at different times
+
+**Setup:** Standalone data-only Route builder. Log records synchronous construction and later action invocation. It performs no router installation or asynchronous work.
+
+**Predict:** Which events exist immediately after routes returns, and which appear only after calling an action?
+
+```swift
+final class Log { var events: [String] = [] }
+struct Route {
+    let path: String
+    let action: () -> String
+}
+@resultBuilder
+enum RouteBuilder {
+    static func buildBlock(_ routes: Route...) -> [Route] { routes }
+}
+func routes(@RouteBuilder _ body: () -> [Route]) -> [Route] { body() }
+func makeRoute(_ path: String, log: Log) -> Route {
+    log.events.append("build " + path)
+    return Route(
+        path: path,
+        action: {
+            log.events.append("use " + path)
+            return path
+        })
+}
+let log = Log()
+let built = routes {
+    makeRoute("/home", log: log)
+    makeRoute("/help", log: log)
+}
+precondition(log.events == ["build /home", "build /help"])
+precondition(built.map(\.path) == ["/home", "/help"])
+precondition(built[0].action() == "/home")
+precondition(log.events == ["build /home", "build /help", "use /home"])
+```
+
+**Outcome:** Both build events occur during body execution. The use /home event appears only after the explicit action call.
+
+**Why:** makeRoute is an ordinary effectful function evaluated to produce a component. The closure it stores is a value whose body is not invoked by RouteBuilder. The builder attribute alone would tell us neither fact without inspecting the receiving API and component code.
 
 ## Interview questions
 
 ### Which hooks transform a list expression, an optional branch, a for-in loop, and the final result?
 
-buildExpression converts each supported expression to a component; buildOptional handles an if without else; buildArray combines loop results; buildFinalResult optionally converts the combined component to the declared result. buildBlock or partial-block methods combine ordered components. Each hook has a separate role.
+**Answer:** buildExpression converts a supported expression to a component. buildOptional handles an if without else; buildArray combines loop results; buildFinalResult converts the combined component to the declared result. buildBlock or a partial-block pair performs ordered combination.
+
+**Example:** Prepend MenuBuilder setup.
+
+```swift
+func makeMenu(includeHelp: Bool) -> Menu {
+    menu {
+        "home"
+        if includeHelp { extras() }
+        for label in ["search", "settings"] { label }
+    }
+}
+precondition(makeMenu(includeHelp: false).labels == ["home", "search", "settings"])
+precondition(makeMenu(includeHelp: true).labels == ["home", "help", "about", "search", "settings"])
+```
+
+**Walkthrough:** The String home becomes [home]. extras already returns [String], accepted through its own expression overload. buildOptional supplies or omits that component, and buildArray flattens the loop’s results before final Menu conversion.
+
+**Boundary:** buildArray does not automatically accept arbitrary array-valued expressions. Add only syntax and conversions the DSL intends to support; broad conversions can make mistakes harder to diagnose.
 
 ### Why does an explicit return of the required array compile, and when does the compiler warn that the builder is disabled?
 
-An explicit return can disable builder transformation and return the required array directly. The compiler can warn when a declared builder attribute is effectively bypassed by that return. A type-correct explicit return is therefore not evidence that every builder hook was used.
+**Answer:** An explicit return can opt the body out of builder transformation and return its required result directly. A declared builder function with that return produces a warning in this compiler; a closure argument can opt out without the same warning.
 
-### What must exist for [String] { ... } to type-check, and what changed from the older .init spelling?
-
-Array must have an applicable initializer accepting that trailing closure with the intended builder attribute. Swift 6.4 permits the expression syntax to parse without the older .init spelling in the supported situation; it does not add the initializer or builder implementation.
-
-### When are a plain array or model constructors clearer, and which builder changes could break a client's source?
-
-Use plain arrays or model constructors when they already show the domain clearly. Builder hook, overload, component, or expression-conversion changes can break source or change inference. Evaluate the maintenance and diagnostic cost before choosing a DSL.
-
-## Focused exercise
-
-**Task:** Build a small list DSL supporting expressions and an optional branch. Check empty input and output order, then compare plain array construction.
-
-**Acceptance checks:**
-
-- Empty input produces an empty list.
-- Optional inclusion preserves output order.
-- The same result can be expressed with a plain array and conditional append.
-
-**Solution:**
-
-Standalone ordered list builder:
+**Example:** Standalone runnable example.
 
 ```swift
 @resultBuilder
-struct ListBuilder {
+enum ListBuilder {
     static func buildExpression(_ value: String) -> [String] { [value] }
     static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
-    static func buildOptional(_ part: [String]?) -> [String] { part ?? [] }
+}
+@ListBuilder func direct() -> [String] {
+    return ["A", "B"]
 }
 func list(@ListBuilder _ body: () -> [String]) -> [String] { body() }
-func make(include: Bool) -> [String] {
-    list {
-        "first"
-        if include { "optional" }
-        "last"
-    }
-}
-precondition(list {} == [])
-precondition(make(include: false) == ["first", "last"])
-precondition(make(include: true) == ["first", "optional", "last"])
+precondition(direct() == ["A", "B"])
+precondition(list { return ["A", "B"] } == ["A", "B"])
 ```
 
-**Reasoning:** String is the expression type and [String] is the component and result type. buildOptional supplies an empty component for the absent branch. The closure executes when list calls it; the builder does not make it a stored or asynchronous description.
+**Walkthrough:** Compile without -warnings-as-errors for the stated disabled-transform warning. Neither returned array needs the builder’s String conversion. A successful result therefore does not prove that all builder hooks were invoked.
 
-## In practice
+**Boundary:** An explicit return still has to produce the required result type. Do not rely on builder inference to repair an ordinary wrong return type after opting out.
 
-**Choose it when:** Nested composition becomes clearer and supported control flow is worth the API cost.
+### What must exist for [String] { ... } to type-check, and what changed from the older .init spelling?
 
-**Investigate by:** Reduce a diagnostic to expression conversion, combination, branch, or final-result types.
+**Answer:** Array needs a matching initializer accepting the closure. A builder-based initializer additionally needs the actual builder declaration and supported hooks. Swift 6.4 changes parsing of the direct array/dictionary expression spelling, not the API requirements.
 
-**Strong evidence:** Compare the DSL against plain construction and test client inference before changing hooks.
+**Example:** Prepend StringListBuilder and custom Array initializer from the corrected trailing-closure pitfall.
 
-### Partial blocks and syntax boundaries — optional
+```swift
+func helperLabels() -> [String] { ["B", "C"] }
+let direct = [String] {
+    "A"
+    helperLabels()
+}
+let explicitInit = [String].init {
+    "A"
+    helperLabels()
+}
+precondition(direct == ["A", "B", "C"] && direct == explicitInit)
+```
 
-#### Partial blocks and final conversion
+**Walkthrough:** The custom initializer receives a closure transformed by StringListBuilder. helperLabels works because that builder explicitly accepts [String] expressions. Both spellings invoke the same implementation.
+
+**Boundary:** Ordinary array values are not callable unless an appropriate callAsFunction API also exists. The parser change is not tied to result builders, as the dictionary example below shows.
+
+Standalone dictionary counterpart. This closure is ordinary Swift, and the initializer deliberately chooses the last duplicate-key value:
+
+```swift
+extension Dictionary where Key == String, Value == Int {
+    init(buildEntries: () -> [(String, Int)]) {
+        self.init(buildEntries(), uniquingKeysWith: { _, new in new })
+    }
+}
+let attempts = [String: Int] { [("attempts", 1), ("attempts", 2)] }
+precondition(attempts == ["attempts": 2])
+```
+
+### When are a plain array or model constructors clearer, and which builder changes could break a client’s source?
+
+**Answer:** Use ordinary construction when it already expresses the structure clearly. Builder expression overloads, component types, and combination hooks form a source API: removing or broadening them can reject clients or change inference and meaning.
+
+**Example:** Prepend MenuBuilder setup.
+
+```swift
+func plain(includeHelp: Bool) -> Menu {
+    var labels = ["home"]
+    if includeHelp { labels += extras() }
+    labels += ["search", "settings"]
+    return Menu(labels: labels)
+}
+func withDSL(includeHelp: Bool) -> Menu {
+    menu {
+        "home"
+        if includeHelp { extras() }
+        for label in ["search", "settings"] { label }
+    }
+}
+for include in [false, true] {
+    precondition(plain(includeHelp: include) == withDSL(includeHelp: include))
+}
+```
+
+**Walkthrough:** Both versions visibly produce the same labels for both branches. The DSL saves some combination syntax; the ordinary form needs fewer custom language hooks. Removing MenuBuilder.buildExpression([String]) would break the extras() contribution even though buildArray remains.
+
+**Boundary:** Adding a broad conversion is also a compatibility decision because it changes what expressions can type-check. Test representative clients and use typed helpers to localize inference problems; no transform supplies SwiftUI identity or observation semantics.
+
+Prepend MenuBuilder setup. This separate builder intentionally omits the array-expression conversion; using extras() is **rejected** even though loop support exists:
+
+```swift
+@resultBuilder
+enum NarrowBuilder {
+    static func buildExpression(_ value: String) -> [String] { [value] }
+    static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
+    static func buildArray(_ parts: [[String]]) -> [String] { parts.flatMap { $0 } }
+}
+@NarrowBuilder func unsupported() -> [String] { extras() }
+```
+
+### Extension: How do partial blocks and final conversion interact?
+
+**Answer:** When the applicable first/accumulated partial-block pair is available, a nonempty block uses it instead of the nonempty buildBlock overload. An empty block still needs its empty combination. buildFinalResult can then change the combined type.
+
+**Example:** Standalone runnable example.
 
 ```swift
 @resultBuilder
@@ -111,94 +359,114 @@ enum SumBuilder {
     }
     static func buildFinalResult(_ value: Int) -> String { "total=\(value)" }
 }
-
-func total(@SumBuilder _ content: () -> String) -> String {
-    content()
-}
+func total(@SumBuilder _ content: () -> String) -> String { content() }
+precondition(total {} == "total=0")
+precondition(
+    total {
+        1
+        2
+        3
+    } == "total=6")
 ```
 
-`total {}` returns `"total=0"`; `total { 1; 2; 3 }` returns `"total=6"`. The deliberately recognizable -1 overload is not selected for the nonempty block: the available partial-block pair takes precedence. These methods combine already-produced components; they do not imply that later expression evaluation waits for each accumulation step. A temporary trace checks that ordering. [SE-0348](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0348-buildpartialblock.md)
+**Walkthrough:** The empty component is 0. The nonempty body combines 1, 2, and 3 through partial blocks, so the recognizable -1 buildBlock result is never used. Final conversion produces a String. [Partial blocks](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0348-buildpartialblock.md)
 
-Partial blocks can reduce fixed-arity overload families. They are not an automatic complexity improvement: repeatedly concatenating an ever-growing array can still copy substantial data. This sum example makes no benchmark claim and follows ordinary Int overflow behavior.
+**Boundary:** Combination follows production of expression components; it does not imply that later expressions wait for an accumulation call. The trace below tests that distinction. Repeated array concatenation can still be costly; partial blocks are not a benchmark result.
 
-A pack-based alternative preserves heterogeneous positions:
+Standalone trace of expression production versus accumulation. The Log reference is used only synchronously; no global mutable state is needed:
+
+```swift
+final class Log { var events: [String] = [] }
+struct Part {
+    let value: Int
+    let log: Log
+}
+func part(_ value: Int, log: Log) -> Part {
+    log.events.append("expression")
+    return Part(value: value, log: log)
+}
+@resultBuilder
+enum TraceBuilder {
+    static func buildPartialBlock(first: Part) -> Part {
+        first.log.events.append("first")
+        return first
+    }
+    static func buildPartialBlock(accumulated: Part, next: Part) -> Part {
+        accumulated.log.events.append("combine")
+        return Part(value: accumulated.value + next.value, log: accumulated.log)
+    }
+    static func buildFinalResult(_ part: Part) -> Int {
+        part.log.events.append("final")
+        return part.value
+    }
+}
+func traced(@TraceBuilder _ body: () -> Int) -> Int { body() }
+let log = Log()
+let sum = traced {
+    part(1, log: log)
+    part(2, log: log)
+    part(3, log: log)
+}
+precondition(sum == 6)
+precondition(
+    log.events == [
+        "expression", "expression", "expression", "first", "combine", "combine", "final",
+    ])
+```
+
+### Extension: Must every builder produce one homogeneous collection?
+
+**Answer:** No. A pack-based buildBlock can preserve each component’s static type in a tuple. Its zero, single, and many-position results follow the same pack/tuple rules as an ordinary pack function.
+
+**Example:** Standalone runnable example.
 
 ```swift
 @resultBuilder
 enum TupleBuilder {
-    static func buildBlock<each Value>(
-        _ values: repeat each Value
-    ) -> (repeat each Value) {
+    static func buildBlock<each Value>(_ values: repeat each Value) -> (repeat each Value) {
         (repeat each values)
     }
 }
+func makeTuple<Value>(@TupleBuilder _ content: () -> Value) -> Value { content() }
+let empty: Void = makeTuple {}
+let single: Int = makeTuple { 42 }
+let values: (Int, String, Bool) = makeTuple {
+    1
+    "A"
+    true
+}
+precondition(single == 42)
+precondition(values.0 == 1 && values.1 == "A" && values.2)
+_ = empty
+```
 
-func makeTuple<Value>(@TupleBuilder _ content: () -> Value) -> Value {
-    content()
+**Walkthrough:** The results are Void, Int, and the stated heterogeneous tuple. No array of Any or mechanical fixed-arity buildBlock family is needed.
+
+**Boundary:** This builder has no optional, branch, or loop hooks. It supports statically related arity, not an arbitrary runtime-length tuple. See [[B12 — Variadic generics and parameter packs|B12]] for availability and ownership boundaries.
+
+Prepend TupleBuilder setup. Applying it directly to a function exposes the intended missing-optional-hook diagnostic in this **rejected** conditional example:
+
+```swift
+@TupleBuilder func conditional(_ include: Bool) -> Int? {
+    if include { 1 }
 }
 ```
 
-`makeTuple {}` can produce Void, `makeTuple { 42 }` produces Int, and `makeTuple { 1; "a"; true }` produces `(Int, String, Bool)`. It supports neither arbitrary runtime arity nor control-flow forms without their hooks. See B12 for pack inference, shape, and ownership limits.
+### Extension: Why should closure-valued DSL expressions after array literals be made explicit?
 
-#### Array-expression trailing closures still need an API
+**Answer:** The 6.4 parser may attach a following brace to an array or dictionary expression as a trailing closure. Name the intended closure value, then contribute that name to the builder.
 
-Use the ListBuilder in this independent syntax fixture. It accepts both a String expression and a [String] helper result, unlike the narrower focused builder:
-
-```swift
-@resultBuilder struct ListBuilder {
-    static func buildExpression(_ value: String) -> [String] { [value] }
-    static func buildExpression(_ value: [String]) -> [String] { value }
-    static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
-}
-```
-
-Define a user initializer:
+**Example:** Standalone runnable example.
 
 ```swift
-extension Array where Element == String {
-    init(@ListBuilder<String> build: () -> [String]) {
-        self = build()
-    }
+@resultBuilder
+enum ArrayBuilder<Element> {
+    static func buildExpression(_ value: Element) -> [Element] { [value] }
+    static func buildBlock(_ parts: [Element]...) -> [Element] { parts.flatMap { $0 } }
 }
-
-func arraySyntaxExample() -> [[String]] {
-    let concise = [String] {
-        "A"
-        "B"
-    }
-    let explicit = [String].init {
-        "A"
-        "B"
-    }
-    return [concise, explicit]
+func makeList<Element>(@ArrayBuilder<Element> _ body: () -> [Element]) -> [Element] {
+    body()
 }
-```
-
-Both arrays are `["A", "B"]`. The direct `[String] { ... }` spelling is the 6.4 parser change; the explicit `.init` form remains useful for 6.2/6.3 source compatibility. Without the custom initializer, the new spelling still fails type checking. No built-in result builder is supplied. [SE-0508](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0508-array-expression-trailing-closures.md)
-
-Dictionary expressions benefit too. This separate example uses an ordinary closure, with an explicit last-value-wins duplicate-key policy:
-
-```swift
-extension Dictionary where Key == String, Value == Int {
-    init(buildEntries: () -> [(String, Int)]) {
-        self.init(buildEntries(), uniquingKeysWith: { _, new in new })
-    }
-}
-
-func dictionarySyntaxExample() -> [String: Int] {
-    [String: Int] {
-        [("attempts", 1), ("attempts", 2)]
-    }
-}
-```
-
-It returns `["attempts": 2]`. The parser change is not tied to builders, nor does it dictate duplicate handling. Array/dictionary values with a suitable user-defined callAsFunction can also use the syntax; ordinary arrays are not callable without such an API.
-
-#### Recheck standalone closure expressions after literals
-
-A newline alone does not necessarily separate a following closure from an array/dictionary expression under the new parser. For a DSL accumulating closures, make the intended closure value explicit:
-
-```swift
 func deferredCounts() -> [() -> Int] {
     makeList {
         let numbers = [1, 2, 3]
@@ -206,17 +474,75 @@ func deferredCounts() -> [() -> Int] {
         action
     }
 }
+let actions = deferredCounts()
+precondition(actions.count == 1 && actions[0]() == 3)
 ```
 
-This stores one closure, whose later invocation returns 3. Naming the action separates data initialization from the contributing expression. The migration probe also checks the fragile bare-closure form and a statement-terminator repair. SE-0508 documents this narrow source-compatibility edge and an init-accessor ordering edge; it does not change the ABI. [SE-0508](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0508-array-expression-trailing-closures.md)
+**Walkthrough:** ArrayBuilder and makeList are fully declared here. The named action is one closure value, stored without invocation; calling it later returns 3. The rejected bare-closure form below shows the parsing edge. [Migration edge](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0508-array-expression-trailing-closures.md#source-compatibility)
 
-#### Building a description does not execute its domain
+**Boundary:** A statement terminator can also separate the expressions, but naming the action makes the intent easier to read. This parser change does not make ordinary Array values callable.
 
-The route example below only constructs data. It does not install a router or enforce authentication. Likewise, a builder storing a closure has not necessarily executed that closure. Conversely, calling a synchronous side-effecting function to produce a component executes that call while the body runs. Test the wrapper's invocation count and the component effects separately.
+Prepend ArrayBuilder/makeList setup. The following bare closure attaches to the array literal; it is **intentionally rejected**:
 
-The checked compiler fails to produce a useful diagnostic for two malformed generic calls: an inline closure returning String where a list is required, and a conditional in the pack builder without an optional hook. Separating the ordinary closure type or applying the tuple builder directly produces the expected type/missing-hook diagnostics. The validation record retains both forms.
+```swift
+func fragileCounts() -> [() -> Int] {
+    makeList {
+        let numbers = [1, 2, 3]
+        { numbers.count }
+    }
+}
+```
 
-Break large ambiguous expressions into explicitly typed helpers or smaller model/view declarations. Treat overload changes as public API changes. Adding a broad buildExpression overload may change inference or accept mistakes; returning a final array does not guarantee the compiler can infer every earlier expression backward from it.
+Compiler-diagnostic limit: the historical validation found two malformed generic calls for which this compiler failed to produce a useful diagnostic. Typed ordinary-closure and direct TupleBuilder-function probes expose the real type/missing-hook errors. These failures are recorded as toolchain behavior, not a language rule, and are not presented as successful intended rejections.
+
+## Focused exercise
+
+**Task:** Build an ordered String list DSL supporting expressions and an optional branch; compare it with ordinary array construction.
+
+**Acceptance checks:**
+
+- An empty body produces [].
+- Both optional-branch outcomes preserve first/optional/last ordering.
+- The corresponding plain array construction has the same result for both inputs.
+
+**Solution:** Standalone runnable implementation and checks:
+
+```swift
+@resultBuilder
+enum ListBuilder {
+    static func buildExpression(_ value: String) -> [String] { [value] }
+    static func buildBlock(_ parts: [String]...) -> [String] { parts.flatMap { $0 } }
+    static func buildOptional(_ part: [String]?) -> [String] { part ?? [] }
+}
+func list(@ListBuilder _ body: () -> [String]) -> [String] { body() }
+func make(include: Bool) -> [String] {
+    list {
+        "first"
+        if include { "optional" }
+        "last"
+    }
+}
+func plain(include: Bool) -> [String] {
+    var values = ["first"]
+    if include { values.append("optional") }
+    values.append("last")
+    return values
+}
+precondition(list {} == [])
+precondition(make(include: false) == ["first", "last"])
+precondition(make(include: true) == ["first", "optional", "last"])
+for include in [false, true] { precondition(make(include: include) == plain(include: include)) }
+```
+
+**Reasoning:** The String expression type becomes a [String] component. buildOptional maps an absent contribution to [], and combination preserves order. list invokes its closure once; no stored, asynchronous, or reactive description is implied by the attribute.
+
+## In practice
+
+**Choose it when:** Use a DSL when nested structural composition becomes clearer and its supported syntax repays the custom API and diagnostic cost.
+
+**Investigate by:** Reduce failures to expression conversion, component combination, a missing control-flow hook, or final-result conversion; then inspect closure invocation and ordinary effects separately.
+
+**Strong evidence:** Compare equivalent plain construction, check empty and control-flow cases, and test representative client inference before changing public hooks or overloads.
 
 ## References
 

@@ -8,7 +8,7 @@ tags:
 
 # Guide Revision Validation
 
-The October 16 record below describes that historical revision. The [initial October 28 teaching revision](#teaching-revision--2026-10-28) updates the template, README, and D1–D3. The [remaining D-guide revision](#remaining-d-guides--2026-10-28) extends the same explanation and example requirements to D4–D14. The [A-guide revision](#a-guides--2026-10-28) applies that standard to A1–A16. The other 40 guides in B, C, E, and F are still awaiting review against the new standard.
+The October 16 record below describes that historical revision. The [initial October 28 teaching revision](#teaching-revision--2026-10-28) updates the template, README, and D1–D3. The [remaining D-guide revision](#remaining-d-guides--2026-10-28) extends the same explanation and example requirements to D4–D14. The [A-guide revision](#a-guides--2026-10-28) applies that standard to A1–A16, and the [B-guide revision](#b-guides--2026-10-28) applies it to B1–B14. The other 26 guides in C, E, and F are still awaiting review against the new standard.
 
 Reviewed 2026-10-16. All **70 topic guides** were updated from the existing working tree: A1–A16, B1–B14, C1–C12, D1–D14, E1–E8, and F1–F6. F5 and D14 were revised first to establish consistent settings.
 
@@ -268,3 +268,90 @@ The other **27 published blocks** are accepted object-compilation cases, such as
 Fixtures, manifests, per-block source hashes and results, exact commands, raw/xcsift output, control sources and binaries, module interfaces, formatting results, and editorial results remain under `/private/tmp/swift-study-a-guides-20261028`. Only Markdown is changed in the repository. Final checks compare compiler records to the published block hashes, preserve original frontmatter, require all template sections and local pitfall/answer examples, validate incoming/outgoing wiki links and heading destinations, and check whitespace. Code formatting preserves intentionally rejected syntax and the diagnostic-sensitive grouped-pattern form.
 
 Runtime evidence is **arm64 macOS 27.0.1 only**. Selective macOS 12/13 deployment-target compilation does not establish fallback execution on those systems. No iOS/device, live HTTP/UI, performance/allocation, scheduling-fairness, adversarial recursion-depth, or full cross-platform/compiler matrix is claimed. The service tests exercise stubs; cancellation gates establish controlled ordering, not a production cancellation-aware primitive. The lifecycle model checks transitions and commands rather than executing network/timer effects. Historical broader fixtures retain their original scope; the D examples and unrelated topic groups were not rerun for these A-only edits.
+
+## B guides — 2026-10-28
+
+### Scope and teaching review
+
+Revised **B1–B14** against the strengthened template and the D/A teaching standard. README now records **A1–A16, B1–B14, and D1–D14** as complete; the **26 guides in C, E, and F** still await this revision. The template and rubric did not need another change. Topic IDs, filenames, frontmatter, tags, and aliases are unchanged. The earlier October 16, D, and A evidence above retains its original scope.
+
+The chapters now introduce a concrete problem and define the terms used to explain it. Small mechanics precede combinations, worked examples precede assessment, and extensions retain their labels. All **31 pitfall pairs** include mistaken code, consequence, cause, correction, and an explanation of the restored behavior. All **72 interview answers**, including extensions, include a direct answer, local code, an outcome walkthrough, and a material boundary. Named shared declarations have assembly instructions; separate-module examples identify the library, ordinary client, and required settings.
+
+The review mapped the rubric to teaching material and checked the explanation of cause and effect separately from code/heading counts:
+
+| Guide | Essential expectations, questions, pitfalls, and exercise evidence |
+| --- | --- |
+| B1 | Associated input/output and Self relationships; existential formation versus callable members; generic, constrained-existential, and conforming-erased consumers; composition versus explicit nominal refinement; readable versus immutable state; isolated witnesses versus Sendable. The lookup checks present/missing String keys and rejects an Int key. The extension separates noncopyable protocol/payload/use-site defaults from Hashable, Set, and CustomStringConvertible support. |
+| B2 | Caller-selected generics and parameter some; result opaque identity and generic families; runtime existential choice; opening, invariant results, independent inputs, and dynamic subclasses; Sequence element constraints; optional spelling/inference; AnyView, any View, and builder structure. The exercise demonstrates generic, existential, and one-enum opaque alternatives without a performance claim. |
+| B3 | Capability and same-element proofs; distinct source/destination containers; conditional conformance; equal types versus runtime values, lengths, and indices; Copyable/Escapable defaults; primary/non-primary associated types; generalized extensions; literal inference; Iterable versus Sequence. Array, slice, empty, and fixed String/Int mismatch checks cover the append exercise. |
+| B4 | Concrete/generic/existential/superclass call surfaces; requirement witnesses versus extension-only helpers; inherited defaults versus overridable base methods; constrained lookup versus unconditional/conditional conformance; isolation permission; selector exposure, KVO interception/invalidation, and native dynamic. Both versions of the f/g exercise run; SIL and optimized controls are scoped separately. |
+| B5 | Root/Value relationships; read, writable, and reference-writable capability; struct-root reference writes; literal-to-function conversion versus stored paths; partial/full erasure; mutable getters and stable/canonical sorting; subscript captures and Sendable; appending overload losses; actor and noncopyable limits. Projection/write exercises include read-only and immutable-root rejections. |
+| B6 | Any/AnyObject and explicit bridging; concrete/generalized/protocol metatypes; generic container versus opened type(of:); supplied metatype construction; private registry erasure, actor ownership, missing/duplicate handling, fresh/shared lifetime, and metadata versus instance sendability. Reflection, module selectors, guarded demangling, bounded output, and durable identity remain distinct. The exercise fixes the base-typed metatype and rejects an unrelated factory result. |
+| B7 | Structural equality and hashing versus entity identity; conditional synthesis; CodingKeys and excluded/default/computed fields; CaseIterable eligibility/order; Sendable checking and nonpublic value inference. The mismatched synthesized hash is never used at runtime. Noncopyable struct synthesis, rejected enum synthesis, manual borrowed enum witnesses, and consumer constraints are checked separately. The exercise tests equality laws, content changes, and matching hash components. |
+| B8 | Equality/hash laws and lawful collisions; unstable hashValue versus durable IDs; independent value copies versus reference-observed key mutation; stable membership versus retained content; insert/update/dictionary replacement. New Dictionary.Keys/CollectionOfOne/EmptyCollection conformances have explicit OS boundaries. The exercise inspects both membership and the retained snapshot. |
+| B9 | Stable source/wire mappings and encoder strategies; independent key/enum renames; missing/null/type/enum/version policies; current-key precedence; safe rewriting versus dropped future fields; raw versus associated-value enum synthesis. The migration exercise checks both names, absence, null, and malformed input. A lossy-list extension consumes each source element once, preserves accepted order, reports rejected indices, and rejects a wrong root shape. |
+| B10 | Labels, distinct domain types, validation, mutation names, honest task ownership/effects, explicit public construction, and outcome shape. Noncopyable versus copyable consuming, ordinary client isolation, ~Sendable versus sending, and scoped Ref/MutableRef access are demonstrated. The FollowCore client checks valid/empty inputs and normal/self-follow decisions without pretending to perform network I/O. |
+| B11 | Source/ABI/module-interface/behavior/schema compatibility; resilient versus frozen representation; five enum configurations across module/package boundaries; callable symbols, client-visible bodies, mandatory inlining, and library specialization. Separate unchanged/rebuilt clients establish the stated replacement outcomes. The exercise includes an explicitly maintained v2 consumer. Current export-helper and warning-promotion limits remain qualified. |
+| B12 | each/repeat, typed arity, projection, same-shape relationships, iteration, zero/scalar/heterogeneous results, eager arguments versus skipped comparisons, runtime zip truncation, and explicit task scheduling. Collections and meaningful overloads are compared. Nominal versus function/alias availability, overload ambiguity, Copyable defaults, and nominal restrictions are checked. The equality exercise rejects explicit type and arity mismatches. |
+| B13 | Backing/wrapped/projected storage; direct backing initialization; composition order and projected value copies; initialization versus didSet; value-backed versus shared reference-backed copies; locked access versus whole-operation increment; memberwise access history; explicit UI actor ownership; copyable borrow/mutate accessors. The exercise checks high/low/interior initialization, mutation boundaries, and copy independence. |
+| B14 | Expression/component/final-result types; block, branch, optional, loop, array-helper, and final hooks; explicit-return opt-out; eager component effects versus stored actions; partial-block ordering; typed pack construction; custom Array/Dictionary APIs versus parser support; closure-after-literal migration and public-hook compatibility. Undefined/mismatched helpers were corrected. Empty/optional/order checks match plain array construction. |
+
+The final reading pass checked that core rules are explained before ownership/availability exceptions, that examples establish what their prose claims, and that broad comparisons show their meaningful cases. Invalid examples test the intended constraint rather than an unrelated parse/access failure. Incoming and outgoing wiki links and heading destinations are valid. Inline official sources have consolidated, deduplicated reference lists; two malformed inherited Apple documentation links were repaired.
+
+### Compiler and runtime checks
+
+Apple Swift **6.4**, `swiftlang-6.4.0.34.1` (`clang-2100.3.34.1`), from `/Applications/Xcode_27.app/Contents/Developer`. The SDK is macOS **27.0** and the arm64 host is macOS **27.0.1**, build **26A434**. Ordinary examples use:
+
+```sh
+-swift-version 6 -default-isolation nonisolated \
+  -enable-upcoming-feature NonisolatedNonsendingByDefault \
+  -enable-upcoming-feature InferIsolatedConformances \
+  -target arm64-apple-macos27.0 -warnings-as-errors
+```
+
+Every published Swift fence was extracted from the final Markdown and assembled with only its named dependencies. Compiler paths, complete arguments, source SHA-256, statuses, diagnostics, and runtime output are retained per case. Function-only, intentionally unsafe, and rejected examples were **object-compiled** with `-c`, including ownership/SIL diagnostics. Runnable examples were linked and executed separately with 15-second timeouts. Invalid comparators, broken Hashable use, and stored-key invariant violations were not executed. Compiler output passed through xcsift with raw output and pipeline status retained.
+
+| Guide | Published Swift blocks checked | Runnable examples passed | Intended compiler rejections |
+| --- | --- | --- | --- |
+| B1 | 20 | 12 | 8 |
+| B2 | 23 | 12 | 11 |
+| B3 | 22 | 13 | 9 |
+| B4 | 18 | 17 | 1 |
+| B5 | 27 | 14 | 12 |
+| B6 | 22 | 16 | 4 |
+| B7 | 19 | 13 | 5 |
+| B8 | 13 | 11 | 0 |
+| B9 | 13 | 13 | 0 |
+| B10 | 20 | 12 | 5 |
+| B11 | 23 | 8 | 5 |
+| B12 | 25 | 16 | 9 |
+| B13 | 19 | 14 | 4 |
+| B14 | 20 | 15 | 5 |
+| B1–B14 total | **284** | **186** | **78** |
+
+The other **20 published blocks** are accepted object-compilation cases: shared declarations, separate library modules, and deliberately unexecuted examples. B14's explicit-return example retains its intended disabled-builder warning by compiling without -warnings-as-errors. B3's heterogeneous-literal inference probe also omits that flag; this compiler emits no warning for the checked call. Ordinary accepted examples keep warnings as errors. The final full extraction pass passed all 284 blocks.
+
+### Additional configuration and boundary controls
+
+**64 additional compiler cases** and three runs of unchanged executables add **18 successful runtime cases** and **13 intended rejections**. The B revision therefore records **348 compiler cases**, **204 runtime cases**, and **91 intended compiler rejections** overall. Running an already compiled executable is not counted as another compiler case.
+
+- **Dispatch and derived behavior:** B4's SILGen shows witness_method for the generic requirement, a function_ref for its extension helper, and class_method for the superclass call. Optimized scripts preserve helper, inherited-witness, and constrained-default behavior. The concrete/generic/existential mechanics also run under MainActor declaration defaults as a separate configuration. B7's generated hash SIL includes both id and name despite custom ID-only equality; the invalid hash collection is never executed.
+- **Runtime and collection availability:** B6's guarded demangling source compiles for macOS 26; an unguarded call rejects. The installed iOS 27 and simulator 27 SDKs accept the guarded fallback source and reject direct Runtime import because the module is absent. B8's unguarded new collection conformances reject for macOS 26, while Set(dictionary.keys) compiles for that target and runs on the OS 27 host.
+- **API isolation:** FollowCore is rebuilt under MainActor declaration defaults. Its ordinary neutral client rejects the imported actor-isolated construction/call surface, confirming that the client's nonisolated defaults do not rewrite the library contract.
+- **Enum matrix:** Five separately emitted DeliveryAPI variants compare plain nonresilient, plain resilient, frozen resilient, explicit nonexhaustive nonresilient, and nonexhaustive(warn) nonresilient enums. Separate Consumer versus DeliveryKit package identities establish the published external/same-package table. A warn enum still rejects a missing known case without fallback. An omitted known case plus @unknown default warns and executes fallback even with -warnings-as-errors in this compiler; ordinary default emits no such warning. This promotion limitation is not generalized to every warning.
+- **Resilient enum replacement:** StatusSDK v1 and an external optimized client initially print ready. A compatible dylib replacement adds/returns paused; the byte-for-byte unchanged client prints future. Rebuilding unchanged source warns and prints future. The maintained consumer explicitly handles paused and prints paused.
+- **Representation replacement:** RepresentationAPI changes nonfrozen Token's private String storage to private reference storage plus a generation value while preserving its construction/getter contract. The unchanged and rebuilt clients both print abc. Its interface hides nonfrozen private fields and exposes the frozen Point layout fields. No incompatible frozen-layout edit was attempted.
+- **Definition visibility:** RevisionAPI v1 prints `1,1,1,1`. Replacing four literal bodies with 2 yields `2,1,1,1` from the unchanged optimized executable and `2,2,2,2` after rebuilding. The interface withholds libraryRevision's body and exposes clientRevision/visibleRevision/forcedRevision bodies. Demangled public symbols include libraryRevision, visibleRevision, and forcedRevision, with no library clientRevision entry. Client emission is therefore distinct from inlining.
+- **Specialization and textual imports:** Optimized containsZero SIL compares the generic metatype with Array<Int>, branches to a concrete path, and retains the generic witness-based fallback. The object exports one generic containsZero entry; no separate specialized public ABI or speedup is claimed. Partial specialization and the misspelled attribute reject. Four isolated textual interfaces import successfully with this compiler after withholding their binary modules.
+- **Pack deployment:** Unguarded nominal Route rejects for macOS 13 and iOS 16; its availability-protected declaration compiles, and unguarded declarations compile at macOS 14/iOS 17. The separate function/alias source compiles for the older targets. This is selective compilation, not execution on those systems.
+- **Builder diagnostics:** A separately typed ordinary closure with the wrong [String] result rejects. The published direct TupleBuilder function exposes the missing optional-hook diagnostic. The fragile newline-after-array closure example preserves its original layout rather than allowing the formatter to conceal the parsing edge.
+
+All dynamic replacements use -enable-library-evolution, -emit-library/-emit-module, stable @rpath install names, and client rpaths. The three original executable hashes match after replacement. The replacement sources, exact commands, original interfaces, symbol output, SIL, and observations are retained separately from ordinary object-linked examples.
+
+### Evidence and limits
+
+Fixtures, manifests, exact commands, per-block hashes/results, raw/xcsift logs, configuration controls, dylibs/clients, interfaces, symbol/SIL observations, formatting results, and editorial checks remain under `/private/tmp/swift-study-b-guides-20261028`. Only Markdown is changed in the repository. Final checks preserve original frontmatter, require all template sections and local pitfall/answer examples, compare published source hashes with compiler records, check internal guide/heading links, and check whitespace. The formatter preserves the deliberately invalid B2 composition syntax and B14's diagnostic-sensitive newline example.
+
+Historical compiler limitations remain explicit: inferred noncopyable key-path roots and one noncopyable generic wrapper caused compiler failures; those crash probes were not rerun or counted as intended rejections. Some invalid direct same-type/generic-builder expressions failed to yield useful diagnostics in the earlier validation; fixed function-type/ordinary-closure/direct-builder probes expose the intended errors. Current @export(interface) helper eligibility still does not replace the working @usableFromInline pattern for an exposed @inlinable caller. Proposal text alone is not treated as SDK/compiler support.
+
+Runtime evidence is **arm64 macOS 27.0.1 only**. iOS/device execution, older-runtime behavior, rendered SwiftUI, live services, production registry lifecycle, performance/allocation measurements, scheduling fairness, an older-compiler textual-interface matrix, and full binary-framework distribution remain outside these checks. The SwiftUI examples test construction/type behavior; the KVO example tests a synchronous local observation and invalidation. Library replacement demonstrates the specific preserved contracts, not arbitrary API/layout compatibility. Previously revised A/D examples and unrelated C/E/F guides were not rerun for these B-only edits.
