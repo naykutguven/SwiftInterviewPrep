@@ -11,155 +11,340 @@ tags:
 
 # D7 — Actor Reentrancy and Logic Races
 
-**Goal:** Force out-of-order actor completions and prevent an older request from replacing current state.
+**Learning goals:**
+
+- Trace the synchronous segments of an actor method around actual suspension.
+- Protect publication and cleanup against stale assumptions, including repeated inputs.
+- Separate freshness, shared producers, invalidation, and cancellation policies.
+
+**Prerequisites:** [[D4 — Actors and Actor Isolation]] for actor ownership and [[D2 — Task Hierarchy, Cancellation, and Priorities]] for identity/cancellation. The gates below are test support, not production cancellable waits.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-Actor isolation serializes synchronous access, not an entire async method. At a suspension, another actor operation can change the state on which the first relied. When it resumes, its earlier assumptions may be stale. This logic race can occur in a program with no data race. Await marks potential suspension; a particular call need not actually pause. [Actor reentrancy](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md#actor-reentrancy)
+A data race is unsynchronized access to memory. A **logic race** is a wrong result caused by the order of otherwise safe operations. An actor can prevent the first while permitting the second.
+
+**Reentrancy** means another actor operation may run while an async method is suspended. For example, request A reads the current selection, awaits a service, and later publishes. Request B can change the selection during that wait. A's old local value has not changed, but its assumption about which selection is current is no longer valid. `await` marks possible suspension; it does not require every call to suspend. [SE-0306 — reentrancy](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md#actor-reentrancy)
+
+## Essential mechanics
+
+### Example setup
+
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; potentially trapping or deadlocking code is never run.
+
+### Read, await, and commit are different stages
+
+**Setup:** Standalone **compile-only** actor. The second availability check is essential.
+
+```swift
+actor Seat {
+    private var available = true
+    func reserve(approved: @Sendable () async -> Bool) async -> Bool {
+        guard available else { return false }
+        let allowed = await approved()
+        guard allowed, available else { return false }
+        available = false
+        return true
+    }
+}
+```
+
+**Walkthrough:** Two callers may both reach approval after observing availability. Only one can pass the post-await check and reserve the seat. Checking and setting happen in one synchronous segment. Reserving before approval with explicit rollback would be a different domain policy.
+
+### Shared setup — gate
+
+A gate acknowledges arrival or controls release. Opening before waiting is safe. It intentionally ignores cancellation so the test driver must release every wait it enters.
+
+```swift
+actor Gate {
+    private var opened = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        if opened { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func open() {
+        opened = true
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending { waiter.resume() }
+    }
+}
+```
+
+### Freshness does not deduplicate work
+
+**Setup:** Standalone **compile-only** teaching cache without an invalidation API.
+
+```swift
+actor SharedValue {
+    private var cached: String?
+    private var inFlight: Task<String, Error>?
+    func value(load: @escaping @Sendable () async throws -> String) async throws -> String {
+        if let cached { return cached }
+        if let inFlight { return try await inFlight.value }
+        let producer = Task { try await load() }
+        inFlight = producer
+        defer { inFlight = nil }
+        let value = try await producer.value
+        cached = value
+        return value
+    }
+}
+```
+
+**Walkthrough:** Retaining the task before awaiting lets later callers join the same producer. Merely allowing only the first completion to fill a cache would not stop duplicate requests. This small version has no invalidation, and a cancelled waiter waits for shared completion. D4's TokenStore adds producer identity and invalidation; adding a reset method here without those checks would create a new race.
 
 ## Rules and pitfalls
 
-### Revalidate the invariant at publication
+### Track the invocation, not just its input
 
-Assign a unique operation identity before suspension, then check it before publishing success, error, or cleanup. Alternatively reserve/commit state before suspension when that matches the domain. Moving work outside the actor does not remove the need to revalidate.
+**Common pitfall:** Comparing query strings is expected to distinguish overlapping requests when the sequence is A → B → A.
 
-**Common pitfall:** Checking only the input string cannot distinguish repeated requests for the same input. Track the operation, not merely its parameters.
+**Mistake:** Standalone **compile-only** actor.
 
-### Separate freshness, deduplication, and cancellation
+```swift
+actor Results {
+    var query = ""
+    var value: String?
+    func load(_ query: String, using service: @Sendable () async -> String) async {
+        self.query = query
+        let result = await service()
+        guard self.query == query else { return }
+        value = result
+    }
+}
+```
 
-First-result caching can still perform duplicate work. A retained shared producer can deduplicate but needs consumer-cancellation and invalidation policy. An older producer must not clear or repopulate a replacement's slot.
+**Consequence:** The first A may overwrite the latest A, because both have equal query text.
 
-**Common pitfall:** Async deferred cleanup can itself suspend and then overwrite newer state. Guard cleanup ownership just as carefully as successful publication; see [[D4 — Actors and Actor Isolation]].
+**Why:** The resource name is not the operation's identity. The actor can safely execute a stale decision.
+
+**Correction:** **Shared setup — latest results.** Standalone **compile-only** actor; prepend this named setup where used below. It also protects error publication and cleanup.
+
+```swift
+import Foundation
+actor Latest {
+    private var current: UUID?
+    private(set) var value: String?
+    private(set) var error: String?
+    func load(_ query: String,
+              using service: @Sendable (String) async throws -> String) async {
+        let id = UUID(); current = id
+        defer { if current == id { current = nil } }
+        do {
+            let loaded = try await service(query)
+            guard !Task.isCancelled, current == id else { return }
+            value = loaded; error = nil
+        } catch {
+            guard !Task.isCancelled, current == id else { return }
+            self.error = "Failed"
+        }
+    }
+}
+```
+
+**What changes:** Each invocation has a fresh token. It must still own the slot when it publishes. Cancellation suppresses a current result even without replacement, while stale cleanup cannot erase a newer token.
+
+### Cleanup must revalidate after its own suspension
+
+**Common pitfall:** A check before entering async deferred cleanup is assumed to remain true after teardown awaits.
+
+**Mistake:** Standalone **compile-only** Swift 6.4 actor.
+
+```swift
+actor Owner {
+    var current: Int?
+    func finish(_ id: Int, teardown: @Sendable () async -> Void) async {
+        guard current == id else { return }
+        defer {
+            await teardown()
+            current = nil
+        }
+        return
+    }
+}
+```
+
+**Consequence:** While teardown is suspended, a new operation can replace current. The old defer then clears that new state.
+
+**Why:** A defer describes when cleanup runs; it does not make its async body indivisible.
+
+**Correction:** Standalone **compile-only** actor.
+
+```swift
+actor Owner {
+    var current: Int?
+    func finish(_ id: Int, teardown: @Sendable () async -> Void) async {
+        guard current == id else { return }
+        defer {
+            await teardown()
+            if current == id { current = nil }
+        }
+        return
+    }
+}
+```
+
+**What changes:** The post-teardown check protects the actual write. Both versions still wait for deferred cleanup before returning.
+
+## Worked example
+
+### Force the newer request to finish first
+
+**Setup:** Prepend **gate** and **latest results**. Runnable.
+
+**Predict:** Which value remains after the old request for the same query finishes last?
+
+```swift
+let model = Latest()
+let oldStarted = Gate(), oldRelease = Gate()
+let old = Task {
+    await model.load("A") { _ in
+        await oldStarted.open(); await oldRelease.wait(); return "old A"
+    }
+}
+await oldStarted.wait()
+await model.load("A") { _ in "new A" }
+await oldRelease.open()
+await old.value
+let result = await model.value
+precondition(result == "new A")
+```
+
+**Outcome:** `new A` remains selected.
+
+**Why:** The acknowledgment proves the old operation entered before the new one. The new call completes before the driver releases the old service. The old token cannot match the current slot, regardless of equal query text. No assertion depends on a scheduler delay.
 
 ## Interview questions
 
-### Can old deferred cleanup overwrite newer actor state while an async function is exiting? Why must that cleanup finish before the function returns?
-
-Yes. An awaited defer can interleave with newer actor work before it resumes and writes. The enclosing function must still await that cleanup before returning under Swift 6.4. Tag cleanup with its operation identity and revalidate after its own suspension before touching shared state.
-
 ### What does actor reentrancy mean in practice?
 
-One method can run a synchronous segment, suspend, allow another operation to run, and later resume. Isolated state remains protected against simultaneous access, but a multi-segment business operation is not indivisible. Design the state transition to tolerate that interleaving.
+**Answer:** An async actor method runs in segments. Other operations can access the actor between segments when the first method suspends, so the entire method is not one transaction.
 
-### How can an `await` in the middle of an actor method invalidate assumptions made earlier in the method?
-
-Another operation can invalidate a cache, replace a request, change a balance, or update a revision while the first is suspended. Re-read or compare the relevant identity/version before committing; simply retaining a pre-await local does not keep its underlying assumption current.
-
-## Focused exercise
-
-**Task:** Gate two actor operations so they complete out of order. Check that an older completion cannot replace the selected current result.
-
-**Acceptance checks:**
-
-- The first request is known to have entered before the second starts.
-- The second completes before the first is released.
-- The late first result cannot replace the selected current result; both tasks are joined.
-
-**Solution:**
-
-Reuse the Gate actor from [[D2 — Task Hierarchy, Cancellation, and Priorities#Focused exercise]]. The rest is a standalone executable with that dependency; identities 1 and 2 are distinct operations in this fixture.
+**Example:** Standalone **compile-only** actor.
 
 ```swift
-actor Latest {
-    private var current = 0
-    private var value: Int?
-    func load(id: Int, started: Gate, release: Gate) async {
-        current = id
-        await started.open()
-        await release.wait()
-        guard current == id else { return }
-        value = id
-    }
-    func snapshot() -> Int? { value }
-}
-@main struct Probe {
-    static func main() async {
-        let model = Latest()
-        let firstStarted = Gate(), firstRelease = Gate()
-        let secondStarted = Gate(), secondRelease = Gate()
-        let first = Task { await model.load(id: 1, started: firstStarted, release: firstRelease) }
-        await firstStarted.wait()
-        let second = Task { await model.load(id: 2, started: secondStarted, release: secondRelease) }
-        await secondStarted.wait()
-        await secondRelease.open()
-        await second.value
-        await firstRelease.open()
-        await first.value
-        let result = await model.snapshot()
-        precondition(result == 2)
+actor Revision {
+    private var revision = 0
+    func bump() { revision += 1 }
+    func unchanged(after pause: @Sendable () async -> Void) async -> Bool {
+        let before = revision
+        await pause()
+        return revision == before
     }
 }
 ```
 
-**Reasoning:** The gates establish the interleaving directly, with no scheduler-speed assumption. The guard restores the freshness invariant after suspension. This does not deduplicate requests or stop old work; those are separate resource policies.
+**Walkthrough:** `bump()` may run while `pause()` is unfinished. On resumption the comparison can be false, even though each access to revision was protected.
 
-## In practice
+**Boundary:** Do not infer an interleaving merely because await appears in source; use a gate to force it in a regression test.
 
-**Choose it when:** An async workflow reads actor state before awaiting external work.
+### How can an await in the middle of an actor method invalidate assumptions made earlier in the method?
 
-**Investigate by:** Control suspension points and test late success, error, cancellation, and cleanup.
+**Answer:** Another operation can change the state on which the pending operation relied. Re-read, compare a version, or reserve state before suspension according to the domain.
 
-**Strong evidence:** State and validate independent freshness, sharing, invalidation, and task-ownership policies.
-
-### Awaited cleanup interleaving — optional
-
-#### Checked Swift 6.4 cleanup interleaving
-
-This standalone -parse-as-library probe coordinates the exact interleaving with a one-use gate; it does not depend on a sleep. The gate is test support and has one waiter for each operation.
+**Example:** Standalone **compile-only** version-checked commit.
 
 ```swift
-actor CleanupGate {
-    private var paused = false
-    private var arrival: CheckedContinuation<Void, Never>?
-    private var release: CheckedContinuation<Void, Never>?
-
-    func pause() async {
-        await withCheckedContinuation { continuation in
-            release = continuation
-            paused = true
-            arrival?.resume()
-            arrival = nil
-        }
+actor Draft {
+    private var revision = 0
+    private(set) var text = ""
+    func edit(_ text: String) { self.text = text; revision += 1 }
+    func suggest(using service: @Sendable (String) async -> String) async {
+        let observed = revision
+        let suggestion = await service(text)
+        guard revision == observed else { return }
+        text = suggestion
+        revision += 1
     }
-    func waitUntilPaused() async {
-        if paused { return }
-        await withCheckedContinuation { arrival = $0 }
-    }
-    func open() { release?.resume(); release = nil }
 }
+```
 
+**Walkthrough:** A user edit during service execution increments the revision. The old suggestion then fails the comparison and cannot overwrite the edit. The check and update contain no suspension.
+
+**Boundary:** A version check protects freshness, not resource use. It does not cancel old service calls, deduplicate them, or define persistence behavior.
+
+### Extension — Can old deferred cleanup overwrite newer actor state while an async function is exiting? Why must cleanup finish before return?
+
+**Answer:** Yes: awaited cleanup can suspend and later resume against newer state. Swift 6.4 still waits for that defer before the enclosing function returns.
+
+**Example:** Prepend **gate**. Runnable controlled cleanup.
+
+```swift
 actor OperationOwner {
     private(set) var current: Int?
     func start(_ id: Int) { current = id }
-
-    func finish(_ id: Int, gate: CleanupGate) async {
+    func finish(_ id: Int, entered: Gate, release: Gate) async {
         guard current == id else { return }
         defer {
-            await gate.pause()
+            await entered.open()
+            await release.wait()
             if current == id { current = nil }
         }
-        print("finishing", id)
+        return
     }
 }
+let owner = OperationOwner()
+let entered = Gate(), release = Gate()
+await owner.start(1)
+let cleanup = Task { await owner.finish(1, entered: entered, release: release) }
+await entered.wait()
+await owner.start(2)
+await release.open()
+await cleanup.value
+let current = await owner.current
+precondition(current == 2)
+```
 
-@main struct Main {
-    static func main() async {
-        let owner = OperationOwner()
-        let gate = CleanupGate()
-        await owner.start(1)
-        let cleanup = Task { await owner.finish(1, gate: gate) }
-        await gate.waitUntilPaused()
-        await owner.start(2)
-        await gate.open()
-        await cleanup.value
-        print(await owner.current as Any)
+**Walkthrough:** Operation 1 enters its defer and pauses. Operation 2 becomes current. Resuming cleanup compares identity again and retains 2. Joining `cleanup.value` proves deferred work finished before the caller proceeds. Removing that final comparison erases operation 2. [SE-0493](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0493-defer-async.md)
+
+**Boundary:** This test helper only establishes ordering. Real teardown still needs error, cancellation, and termination policy; an await does not install a cancellation shield.
+
+## Focused exercise
+
+**Task:** Force old actor work to finish after a newer selected request, for both late success and ordinary failure.
+
+**Acceptance checks:**
+
+- Old work is known to have started before replacement.
+- Replacement completes before old work is released.
+- Neither late success nor error replaces current state; both task paths finish.
+
+**Solution:** Prepend **gate** and **latest results**. Runnable.
+
+```swift
+enum ServiceError: Error { case offline }
+for fails in [false, true] {
+    let model = Latest()
+    let entered = Gate(), release = Gate()
+    let old = Task {
+        await model.load("A") { _ in
+            await entered.open(); await release.wait()
+            if fails { throw ServiceError.offline }
+            return "old A"
+        }
     }
+    await entered.wait()
+    await model.load("A") { _ in "new A" }
+    await release.open()
+    await old.value
+    let value = await model.value
+    let error = await model.error
+    precondition(value == "new A" && error == nil)
 }
 ```
 
-Output is finishing 1, then Optional(2). Removing the identity check after awaited teardown produces nil instead: cleanup from operation 1 erases operation 2. The gate only demonstrates ordering; real cleanup still needs error, cancellation, and termination policies. The plain async-defer syntax compiles for the older targets recorded in the validation record; it does not require a cancellation shield.
+**Reasoning:** The driver selects the interleaving through acknowledgments. Equal input text makes a string-only guard insufficient. The identity checks protect both outcomes; old work is joined rather than abandoned.
+
+## In practice
+
+**Choose it when:** An actor reads a mutable assumption before awaiting external work or cleanup.
+
+**Investigate by:** Mark every commit after suspension and test stale success, error, invalidation, and cleanup independently.
+
+**Strong evidence:** Describe freshness, producer sharing, cancellation, and invalidation as separate policies and prove the required interleavings.
 
 ## References
 
@@ -179,7 +364,6 @@ Output is finishing 1, then Optional(2). Removing the identity check after await
 ### Official sources
 
 - [Actor reentrancy](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md#actor-reentrancy)
-- [GitHub. "Actors." Swift Evolution SE-0306](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md)
 - [Apple Developer. "Protect Mutable State with Swift Actors." WWDC21](https://developer.apple.com/videos/play/wwdc2021/10133/)
 - [Swift.org. "Concurrency." The Swift Programming Language](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/concurrency/)
 - [SE-0493 — Async calls in defer](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0493-defer-async.md)

@@ -10,6 +10,8 @@ By no means is this an always-correct, always-complete document set. I try to ke
 
 All 70 topic guides were revised on 2026-10-16 using the approved template and revised senior/staff rubric. The [guide revision validation](<./Guide Revision Validation.md>) records settings, compiler/runtime evidence, and remaining limits.
 
+The teaching requirements were strengthened on 2026-10-28 after a review found that the revised guides often stated rules without enough explanation or examples. D1 is the reference chapter for this standard. All concurrency guides, D1–D14, now follow it; the other 56 guides retain the earlier structure and still need review against the new requirements. The validation record distinguishes the D1–D3 reference revision and D4–D14 follow-up from the October 16 checks.
+
 Unless an example explicitly compares other configurations, the shared baseline is:
 
 | Setting | Baseline |
@@ -59,17 +61,20 @@ Think of this repo as a study map, not a sacred text.
 
 ## What each guide includes 🔍
 
-The [approved answer template](<./Swift Section Answer Template Revised.md>) gives each guide a consistent structure:
+The [answer template](<./Swift Section Answer Template Revised.md>) now requires the following teaching structure. D1–D14 implement it; the other topic groups are awaiting revision:
 
-- One observable learning goal and explicit example settings.
-- A mental model explaining the mechanism, consequences, and limitations.
-- Rules with meaningful pitfalls and the correct approach.
-- Direct answers to the topic's essential rubric questions.
+- Learning goals covering the topic's essential rubric expectations, prerequisites, and explicit example settings.
+- A mental model grounded in a concrete problem, followed by essential mechanics taught through small code examples.
+- A mistaken example, its consequence and explanation, and corrected code for every included pitfall.
+- A direct answer, explanation, local code example, and outcome walkthrough for every interview question, including extensions.
+- Worked examples that teach the method before the exercise asks the reader to apply it.
 - A focused rubric exercise with acceptance checks, a solution, and reasoning.
 - Practical decisions, investigation methods, and evidence of deeper judgment.
 - Related guides and official sources, also cited beside relevant claims.
 
-Worked examples appear when they add a distinct lesson. Substantial specialist material lives in clearly marked optional subsections.
+Technical terms are introduced before use, and explanations trace how the code produces its result. Shared declarations can support several examples, but each pitfall and interview answer includes the code relevant to its own lesson. There is no word-count target; coverage and understanding determine the necessary length. Tooling examples can use commands, manifests, and configuration. Advanced extensions follow the foundations and retain their labels.
+
+Review checks connect every essential expectation and question to teaching material, every pitfall to mistaken and corrected code, and every exercise check to verification. Compiler/runtime results and editorial review are recorded separately in the [validation record](<./Guide Revision Validation.md>).
 
 That structure is intentional. The goal is not just "know the feature exists," but "explain it, reason about it, and use it without hurting yourself or your teammates."
 

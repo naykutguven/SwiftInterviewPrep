@@ -10,59 +10,31 @@ tags:
 
 # D10 — `AsyncSequence`, Streams, and Backpressure-Aware Design
 
-**Goal:** Finish a three-event stream and define an explicit owner for early-exit cleanup.
+**Learning goals:**
+
+- Choose one async result or a sequence of events and define completion, failure, and payload ownership.
+- Explain buffering, drops, backpressure, and the difference between handoff and processed acknowledgment.
+- Own normal completion, cancellation, and early-exit resource cleanup explicitly.
+
+**Prerequisites:** [[D1 — Structured Concurrency Fundamentals]]–[[D3 — `async let`, Task Groups, and Choosing the Right Concurrency Primitive]] for tasks and joining; [[D9 — Continuations and Bridging Callback APIs]] for one-result callbacks. Stream examples use only the standard library; channel examples name their separate dependency.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-AsyncSequence models repeated future values through an iterator whose next can suspend. AsyncStream adapts callback-style production and buffers according to policy. Consumer pull syntax does not necessarily slow the external source: yield is synchronous, and buffering/drop behavior is part of correctness. A single async function instead models one outcome. [AsyncStream](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0314-async-stream.md)
+One async function returns one eventual outcome. An **AsyncSequence** produces values over time through an iterator whose `next()` can suspend and returns nil at completion. `for await` expresses that repeated demand.
 
-## Rules and pitfalls
+`AsyncStream` bridges an external callback producer into this interface. Its `yield` is synchronous: it can enqueue or drop a value without slowing the producer. **Backpressure** means production actually waits for downstream capacity. Buffering policy, delivery policy, and resource lifetime therefore remain part of correctness. An audit log and a latest-temperature display need different loss policies. [SE-0314](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0314-async-stream.md)
 
-### Match loss policy to the domain
+## Essential mechanics
 
-A latest-value UI signal can tolerate dropping obsolete updates; an audit log cannot. Unbounded buffering risks memory growth, while bounded oldest/newest policies intentionally lose values. Inspect yield results and choose an actual backpressure mechanism when producers must wait.
+### Example setup
 
-**Common pitfall:** Treating AsyncStream as a lossless async array ignores external source rate and buffer limits. State whether every event, the newest state, or a sampled value is required.
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; potentially trapping or deadlocking code is never run.
 
-### Own the subscription lifetime
+### Finishing makes a finite stream complete
 
-Normal finish, failure, cancellation, consumer break, and owner release are different events. Provide an explicit close/unregister path when source resources must end. Do not assume one stream broadcasts independently to many consumers.
-
-**Common pitfall:** Breaking a loop while retaining the stream and continuation need not trigger onTermination. The subscription owner must close the source when the consumer stops early; see [[F6 — Observation, property wrappers, and language-adjacent state tools]].
-
-## Interview questions
-
-### When should an API return `AsyncSequence` instead of a callback or delegate?
-
-Use AsyncSequence for an ordered series of future elements with a defined completion/failure contract and a lifetime the consumer can own. A callback/delegate may remain appropriate for existing framework integration, synchronous hooks, or multiple coordinated operations. Use one async result for one completion.
-
-### What cancellation and resource-lifetime issues arise with `AsyncStream`?
-
-The producer may retain subscriptions, callbacks, buffers, or tasks after the consumer stops. Connect termination and explicit close to resource teardown, avoid capture cycles, use transferable payloads, and define whether cancellation interrupts a suspended next or merely requests source shutdown.
-
-### What happens to onTermination when the consumer breaks but both stream and continuation remain alive?
-
-A bare break does not guarantee onTermination in that retained configuration. The iterator stopped asking, but the source and continuation can remain alive. Explicitly finish/cancel/unregister through an owned subscription rather than using callback timing as a release guarantee.
-
-### Can a channel send return without successful delivery? Who releases a producer after early consumer exit?
-
-A channel send may resume due to cancellation or closure rather than successful delivery, depending on its contract. Handoff also does not mean processing completed. An explicit owner must close the channel or cancel/join the producer after early consumer exit; otherwise a producer can remain suspended forever.
-
-## Focused exercise
-
-**Task:** Return three events and explicitly finish a stream. Check normal completion and define who closes the source after early consumer exit.
-
-**Acceptance checks:**
-
-- Normal iteration yields three events in source order and completes.
-- The early-exit owner explicitly finishes the retained source.
-- A yield after finish reports termination rather than being treated as delivery.
-
-**Solution:**
-
-Standalone finite stream. The finite source owns production and always finishes:
+**Setup:** Standalone runnable stream.
 
 ```swift
 func events() -> AsyncStream<Int> {
@@ -71,84 +43,330 @@ func events() -> AsyncStream<Int> {
     pair.continuation.finish()
     return pair.stream
 }
-@main struct Probe {
-    static func main() async {
-        var collected: [Int] = []
-        for await value in events() { collected.append(value) }
-        precondition(collected == [1, 2, 3])
+var values: [Int] = []
+for await value in events() { values.append(value) }
+precondition(values == [1, 2, 3])
+```
+
+**Walkthrough:** The three buffered values are consumed in source order, then `finish()` allows next to return nil. Without finish, a retained open producer can leave a consumer waiting for another event forever.
+
+### Shared setup — subscription owner
+
+This fixture records resource close exactly once. In a real callback adapter, closing the registration would unregister a delegate, invalidate a timer, or cancel the external source. The termination closure captures the registration rather than the subscription, avoiding a subscription → continuation → subscription cycle. Prepend **subscription owner** where named.
+
+```swift
+import Synchronization
+final class Registration: Sendable {
+    private let state = Mutex(0)
+    func close() { state.withLock { if $0 == 0 { $0 = 1 } } }
+    var closeCount: Int { state.withLock { $0 } }
+}
+final class Subscription: Sendable {
+    let stream: AsyncStream<Int>
+    let registration: Registration
+    private let continuation: AsyncStream<Int>.Continuation
+    init() {
         let pair = AsyncStream<Int>.makeStream()
-        pair.continuation.yield(1)
-        for await _ in pair.stream { break }
-        pair.continuation.finish()
-        let result = pair.continuation.yield(2)
-        if case .terminated = result { } else { preconditionFailure("source still open") }
+        let registration = Registration()
+        self.stream = pair.stream
+        self.continuation = pair.continuation
+        self.registration = registration
+        pair.continuation.onTermination = { _ in registration.close() }
     }
+    func emit(_ value: Int) { continuation.yield(value) }
+    func close() { registration.close(); continuation.finish() }
 }
 ```
 
-**Reasoning:** This bounded finite production uses default buffering and finishes before returning. It proves ordering and completion for three values, not sustainable backpressure. A real callback source's close must also unregister its external resource, and any producer task must be joined.
+**Walkthrough:** Normal finish and consumer cancellation can reach termination cleanup. Explicit close additionally gives the owner a reliable shutdown path after a retained early break. Registration close is idempotent so these paths can converge.
 
-## In practice
+### A throwing stream ends with an explicit failure
 
-**Choose it when:** Match event/state semantics, buffering, loss, and lifetime to the source.
+**Setup:** Standalone runnable stream with one buffered value and a terminal error.
 
-**Investigate by:** Test normal finish, retained early exit, cancellation, yield results, and producer cleanup.
+```swift
+enum StreamFailure: Error { case disconnected }
+let stream = AsyncThrowingStream<Int, Error> { continuation in
+    continuation.yield(1)
+    continuation.finish(throwing: StreamFailure.disconnected)
+}
+var received: [Int] = []
+do {
+    for try await value in stream { received.append(value) }
+    preconditionFailure("expected a disconnected source")
+} catch StreamFailure.disconnected { }
+precondition(received == [1])
+```
 
-**Strong evidence:** Specify whether send completion means handoff or processed acknowledgment and verify resource release.
+**Walkthrough:** The consumer drains the buffered value, then observes the failure rather than ordinary nil completion. A real source must route each terminal path into finish and unregister its external resources; repeated finish calls are idempotent.
 
-### Yield and backpressure policies — optional
+## Rules and pitfalls
 
-#### `AsyncStream` is not always enough for real backpressure
+### A buffer limit is a loss policy, not automatic backpressure
 
-`AsyncStream` can buffer and report `YieldResult`, but it does not naturally make synchronous producers suspend until the consumer catches up.
+**Common pitfall:** A stream is treated as a lossless async array while an external producer can outrun consumption.
 
-For true producer/consumer backpressure between tasks, `AsyncAlgorithms.AsyncChannel` is often a better fit:
+**Mistake:** Standalone **compile-only** producer; default buffering is unbounded.
+
+```swift
+func readings(_ input: [Int]) -> AsyncStream<Int> {
+    let pair = AsyncStream<Int>.makeStream()
+    for value in input { pair.continuation.yield(value) }
+    pair.continuation.finish()
+    return pair.stream
+}
+```
+
+**Consequence:** A large or indefinitely fast source can retain an unacceptable backlog. Synchronous yield never waits for the consumer to catch up.
+
+**Why:** Consumer pull syntax does not impose demand control on an arbitrary callback source.
+
+**Correction:** For a latest-state display, explicitly keep only the newest buffered reading. Standalone runnable policy demonstration.
+
+```swift
+let pair = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingNewest(1))
+pair.continuation.yield(1)
+let offered = pair.continuation.yield(2)
+if case .dropped(let old) = offered { precondition(old == 1) }
+else { preconditionFailure("expected a displaced reading") }
+pair.continuation.finish()
+var values: [Int] = []
+for await value in pair.stream { values.append(value) }
+precondition(values == [2])
+```
+
+**What changes:** The backlog is bounded by intentionally discarding an obsolete state. This is inappropriate for events that must all survive. `bufferingOldest(1)` would retain 1 and reject the newly offered 2; zero capacity drops an offer when no consumer is waiting. Use source throttling or a real backpressure mechanism for lossless work.
+
+### Breaking iteration does not necessarily close a retained source
+
+**Common pitfall:** A bare break is expected to unregister the source automatically.
+
+**Mistake:** Prepend **subscription owner**. Runnable retained-subscription example.
+
+```swift
+let subscription = Subscription()
+subscription.emit(1)
+for await _ in subscription.stream { break }
+precondition(subscription.registration.closeCount == 0)
+subscription.close() // driver cleanup, absent from the mistaken owner policy
+```
+
+**Consequence:** The retained stream/source can remain open after the loop stops. The last line is necessary test cleanup, not an effect of break.
+
+**Why:** Stopping this iterator's demand is not the same operation as finishing or unregistering the retained producer.
+
+**Correction:** Prepend **subscription owner**. Runnable explicit lifetime boundary.
+
+```swift
+let subscription = Subscription()
+subscription.emit(1)
+do {
+    defer { subscription.close() }
+    for await _ in subscription.stream { break }
+}
+precondition(subscription.registration.closeCount == 1)
+```
+
+**What changes:** Leaving the owner scope explicitly closes the registration even on early exit. Any owned producer task also needs cancellation and joining; closing a continuation is not a substitute for observing that task's completion.
+
+## Worked example
+
+### Buffering results and terminal state are observable
+
+**Setup:** Standalone runnable script.
+
+**Predict:** What remains after two offers into one oldest-value slot, and what does yielding after finish mean?
+
+```swift
+let pair = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingOldest(1))
+pair.continuation.yield(1)
+if case .dropped(let rejected) = pair.continuation.yield(2) {
+    precondition(rejected == 2)
+} else { preconditionFailure("expected a rejected new value") }
+pair.continuation.finish()
+var received: [Int] = []
+for await value in pair.stream { received.append(value) }
+precondition(received == [1])
+if case .terminated = pair.continuation.yield(3) { }
+else { preconditionFailure("finished source accepted work") }
+```
+
+**Outcome:** One is consumed, two is dropped, and the post-finish offer is terminated.
+
+**Why:** BufferingOldest protects the already-enqueued value. Finish closes further production but allows buffered values to drain. Neither an enqueued offer nor a successful loop iteration proves downstream business processing was durably acknowledged.
+
+## Interview questions
+
+### When should an API return AsyncSequence instead of a callback or delegate?
+
+**Answer:** Use it for repeated future values with a defined ordering, completion/failure contract, and consumer-owned lifetime. One result belongs in an async function; existing synchronous framework hooks may still need callbacks.
+
+**Example:** Standalone runnable event sequence.
+
+```swift
+func statusChanges() -> AsyncStream<String> {
+    let pair = AsyncStream<String>.makeStream()
+    pair.continuation.yield("connecting")
+    pair.continuation.yield("ready")
+    pair.continuation.finish()
+    return pair.stream
+}
+var states: [String] = []
+for await state in statusChanges() { states.append(state) }
+precondition(states == ["connecting", "ready"])
+```
+
+**Walkthrough:** Two domain events become two elements, and finish ends iteration. Wrapping both events in a single-result continuation would either drop one or misuse its completion handle.
+
+**Boundary:** A sequence is not automatically multicast. Coalesced Observation state tracking is not an ordered event log; continuous tracking and its OS 27 API are covered in F6. Choose the domain semantics before choosing the adapter.
+
+### What cancellation and resource-lifetime issues arise with AsyncStream?
+
+**Answer:** A source can retain callbacks, buffers, registrations, and producer tasks after the consumer stops. Connect termination and explicit owner shutdown to resource teardown without capture cycles.
+
+**Example:** Prepend **subscription owner**. Runnable cancellation path.
+
+```swift
+let subscription = Subscription()
+let consumer = Task {
+    for await _ in subscription.stream { }
+}
+consumer.cancel()
+await consumer.value
+precondition(subscription.registration.closeCount == 1)
+subscription.close() // idempotent owner shutdown
+```
+
+**Walkthrough:** The cancelled consumer's iteration terminates and its termination callback closes the registration. The driver joins the consumer; explicit close remains valid even when termination already performed cleanup.
+
+**Boundary:** This fixture's unregister is synchronous and idempotent. Real native teardown may need a separate completion acknowledgment. Payloads crossing tasks also need an appropriate Sendable/transfer contract.
+
+### What happens to onTermination when the consumer breaks but stream and continuation remain alive?
+
+**Answer:** A bare break does not guarantee termination in that retained configuration. Explicitly close through the owner when the source must end.
+
+**Example:** Standalone runnable retained-pair check on the selected runtime.
+
+```swift
+import Synchronization
+let terminations = Mutex(0)
+let pair = AsyncStream<Int>.makeStream()
+pair.continuation.onTermination = { _ in terminations.withLock { $0 += 1 } }
+pair.continuation.yield(1)
+for await _ in pair.stream { break }
+precondition(terminations.withLock { $0 } == 0)
+pair.continuation.finish()
+precondition(terminations.withLock { $0 } == 1)
+```
+
+**Walkthrough:** Retaining the producer side keeps it available to offer more values even though this loop stopped. Finish supplies the explicit terminal event.
+
+**Boundary:** Do not generalize this observation into a promise of no termination under every iterator/ownership arrangement. Define close/unregister explicitly instead of depending on destruction timing.
+
+### Can a channel send return without successful delivery? Who releases the producer after early consumer exit?
+
+**Answer:** Yes. AsyncChannel send can resume because of cancellation or channel finish, so return alone is not proof of delivery. The owner must finish the channel or cancel and join its producer after early exit.
+
+#### Channel package setup — external dependency
+
+AsyncChannel belongs to Swift Async Algorithms, not the standard library. For the following two independent channel examples, create an executable package with this Package.swift, put one example at a time in `Sources/ChannelStudy/main.swift`, and run `swift run ChannelStudy`. The pinned dependency is deliberately explicit. The package's client settings match this repository's baseline.
+
+```swift
+// swift-tools-version: 6.4
+import PackageDescription
+let package = Package(
+    name: "ChannelStudy",
+    platforms: [.macOS(.v15)],
+    dependencies: [.package(url: "https://github.com/apple/swift-async-algorithms.git", exact: "1.0.4")],
+    targets: [.executableTarget(name: "ChannelStudy", dependencies: [
+        .product(name: "AsyncAlgorithms", package: "swift-async-algorithms")
+    ], swiftSettings: [
+        .swiftLanguageMode(.v6), .defaultIsolation(nil),
+        .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+        .enableUpcomingFeature("InferIsolatedConformances")
+    ])]
+)
+```
+
+**Example:** Runnable with the **channel package setup**. This channel is already closed.
 
 ```swift
 import AsyncAlgorithms
-
-func transfer() async {
-    let channel = AsyncChannel<Int>()
-    await withTaskGroup(of: Void.self) { group in
-        group.addTask {
-            defer { channel.finish() }
-            for value in 0..<3 {
-                guard !Task.isCancelled else { return }
-                await channel.send(value)
-            }
-        }
-        for await value in channel {
-            print(value)
-            // An early break still reaches the cleanup below.
-        }
-        channel.finish() // release a producer waiting in send
-        group.cancelAll()
-    }
-}
+let channel = AsyncChannel<Int>()
+channel.finish()
+await channel.send(7)
+var received: [Int] = []
+for await value in channel { received.append(value) }
+precondition(received.isEmpty)
 ```
 
-AsyncChannel.send suspends for handoff, not completion of arbitrary processing in the loop body. A send can also return because of cancellation or channel termination; returning is not a delivery acknowledgment. The structured group above owns the producer, and explicit finish/cancel releases it on early consumer exit. This dependency is not part of the Swift standard library. The Swift Async Algorithms documentation describes `AsyncChannel` as a communication type where backpressure from `send(_:)` prevents production from exceeding consumption. ([GitHub, "Channel"](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md)) The implementation comments also describe `send(_:)` as suspending after enqueueing until the next iterator call or finish. ([GitHub, "AsyncChannel.swift"](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/Channels/AsyncChannel.swift))
+**Walkthrough:** Send returns but no value is delivered. The terminal state is enough to release pending or subsequent send operations.
 
-#### Yield results and early exit
+This second independent runnable package example owns the producer through a group:
 
 ```swift
-func bufferProbe() async {
-    let pair = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingNewest(1))
-    pair.continuation.yield(1)
-    if case .dropped(let dropped) = pair.continuation.yield(2) {
-        print("dropped", dropped)
+import AsyncAlgorithms
+let channel = AsyncChannel<Int>()
+await withTaskGroup(of: Void.self) { group in
+    group.addTask {
+        defer { channel.finish() }
+        for value in 1...3 {
+            guard !Task.isCancelled else { return }
+            await channel.send(value)
+        }
     }
-    pair.continuation.finish()
-    for await value in pair.stream { print(value) }
-    if case .terminated = pair.continuation.yield(3) { print("terminated") }
+    for await value in channel {
+        precondition(value == 1)
+        break
+    }
+    channel.finish()
+    group.cancelAll()
 }
 ```
 
-This prints dropped 1, then 2, then terminated. bufferingOldest(1) instead rejects the newly offered 2 and retains 1. A zero-capacity stream has no buffer: an offer without a waiting consumer is dropped. finish is idempotent and does not convert a failed yield into a delivered event.
+The owner explicitly releases a producer potentially suspended in send, then the group joins it. The producer does not need to finish sending all three values for the early-exit contract.
 
-#### Observation is state tracking, not a message log
+**Boundary:** Channel backpressure concerns handoff/iteration, not completion of arbitrary work in the loop body. Use a separate acknowledgment if durable processing matters. Source implementation and cancellation rules, not the name channel, establish the contract.
 
-Swift 6.4 adds configurable/continuous Observation tracking (SE-0506). Choose tracking for dependencies on observable state and an AsyncSequence for a domain's values over time. Neither label establishes lossless event delivery, multicast, or backpressure. Define update timing and token lifetime; F6 verifies the shipped withContinuousObservation spelling, Apple OS 27 requirement, and event-lifecycle differences from the proposal. Do not replace a protocol's ordered event stream with coalesced UI-state observation. [SE-0506](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0506-advanced-observation-tracking.md)
+## Focused exercise
+
+**Task:** Produce three ordered events and finish. Then retain a subscription, exit early, and explicitly close it.
+
+**Acceptance checks:**
+
+- Normal iteration receives exactly three values and completes.
+- Early exit has an explicit resource owner and closes once.
+- A post-finish offer reports termination.
+
+**Solution:** Prepend **subscription owner**. Runnable.
+
+```swift
+let complete = Subscription()
+for value in 1...3 { complete.emit(value) }
+complete.close()
+var values: [Int] = []
+for await value in complete.stream { values.append(value) }
+precondition(values == [1, 2, 3] && complete.registration.closeCount == 1)
+let early = Subscription()
+early.emit(1)
+for await _ in early.stream { break }
+early.close()
+precondition(early.registration.closeCount == 1)
+let pair = AsyncStream<Int>.makeStream()
+pair.continuation.finish()
+if case .terminated = pair.continuation.yield(4) { }
+else { preconditionFailure("expected termination") }
+```
+
+**Reasoning:** The finite source finishes independently of how quickly its values are consumed. The early-exit owner makes shutdown explicit. Neither fixture proves sustainable throughput, live-source teardown, or processing acknowledgment.
+
+## In practice
+
+**Choose it when:** Match event versus state semantics, loss, buffering, and lifetime to the source.
+
+**Investigate by:** Test normal finish, failure, cancellation, retained early exit, and post-finish yields separately.
+
+**Strong evidence:** Name the resource owner and distinguish enqueued, handed off, processed, and acknowledged events.
 
 ## References
 

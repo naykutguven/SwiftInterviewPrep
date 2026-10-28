@@ -10,120 +10,170 @@ tags:
 
 # D9 — Continuations and Bridging Callback APIs
 
-**Goal:** Select one terminal callback result under synchronization and resume outside the lock.
+**Learning goals:**
+
+- Bridge one callback result with exactly one completion, including synchronous registration callbacks.
+- Arbitrate duplicate callbacks, cancellation, and request installation under synchronization, then perform external actions after unlocking.
+- Choose checked or noncopyable continuation handles from payload, failure, and deployment requirements.
+
+**Prerequisites:** [[D1 — Structured Concurrency Fundamentals]]–[[D2 — Task Hierarchy, Cancellation, and Priorities]] for suspension and cancellation; [[D6 — `Sendable`, `@Sendable`, and `sending`]] for Sendable captures. Mutex requires macOS 15/iOS 18; the Continuation extension requires OS 27.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-A continuation bridges one asynchronous result into the current task. The bridging body runs synchronously and may resume before it returns; completion still waits until that body returns. Resuming does not cancel or unregister the underlying request. A separate synchronized state machine must arbitrate completion, cancellation, and resource release. [SE-0300](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md)
+A continuation is a handle that lets a callback complete one suspended async operation. The continuation body registers the callback synchronously. A callback may run before registration returns, and resuming early is supported; the async call still waits for the registration body to return.
 
-## Rules and pitfalls
+Exactly-once completion is an obligation, not a property added to an unreliable source automatically. A duplicate checked resume traps; an unfinished retained handle can leave the task suspended. Resuming does not unregister the callback or cancel its request. Treat result selection, cancellation, and resource ownership as explicit state transitions. [SE-0300](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0300-continuation.md)
 
-### Define terminal-action ownership
+## Essential mechanics
 
-Select a winning action under a lock, remove its stored continuation/request handles, then resume or cancel outside the lock. Unknown callbacks and destructors can reenter; do not call them while holding a nonrecursive mutex.
+### Example setup
 
-**Common pitfall:** A plain Boolean guard does not prevent simultaneous duplicate callbacks. Use synchronized state, and make the winner policy explicit.
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; potentially trapping or deadlocking code is never run.
 
-### Choose the handle and cancellation contract
+### A synchronous callback is valid
 
-Checked handles diagnose duplicate resume; leaked unfinished handles can still hang. The newer noncopyable Continuation supports noncopyable success with OS 27 requirements here. Typed checked-throwing factories also exist in this SDK.
+**Setup:** Standalone runnable one-result API.
 
-**Common pitfall:** Assuming onCancel only runs after request installation misses cancellation-before-entry and installation races. Store cancellation in the terminal state so a later installed handle is cancelled/released correctly. Use AsyncSequence for genuinely repeated events.
+```swift
+func legacy(_ completion: (Int) -> Void) { completion(7) }
+func value() async -> Int {
+    await withCheckedContinuation { continuation in
+        legacy { continuation.resume(returning: $0) }
+    }
+}
+let result = await value()
+precondition(result == 7)
+```
 
-## Interview questions
+**Walkthrough:** The callback resumes before `legacy` returns. The factory handles that ordering; no semaphore is necessary. This source calls once, so it needs no duplicate arbitration.
 
-### Which handle supports noncopyable success, and why are typed failures not exclusive to withContinuation in this SDK?
+### Shared setup — first-callback gate
 
-The newer noncopyable Continuation can support noncopyable success values under its API constraints. Typed errors are not exclusive to it: this SDK accepts explicitly typed checked throwing factories too. Verify handle ownership, factory signature, and runtime availability as separate questions.
-
-### Why can't an arbitrary escaping callback simply consume a captured noncopyable continuation?
-
-An arbitrary escaping callback can be invoked repeatedly, so its capture cannot simply consume the same noncopyable continuation each time. Put single ownership behind a synchronized one-shot state, transfer the handle to the winning action, and make later callbacks no-ops or protocol violations according to policy.
-
-### Can onCancel precede operation entry, or precede installation of the request handle?
-
-Yes to both. Cancellation can be observed before the operation body enters or while a native start call has not returned its handle. The state machine must remember a terminal cancellation and dispose of a handle installed afterwards. A callback can also complete synchronously during registration.
-
-### Why does this adapter select its terminal action under the lock, then resume, cancel, and release resources outside it? Which callbacks or destructors could reenter?
-
-The lock protects only choosing and detaching terminal state. Resume, request.cancel, unregister callbacks, and releasing captured resources can invoke unknown code or destructors that reenter. Performing them after unlocking prevents lock-order and recursive-entry deadlocks.
-
-### Can success still win if cancellation is requested afterwards? What policy does the adapter implement?
-
-Yes, under a first-terminal-action policy completion can win before cancellation takes the state. Cancellation requested afterwards does not retroactively change that selected result. State whether the API uses first-wins, cancellation-preferred, or another explicit policy; tests must exercise the chosen boundary.
-
-## Focused exercise
-
-**Task:** Adapt a one-result callback using a synchronized terminal state. Check synchronous completion and duplicate delivery; state the cancellation policy.
-
-**Acceptance checks:**
-
-- Synchronous callback delivery completes successfully.
-- Duplicate delivery cannot resume the continuation twice.
-- No resume occurs under the lock; cancellation policy is stated rather than implied.
-
-**Solution:**
-
-Standalone one-shot adapter using Synchronization.Mutex, macOS 15 / iOS 18 or newer. Policy: first callback wins; task cancellation is not connected to a native request in this focused fixture.
+The mutex stores an optional checked handle. The winner takes it while locked; later callbacks find nil. Resume occurs after the lock closure returns. Prepend **first-callback gate** to the simple adapter examples.
 
 ```swift
 import Synchronization
-@available(macOS 15, iOS 18, *)
 final class OneShot: Sendable {
     private let state: Mutex<CheckedContinuation<Int, Never>?>
     init(_ continuation: CheckedContinuation<Int, Never>) { state = Mutex(continuation) }
     func finish(_ value: Int) {
-        let continuation = state.withLock { stored in
+        let selected = state.withLock { stored in
             let selected = stored
             stored = nil
             return selected
         }
-        continuation?.resume(returning: value)
+        selected?.resume(returning: value)
     }
 }
-@available(macOS 15, iOS 18, *)
-func adapt(start: (_ completion: @escaping @Sendable (Int) -> Void) -> Void) async -> Int {
+func adapt(start: (_ complete: @escaping @Sendable (Int) -> Void) -> Void) async -> Int {
     await withCheckedContinuation { continuation in
-        let state = OneShot(continuation)
-        start { state.finish($0) }
+        let gate = OneShot(continuation)
+        start { gate.finish($0) }
     }
 }
-@main struct Probe {
-    static func main() async {
-        if #available(macOS 15, iOS 18, *) {
-            let result = await adapt { completion in
-                completion(7)
-                completion(9)
+```
+
+**Walkthrough:** Checking and removing the handle are one critical section. The continuation cannot be selected twice, including by concurrent callbacks. This gate does not yet own a native request or connect cancellation.
+
+## Rules and pitfalls
+
+### A plain Boolean is not duplicate-callback synchronization
+
+**Common pitfall:** An unsynchronized flag is used inside a Sendable callback to prevent duplicate resume.
+
+**Mistake:** Standalone **intentionally rejected** capture. The source may invoke its callback concurrently.
+
+```swift
+func start(_ callback: @escaping @Sendable (Int) -> Void) { callback(7) }
+func broken() async -> Int {
+    await withCheckedContinuation { continuation in
+        var finished = false
+        start { value in
+            if !finished {
+                finished = true
+                continuation.resume(returning: value)
             }
-            precondition(result == 7)
         }
     }
 }
 ```
 
-**Reasoning:** Taking the optional handle under the mutex gives exactly one callback the resume responsibility. This fixture intentionally has no registration resource or cancellation hook; the complete adapter below adds those state transitions rather than treating this small example as production-complete.
+**Consequence:** The captured mutable flag violates the concurrency contract. Bypassing the diagnostic still allows two callbacks to observe false and resume twice.
 
-## In practice
+**Why:** Check-and-set must be atomic with selecting the handle.
 
-**Choose it when:** Bridge a single-result callback with explicit result and request ownership.
+**Correction:** Prepend **first-callback gate**. Runnable duplicated synchronous callbacks.
 
-**Investigate by:** Gate cancellation, registration, synchronous completion, and duplicate callbacks independently.
+```swift
+let result = await adapt { complete in complete(7); complete(9) }
+precondition(result == 7)
+```
 
-**Strong evidence:** Verify installation races and reentrant cleanup, including which terminal result is allowed to win.
+**What changes:** Only the first callback obtains the handle. This policy intentionally ignores duplicate delivery for an API promising one result. For genuinely repeated events, use AsyncSequence instead of throwing events away.
 
-### Complete cancellation and registration state machine — optional
+### Remember cancellation before installation
 
-#### Contract
+**Shared setup — request handle:** A Sendable cancellation closure may reenter the adapter. It must be called outside its state lock.
 
-Wrap a callback registration function that returns an optional cancellation handle. Callbacks may be synchronous, duplicated, or concurrent. A nil handle means registration failed unless an earlier callback already completed the operation. Cancellation is a nonblocking request and may itself trigger the callback synchronously.
+```swift
+import Synchronization
+struct CancelRequest: Sendable { let cancel: @Sendable () -> Void }
+```
 
-Use a first-terminal-event policy. Cancellation before continuation installation must avoid starting the request. Cancellation during registration may allow the request to start, but must be forwarded when its handle becomes available. No external action or request destruction should occur under the state lock.
+**Common pitfall:** Cancelling before a native handle arrives is assumed to be equivalent to cancelling it afterward.
 
-#### Swift 6.4 implementation
+**Mistake:** Prepend **request handle**. **Compile-only** incomplete registration state.
 
-This standalone implementation uses `Continuation` in noncopyable state. The adapter deliberately restricts `Value` to Copyable Sendable payloads so a reusable `Result` callback can safely share its values; the simpler `packet` probe covers noncopyable success separately.
+```swift
+final class Registration: Sendable {
+    private let state = Mutex<CancelRequest?>(nil)
+    func install(_ request: CancelRequest) { state.withLock { $0 = request } }
+    func cancel() {
+        let request = state.withLock { $0.take() }
+        request?.cancel()
+    }
+}
+```
+
+**Consequence:** If cancel sees nil, it forgets cancellation. A subsequently installed request keeps running.
+
+**Why:** Absence of a handle is not evidence that cancellation can no longer matter.
+
+**Correction:** Prepend **request handle**. **Compile-only** single-install state.
+
+```swift
+final class Registration: Sendable {
+    private struct State { var request: CancelRequest?; var cancelled = false }
+    private let state = Mutex(State())
+    func install(_ request: CancelRequest) {
+        let cancelNow = state.withLock { state in
+            if state.cancelled { return true }
+            state.request = request
+            return false
+        }
+        if cancelNow { request.cancel() }
+    }
+    func cancel() {
+        let request = state.withLock { state in
+            state.cancelled = true
+            return state.request.take()
+        }
+        request?.cancel()
+    }
+}
+```
+
+**What changes:** Cancellation remains part of state, and a late handle is cancelled outside the lock. This small model permits one installation; the complete adapter also chooses the continuation's terminal result.
+
+## Worked example
+
+### A complete first-terminal-event adapter
+
+**Setup — complete adapter:** Standalone **compile-only** implementation for OS 27, used by the following drivers. Value is Copyable and Sendable because the reusable Result callback shares its payload. The noncopyable-success extension below uses a different source contract.
+
+**Predict:** Can cancellation occur before continuation installation, while registration is returning a handle, or after a callback already won?
 
 ```swift
 import Synchronization
@@ -232,63 +282,233 @@ func awaitLegacy<Value: Sendable>(
 }
 ```
 
-The only event allowed before `install` is cancellation, so the late incoming handle can be resumed with `.cancelled` without buffering a general early result. Each operation creates a fresh gate; continuation and request installation are each called at most once.
+**Outcome:** The first terminal event to take state wins. Completion selects its result and releases the native request. Cancellation selects `BridgeError.cancelled`, cancels an installed request, or remembers that a late handle must be cancelled.
 
-If completion wins, the gate releases the request without cancelling it. If cancellation wins, it extracts the current request or remembers that a later one must be cancelled. Late callbacks see terminal state and do nothing. The cancellation error is this adapter's typed `BridgeError.cancelled`, not necessarily `CancellationError`.
+**Why:** `install` runs once before registration. Only cancellation can precede it. Each terminal operation marks finished and removes the continuation/request together under the mutex. It then resumes, invokes cancellation, and releases resources after unlocking. A reentrant callback sees finished state and cannot resume again. A callback during registration can win even when the registration call later returns nil.
 
-The gate resumes before calling the legacy cancellation action, outside the lock. That permits a synchronous reentrant callback without a second resume. It does not guarantee the async caller waits for external teardown.
+This gate resumes before invoking external cancellation. The async caller therefore does not receive a guarantee that external teardown has completed. A source that silently discards its callback still violates its completion contract; retained unfinished state can hang until explicit cancellation or an external lifetime rule completes it. A task-group timeout cannot rescue an adapter whose cancellation path never resumes.
 
-For older deployment targets, use a checked-handle implementation of the same state machine. Changing handle type alone is insufficient; preserve registration, resource-release, and winner-selection behavior.
-
-#### Optional value/error pairs
-
-Reusing `BridgeError` and `CancelRequest` from the implementation, normalize all four callback shapes:
+**Driver:** Prepend **complete adapter**. Runnable synchronous success, duplicate callback, failed registration, and completion-before-nil-registration checks.
 
 ```swift
-struct User: Sendable {
-    let id: Int
+let value: Int = try await awaitLegacy { complete in
+    complete(.success(7)); complete(.success(9))
+    return nil
 }
+precondition(value == 7)
+do {
+    let _: Int = try await awaitLegacy { _ in nil }
+    preconditionFailure("expected registration failure")
+} catch BridgeError.couldNotStart { }
+```
 
-func normalize(
-    user: User?, error: BridgeError?
-) -> Result<User, BridgeError> {
+## Interview questions
+
+### Why does the rubric's duplicate-callback adapter compile and then trap before returning a normal result?
+
+**Answer:** A checked continuation can be copied, so the compiler does not reject a second resume. Its runtime check traps when the callback resumes the same handle twice.
+
+**Example:** Standalone **compile-only; do not call**. This intentionally unsafe fixture is not executed.
+
+```swift
+func duplicate(_ complete: (Int) -> Void) { complete(1); complete(2) }
+func broken() async -> Int {
+    await withCheckedContinuation { continuation in
+        duplicate { continuation.resume(returning: $0) }
+    }
+}
+```
+
+**Walkthrough:** The first callback selects a result. The second reaches the runtime duplicate-resume check while the synchronous registration body is still running. That body must return before the async factory completes normally, so this is not a valid two-value result.
+
+**Boundary:** Use the first-callback gate for an API promising one completion, or AsyncSequence for real repeated events. Changing the handle type alone does not repair a missing callback or connect native cancellation.
+
+### Why can't an arbitrary escaping callback simply consume a captured noncopyable continuation?
+
+**Answer:** The callback can be invoked repeatedly. It cannot consume the same captured noncopyable handle on every invocation; single ownership must be selected before resuming.
+
+**Example:** Standalone **intentionally rejected** OS 27 adapter.
+
+```swift
+func legacy(_ callback: @escaping @Sendable (Int) -> Void) { callback(7) }
+func invalid() async -> Int {
+    await withContinuation(of: Int.self) { continuation in
+        legacy { value in continuation.resume(returning: value) }
+    }
+}
+```
+
+**Walkthrough:** Each call to the escaping closure would consume the same capture. The compiler rejects that ownership model. The complete adapter instead stores one continuation and transfers it to one selected action.
+
+**Boundary:** A noncopyable handle does not turn a repeated-event API into a one-result API. Use an event sequence when repeated callbacks are meaningful.
+
+### Can onCancel precede operation entry, or precede installation of the request handle?
+
+**Answer:** Yes. A task can already be cancelled when its handler is installed, and cancellation can race with the synchronous registration call before that call returns its handle.
+
+**Example:** Prepend **complete adapter**. Runnable cancellation-before-entry check.
+
+```swift
+let starts = Mutex(0)
+let task = Task {
+    try await awaitLegacy { (_: @escaping @Sendable (Result<Int, BridgeError>) -> Void) in
+        starts.withLock { $0 += 1 }
+        return nil
+    }
+}
+task.cancel()
+do { _ = try await task.value; preconditionFailure("expected cancellation") }
+catch BridgeError.cancelled { }
+precondition(starts.withLock { $0 } == 0)
+```
+
+**Walkthrough:** Top-level MainActor execution cancels the ordinary task before its body runs. The handler records cancellation; continuation installation then resumes with the selected error and does not start registration.
+
+**Boundary:** If registration already began, it may still return a handle. `installRequest` must then forward remembered cancellation. A handler must not assume a mutable captured handle has already been assigned.
+
+### Why select the terminal action under a lock, then resume, cancel, and release resources outside it? Which callbacks or destructors could reenter?
+
+**Answer:** The lock protects deciding who owns completion. External actions can invoke callbacks or destructors that reenter; calling them under a nonrecursive mutex can deadlock.
+
+**Example:** Prepend **complete adapter**. Runnable reentrant cancellation.
+
+```swift
+let gate = ResumeGate<Int>()
+let cancellations = Mutex(0)
+do {
+    let _: Int = try await withContinuation(of: Int.self, throwing: BridgeError.self) {
+        continuation in
+        let installed = gate.install(consume continuation)
+        precondition(installed)
+        gate.installRequest(CancelRequest {
+            cancellations.withLock { $0 += 1 }
+            gate.complete(.success(99)) // synchronous reentry
+        })
+        gate.cancel()
+    }
+    preconditionFailure("expected cancellation")
+} catch BridgeError.cancelled { }
+precondition(cancellations.withLock { $0 } == 1)
+```
+
+**Walkthrough:** Cancellation takes both handles and unlocks before resuming and calling native cancel. That callback immediately reenters `complete`, sees terminal state, and returns. The operation finishes once with cancellation.
+
+**Boundary:** Releasing the final reference to a request can also run custom destruction. Taking that reference out of protected state ensures its final release occurs outside the lock. This is a lock-order rule, not a guarantee that all native cleanup is synchronous.
+
+### Can success still win if cancellation is requested afterwards? What policy does the adapter implement?
+
+**Answer:** Yes. Under first-terminal-event wins, later cancellation does not retroactively replace a result already selected by completion.
+
+**Example:** Prepend **complete adapter**. Runnable controlled selection.
+
+```swift
+let gate = ResumeGate<Int>()
+let value = try await withContinuation(of: Int.self, throwing: BridgeError.self) {
+    continuation in
+    let installed = gate.install(consume continuation)
+        precondition(installed)
+    gate.complete(.success(7))
+    gate.cancel()
+}
+precondition(value == 7)
+```
+
+**Walkthrough:** Completion removes the handle first. Cancel finds finished state and has nothing left to resume or cancel. This is an explicit winner policy, not a claim that cancellation always loses races.
+
+**Boundary:** A caller needing cancellation-preferred publication can check its own task state before publishing. That is a separate rule from the adapter's already-selected terminal outcome.
+
+### Extension — Which handle supports noncopyable success, and why are typed failures not exclusive to withContinuation in this SDK?
+
+**Answer:** The OS 27 `Continuation` supports noncopyable success. The selected SDK also provides explicitly typed checked throwing factories; handle ownership, failure typing, and availability are separate choices.
+
+**Example:** Standalone runnable OS 27 noncopyable payload.
+
+```swift
+struct Packet: ~Copyable, Sendable { let byte: UInt8 }
+func packet() async -> sending Packet {
+    await withContinuation(of: Packet.self) { continuation in
+        continuation.resume(returning: Packet(byte: 7))
+    }
+}
+let received = await packet()
+precondition(received.byte == 7)
+```
+
+**Walkthrough:** Resume consumes the handle and transfers the packet. Consuming the same handle again is a compiler error. Dropping a new handle without resuming traps; retaining an unfinished handle can still hang.
+
+This independent runnable example uses a typed checked throwing factory on this SDK:
+
+```swift
+enum LoadError: Error { case unavailable }
+func checked() async throws(LoadError) -> Int {
+    try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Int, LoadError>) in
+        continuation.resume(throwing: .unavailable)
+    }
+}
+do { _ = try await checked(); preconditionFailure("expected failure") }
+catch LoadError.unavailable { }
+```
+
+**Boundary:** Checked double-resume is a runtime trap; unsafe double-resume is undefined behavior. Do not execute those failures as normal examples. The new handle's consumed-use error is checked separately. [SE-0528](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0528-noncopyable-continuation.md)
+
+## Focused exercise
+
+**Task:** Adapt a one-result callback and verify synchronous and concurrent duplicate delivery without resuming twice.
+
+**Acceptance checks:**
+
+- Synchronous delivery returns the first callback value.
+- Two concurrent callbacks select one permitted result.
+- Resume is outside the mutex; cancellation policy is explicit.
+
+**Solution:** Prepend **first-callback gate**. Runnable; Dispatch starts callbacks rather than blocking on future task work.
+
+```swift
+import Dispatch
+let synchronous = await adapt { complete in complete(7); complete(9) }
+precondition(synchronous == 7)
+let concurrent = await adapt { complete in
+    DispatchQueue.global().async { complete(7) }
+    DispatchQueue.global().async { complete(9) }
+}
+precondition([7, 9].contains(concurrent))
+```
+
+**Reasoning:** The mutex selects one handle atomically, then resume happens after unlocking. Either concurrent callback can win. This focused adapter does not connect native cancellation; the complete adapter above supplies that policy.
+
+### Extension — Normalize optional value/error callbacks
+
+**Setup:** Prepend **complete adapter** for BridgeError. Runnable exhaustive callback-shape policy.
+
+```swift
+struct User: Sendable { let id: Int }
+func normalize(user: User?, error: BridgeError?) -> Result<User, BridgeError> {
     switch (user, error) {
     case let (user?, nil): .success(user)
     case let (nil, error?): .failure(error)
     case (.some, .some), (nil, nil): .failure(.invalidCallbackState)
     }
 }
-
-@available(anyAppleOS 27.0, *)
-nonisolated(nonsending)
-func loadUser(
-    start: @Sendable (
-        @escaping @Sendable (User?, BridgeError?) -> Void
-    ) -> CancelRequest?
-) async throws(BridgeError) -> User {
-    try await awaitLegacy { complete in
-        start { user, error in
-            complete(normalize(user: user, error: error))
-        }
+let combinations: [(User?, BridgeError?)] = [(User(id: 1), nil), (nil, .failed),
+                                           (User(id: 1), .failed), (nil, nil)]
+for (index, pair) in combinations.enumerated() {
+    switch normalize(user: pair.0, error: pair.1) {
+    case .success: precondition(index == 0)
+    case .failure: precondition(index != 0)
     }
 }
 ```
 
-The naive pair of independent `if let` statements would resume twice for two non-nil fields and never resume for two nil fields. Normalization chooses one result; the shared gate additionally arbitrates repeated callbacks.
+Two independent if-let resumes would mishandle both-present and both-absent callbacks. Normalization chooses one result; the synchronized gate separately handles repeated delivery.
 
-#### Verification tasks
+## In practice
 
-- Synchronous success, synchronous failure, nil registration, and a callback followed by nil registration.
-- Two concurrent callbacks: one result wins without a duplicate-resume trap.
-- Cancellation before operation entry: registration count stays zero.
-- Cancellation while registration is returning its request, and cancellation after request installation.
-- A cancellation action that calls completion synchronously.
-- Callback success winning before cancellation, and cancellation winning before callback.
-- A legacy owner that explicitly reports `ownerEnded` before releasing its callback.
-- Every optional value/error combination.
-- Dropped-handle trap, checked leak/timeout, and consumed-handle diagnostic in isolated probes.
+**Choose it when:** A callback really describes one eventual result and its completion/resource contract can be stated.
 
-An owner that silently discards a callback still violates the completion contract; the gate cannot infer that external event. The waiting operation retains its gate. Explicit cancellation can release it, but an uncancelled request that never reports completion still requires a timeout or external lifetime guarantee. A task-group timeout alone can also wait forever if its cancelled adapter child never resumes; fix the adapter's cancellation path first.
+**Investigate by:** Control registration, callback, cancellation, and teardown separately. Check synchronous completion, late handles, duplicate callbacks, and reentrant cancellation.
+
+**Strong evidence:** State the winner policy and distinguish task completion from external teardown. A missing callback still needs cancellation, timeout cooperation, or an external lifetime guarantee.
 
 ## References
 
@@ -310,5 +530,5 @@ An owner that silently discards a callback still violates the completion contrac
 - [SE-0528 — Noncopyable Continuation](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0528-noncopyable-continuation.md)
 - [CheckedContinuation](https://developer.apple.com/documentation/swift/checkedcontinuation)
 - [withCheckedThrowingContinuation](https://developer.apple.com/documentation/swift/withcheckedthrowingcontinuation%28isolation%3Afunction%3A_%3A%29)
-- [withTaskCancellationHandler](https://developer.apple.com/documentation/swift/withtaskcancellationhandler(operation:oncancel:isolation:)
+- [withTaskCancellationHandler](https://developer.apple.com/documentation/swift/withtaskcancellationhandler%28operation%3Aoncancel%3Aisolation%3A%29)
 - [Current checked-continuation implementation](https://github.com/swiftlang/swift/blob/main/stdlib/public/Concurrency/CheckedContinuation.swift)
