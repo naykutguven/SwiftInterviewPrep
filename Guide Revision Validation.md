@@ -8,7 +8,7 @@ tags:
 
 # Guide Revision Validation
 
-The October 16 record below describes that historical revision. The [initial October 28 teaching revision](#teaching-revision--2026-10-28) updates the template, README, and D1–D3. The [remaining D-guide revision](#remaining-d-guides--2026-10-28) extends the same explanation and example requirements to D4–D14. The other 56 topic guides are still awaiting review against the new standard.
+The October 16 record below describes that historical revision. The [initial October 28 teaching revision](#teaching-revision--2026-10-28) updates the template, README, and D1–D3. The [remaining D-guide revision](#remaining-d-guides--2026-10-28) extends the same explanation and example requirements to D4–D14. The [A-guide revision](#a-guides--2026-10-28) applies that standard to A1–A16. The other 40 guides in B, C, E, and F are still awaiting review against the new standard.
 
 Reviewed 2026-10-16. All **70 topic guides** were updated from the existing working tree: A1–A16, B1–B14, C1–C12, D1–D14, E1–E8, and F1–F6. F5 and D14 were revised first to establish consistent settings.
 
@@ -65,7 +65,7 @@ No new physical-device/UI, live-server, LLDB session, Instruments/sanitizer camp
 
 ### Scope and acceptance requirements
 
-Revised the answer template and README, then used D1 as the reference chapter before applying the standard to D2–D3. The rubric, topic IDs, filenames, and YAML frontmatter are unchanged. The other 67 topic guides have not been revised or certified against this teaching standard. Earlier evidence above remains historical.
+Revised the answer template and README, then used D1 as the reference chapter before applying the standard to D2–D3. The rubric, topic IDs, filenames, and YAML frontmatter are unchanged. At that stage, the other 67 topic guides had not been revised or certified against this teaching standard. Earlier evidence above remains historical.
 
 The template now requires topic-wide learning goals, stated prerequisites, essential mechanics before advanced combinations, definitions before jargon, and a worked example before assessment. It removes the word-count target and permits useful explanatory repetition. Every included pitfall must contain mistaken code, its consequence, its explanation, corrected code, and an explanation of the correction. Every interview answer, including extensions, must contain a direct answer, reasoning, local code, an outcome walkthrough, and a meaningful boundary. Named shared declarations may support multiple examples; a distant exercise or link cannot replace the local code. Optional interview follow-ups must be fully answered Extension entries.
 
@@ -184,3 +184,87 @@ Per-guide manifests and result JSON, compiler commands, source hashes, raw/xcsif
 Final editorial checks cover every required section, all local pitfall/answer examples, shared-setup assembly, original frontmatter and aliases, balanced fences, absent placeholders, incoming/outgoing guide and heading links, and whitespace. Compiler results are matched against the final published block hashes. The official Swift/Apple sources and selected SDK declarations were reviewed for isolation, sending, continuation ownership, channel behavior, and the try-lock guarantee; SE-0512's no-spurious-failure status remains Swift 6.0 rather than being presented as a new 6.4 API.
 
 Runtime evidence is **arm64 macOS 27 only**. Older targets are selective availability compilation controls, not runtime coverage; there is no iOS/device, live HTTP/UI, real system-sleep, performance, scheduling fairness, broad native teardown, or cross-platform validation. A one-shot gate does not repair a source that silently never completes, and first-result races still join cooperative cleanup. Compiler-accepted reference escape from Mutex is demonstrated without concurrent unsafe mutation and remains an encapsulation warning. The optional future/legacy integration policies described in the chapters require their own product-specific evidence.
+
+
+## A guides — 2026-10-28
+
+### Scope and teaching review
+
+Revised **A1–A16** against the strengthened template, using the D guides' teaching standard. README now records A1–A16 and D1–D14 as complete; the **40 guides in B, C, E, and F** still await this revision. The template and rubric did not need another change. Topic filenames, IDs, frontmatter, tags, and aliases are unchanged. Historical evidence above remains scoped to its original revision.
+
+Each chapter now introduces its concrete problem and terms, teaches small mechanics before combinations, and places a worked example before assessment. All **37 pitfall pairs** include mistaken code, consequence, cause, correction, and the restored guarantee. All **65 interview answers**, including extensions, have a direct answer, local code, walkthrough, and boundary. Broad comparisons are demonstrated through multiple cases; A3 combines the rubric's stored-read, whole-self-access, and observer questions in one answer. Named shared setups have explicit assembly instructions. Exercises check relevant invalid, empty, or boundary inputs rather than only the happy path.
+
+The review checked coverage and the explanation of cause and effect, separately from counting headings or code fences:
+
+| Guide | Essential expectations, questions, pitfalls, and exercise evidence |
+| --- | --- |
+| A1 | Value/reference assignment; array sequence versus object mutation; extracted array values; equality, object identity, and domain IDs; shared closure storage; noncopyable wrapper aliases; separate isolation/Sendable contract. The draft exercise checks empty/nonempty arrays, shared payload edits, reference replacement, and separate payloads. |
+| A2 | let/var receivers; mutating self and reset; reference-backed nonmutating setter versus stored-value mutate access; weak let and ARC zeroing; synthesized equality/coding semantics and checked Sendable constraints; borrow/mutate accessors with noncopyable storage. Immutable writes reject. |
+| A3 | Direct initialized-field reads versus premature computed self access; direct initialization versus observer-triggering helper writes; own-storage/super/customization order; designated, convenience, required, and failable paths. The exercise validates subclass construction and invalid input; Swift 6.4 private-cache synthesis is qualified by access and compatibility controls. |
+| A4 | Optional cases and binding; skipped chaining arguments/assignment work; lazy defaults; nested map versus flatMap and try? flattening; dictionary absent/stored-nil/present states; IUO inference and forcing. Extensions check optional some/any grouping, missing opaque inference, noncopyable take/output-map, and rejected noncopyable-input map. |
+| A5 | First-match order, payload bindings and guarded remainder; optional filtering, tuples and grouped patterns; individual where clauses and unconditional fallthrough. Separate SDKStates clients check future-case rejection, omitted-known-case warning/fallback, and plain default. The exercise tests 199/200/299/300, failure, and cancellation. |
+| A6 | Reached registrations, reverse order, lexical nested exits, return-expression values versus returned references, early exit before registration, and cooperative cancellation. Async defer finishes before return/catch; shielding is separate. The exercise checks return, throw/catch, and skipped registration without timing assumptions. |
+| A7 | Labels, domain inputs, variadics versus collections, multiple trailing closures, full-name overload selection, function-value effects/default loss, and default selection versus virtual dispatch. Inout tests evaluated input, overlapping aliases, escaping capture, independent async local, and rejected actor storage. Borrowing/consuming and MainActor defaults are explicit. |
+| A8 | Shared captures and value/reference capture lists; nonescaping, optional, and escaping callback lifetime; immediate delivery; strong stored/bound-method/nested edges; weak/unowned lifetimes and implicit self. Gates establish early versus late promotion across await and cancellation. Separate weak-capture configurations and autoclosure evaluation are checked; exercise callbacks work before and after owner release. |
+| A9 | LoadState preserves initial absence, refresh content, failure content, empty success, and original snapshots. Payload validation and authorized transitions are separate. Request identities reject stale completions/timers/acknowledgments. Recursive layout/overflow and noncopyable enum borrowing/destruction are checked; the retained lifecycle tests retry budget, timer retirement, cancellation reason, reset, and cross-model tokens. |
+| A10 | Constrained helpers versus conditional conformance; type/protocol ownership and package exception; typealias identity; same-file synthesis versus manual witnesses; imported Codable synthesis rejection and explicit manual alternative. Real modules demonstrate runtime conformance discovery, rejected static generic use without its import, and ambiguous ordinary extension members. Owned mapping and versioned DTO tests cover boundaries, invalid formats, and ordinary external construction. |
+| A11 | Private/fileprivate/internal/package/public/open permissions; type naming versus construction; getter versus setter; public protocol witnesses; same-file versus other-file private access; ordinary/sibling/testable clients and customization. The exercise rejects private reads and setter writes. Memberwise compatibility and source access versus ABI/body export remain distinct. |
+| A12 | Compiler, effective language mode, module/SDK visibility, and runtime requirements are separate. macOS 12-target compilation checks guarded ContinuousClock use and rejects canImport-only use. anyAppleOS alignment/platform overrides, Apple source selection, equivalent deprecation adapters, consumer diagnostics, and elapsed-seconds fallback are explicit. |
+| A13 | Sequential throws versus retained Result, closure-derived rethrows versus independent failure, loss through try?, and asserted try! behavior; typed catch analysis versus exhaustive error switch; throws(Never). Async Result preserves explicit typed error, captures cancellation without clearing it, can succeed when cancellation is ignored, and carries noncopyable success. The exercise retains malformed/empty input. |
+| A14 | Grouping and policy, checked/wrapping/reporting arithmetic, eager operands versus autoclosure short-circuiting, predicate construction versus matching, unit/failure visibility, literal context versus String conversion/interpolation, and nonthrowing/nonfailable witnesses. Swift 6.4 collection trailing closures require actual initializers. The exercise verifies the eager/needed event sequence. |
+| A15 | Independent drafts, shared class/actor identity, enum alternatives, and protocol capabilities; exclusive noncopyable cleanup; MainActor, actor, and synchronous Mutex call contracts; Sendable checked separately. Controlled completion order demonstrates independent display/cache freshness policies. The exercise checks snapshot/commit independence; stub service and basic cache clients use no live network. |
+| A16 | Whole/prefix/search consumption, exact ASCII/horizontal-whitespace grammar, equivalent literal/builder corpus, conversion overflow, broader Unicode classes, and matching error suppression versus throwing APIs. Map/compactMap/Sequence flatMap/reduce(into:) and repeated lazy traversal have distinct outcomes. The importer checks row order/rejections, leap-year exceptions, invalid fields, size limits, and per-user aggregate overflow. |
+
+Advanced ownership, schema, service, lifecycle, and importer material remains explicitly optional after the core teaching. The A16 literal and builder now implement the rubric's same `user_id:` grammar, including only the stated ASCII spaces/tabs; the stricter and broader examples explain exactly why acceptance differs. Internal guide/heading links were checked in both directions, including the retained A9 lifecycle anchor. Official references remain consolidated; two malformed inherited Apple documentation links were repaired.
+
+### Compiler and runtime checks
+
+Apple Swift **6.4**, `swiftlang-6.4.0.34.1` (`clang-2100.3.34.1`), from `/Applications/Xcode_27.app/Contents/Developer`. The SDK is macOS **27.0**; the arm64 host is macOS **27.0.1**, build **26A434**. Unless an example declares an override, compilation uses:
+
+```sh
+-swift-version 6 -default-isolation nonisolated \
+  -enable-upcoming-feature NonisolatedNonsendingByDefault \
+  -enable-upcoming-feature InferIsolatedConformances \
+  -target arm64-apple-macos27.0 -warnings-as-errors
+```
+
+The compiler and SDK paths, temporary module cache, complete arguments, source SHA-256, compiler status/diagnostics, and runtime output are recorded per case. Each published Swift fence was extracted from the final Markdown and assembled with only its named dependencies. Function-only, unsafe-to-run, and rejected examples were **object-compiled** with `-c`, including ownership/SIL diagnostics. Executable examples were linked and run in separate processes with a 15-second timeout. Potentially trapping or concurrently unsafe paths were not executed. Compiler output passed through xcsift with the pipeline status and raw output retained.
+
+| Guide | Published Swift blocks checked | Runnable examples passed | Intended compiler rejections |
+| --- | --- | --- | --- |
+| A1 | 13 | 11 | 2 |
+| A2 | 15 | 13 | 2 |
+| A3 | 16 | 12 | 3 |
+| A4 | 17 | 13 | 3 |
+| A5 | 15 | 12 | 2 |
+| A6 | 12 | 12 | 0 |
+| A7 | 17 | 12 | 4 |
+| A8 | 18 | 15 | 2 |
+| A9 | 17 | 14 | 2 |
+| A10 | 21 | 9 | 4 |
+| A11 | 25 | 10 | 10 |
+| A12 | 12 | 8 | 2 |
+| A13 | 16 | 13 | 3 |
+| A14 | 18 | 12 | 5 |
+| A15 | 18 | 14 | 2 |
+| A16 | 17 | 14 | 0 |
+| A1–A16 total | **267** | **194** | **46** |
+
+The other **27 published blocks** are accepted object-compilation cases, such as shared declarations, dependency modules, or deliberately unexecuted trap examples. Five published runnable examples explicitly retain warnings: A5's grouped-pattern and omitted-known-case examples, plus three A12 deprecation comparisons. Ordinary accepted cases use warnings as errors. A5's mistaken grouped pattern retains the single-line form that exposes the selected compiler's where warning; changing its formatting can acknowledge the pattern grouping without correcting the underlying acceptance bug.
+
+### Additional configuration and boundary controls
+
+**22 additional compiler cases** and one run of an unchanged executable produce **9 additional successful runtime cases** and **7 additional intended rejections**. This revision therefore records **289 compiler cases**, **203 runtime cases**, and **53 intended compiler rejections** in total. The run of an already compiled executable is not counted as another compiler case.
+
+- **A7 library replacement:** Built Defaults v1 and a client, replaced only a compatible resilient dylib with v2, then rebuilt the client. The v1 client prints `2,2,2`; the byte-for-byte unchanged client with v2 prints `2,5,5`; the rebuilt client prints `5,5,5`. The library uses `-enable-library-evolution -emit-library -emit-module`, a stable `@rpath/libDefaults.dylib` install name, and a client rpath. The unchanged executable's hash is retained. This distinguishes emitted literal defaults from calls to replacement library getters/helpers.
+- **A3/A4/A14 constraints:** An unbound memberwise initializer reference selects the Swift 6.4 shorter signature; a colliding extension initializer rejects. Optional.ref/mutableRef/put remain absent in this SDK. An array value cannot accept a closure without callAsFunction merely because the syntax now parses.
+- **A5 warning policy:** The omitted-known-case client still runs its fallback and emits the warning with `-warnings-as-errors` on this compiler. Exit status alone is insufficient for that diagnostic; B11's previously recorded limitation is reconfirmed.
+- **A10 ownership:** A separately compiled vendor with package identity Geography and a same-package conformance compiles without the retroactive warning. A different package identity warns; unacknowledged Date conformance warns; the fully qualified acknowledgment runs successfully. The published runtime-discovery client links the bridge metadata without importing its conformance for static checking.
+- **A11 source and binary access:** Same-package non-open subclassing and outside-package type access reject. A no-argument default initializer for all-private initialized storage works, while the memberwise argument remains unavailable. An ExportCore interface exposes the inlinable next body and ABI-visible helper declaration, but not the exported libraryPolicy body. An ordinary client calls the public API; direct internal/private helper calls reject.
+- **A12 configuration:** With the same Swift 6.4 compiler and source, Swift 5 language mode reports `Swift 6 mode: false`. Compiler version and effective language mode remain independent. Older-target availability checks are compilation evidence, not older-runtime execution.
+
+### Evidence and limits
+
+Fixtures, manifests, per-block source hashes and results, exact commands, raw/xcsift output, control sources and binaries, module interfaces, formatting results, and editorial results remain under `/private/tmp/swift-study-a-guides-20261028`. Only Markdown is changed in the repository. Final checks compare compiler records to the published block hashes, preserve original frontmatter, require all template sections and local pitfall/answer examples, validate incoming/outgoing wiki links and heading destinations, and check whitespace. Code formatting preserves intentionally rejected syntax and the diagnostic-sensitive grouped-pattern form.
+
+Runtime evidence is **arm64 macOS 27.0.1 only**. Selective macOS 12/13 deployment-target compilation does not establish fallback execution on those systems. No iOS/device, live HTTP/UI, performance/allocation, scheduling-fairness, adversarial recursion-depth, or full cross-platform/compiler matrix is claimed. The service tests exercise stubs; cancellation gates establish controlled ordering, not a production cancellation-aware primitive. The lifecycle model checks transitions and commands rather than executing network/timer effects. Historical broader fixtures retain their original scope; the D examples and unrelated topic groups were not rerun for these A-only edits.

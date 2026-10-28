@@ -10,55 +10,31 @@ tags:
 
 # A5 — Pattern Matching and Exhaustive Control Flow
 
-**Goal:** Map every response case while preserving the unguarded remainder of a payload.
+**Learning goals:**
+
+- Trace first-match pattern order, payload bindings, guarded subsets, and optional/tuple patterns.
+- Distinguish per-pattern where clauses and fallthrough from ordinary case selection.
+- Check closed-enum coverage and an external enum’s future-case policy in a separate module.
+
+**Prerequisites:** [[A4 — Optionals and Nil Modeling]] for Optional cases. [[A9 — Enums, Associated Values, Recursive Enums, and State Modeling]] explains domain-state enums; [[B11 — Library Evolution and Resilience-Aware API Design]] develops binary resilience.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-A pattern recognizes a shape and may bind values. A switch selects the first matching pattern whose condition holds. Exhaustiveness proves coverage, not business correctness: a catch-all can compile while hiding an unsupported status or a newly added domain case. Use explicit enum cases where changes should trigger review. [Patterns](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/)
+A response can be successful, failed, or cancelled. A pattern asks whether the value has a particular shape, and a binding gives a name to a payload inside that shape. A switch tries cases in source order and selects the first matching pattern whose condition holds.
 
-## Rules and pitfalls
+**Exhaustiveness** means every possible value has a branch. It does not mean every branch implements the right business rule. An unconditional default can hide a new response case; explicit cases can instead require a compiler-guided review. [Patterns](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/patterns/)
 
-### Cover the remainder after a guarded case
+## Essential mechanics
 
-A where clause selects a subset of a case's payloads. A success status range does not cover other statuses of the same response case. Add a deliberate remainder policy and test its boundary values.
+### Example setup
 
-**Common pitfall:** Treating a guarded enum case as fully covered produces an incomplete switch or tempts an overly broad default. Write an unguarded case for the remaining payloads so future enum cases remain visible.
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; potentially trapping or deadlocking code is never run.
 
-### Read grouped patterns and fallthrough literally
+### Bind a payload, then narrow it
 
-Each comma-separated pattern has its own where condition. Grouped alternatives must bind compatible names and types. Fallthrough transfers control into the next body without testing its pattern; it does not mean “try the next case.”
-
-**Common pitfall:** Putting a guard only after the last grouped pattern does not constrain every alternative. Repeat the condition or split the cases. Prefer explicit shared helpers to fallthrough when the next pattern's test matters.
-
-### Distinguish external enum checking from evolution
-
-An external nonfrozen enum requires a future-case policy across resilient module boundaries. @unknown default also warns when known cases were omitted. It can still execute for an omitted known case; it is not a runtime filter for future values. See [[B11 — Library Evolution and Resilience-Aware API Design]].
-
-## Interview questions
-
-### Why does this guarded case need remaining payload coverage?
-
-The guard only covers payloads satisfying its condition. For .status(code), a 200..<300 branch leaves every other Int uncovered. Add an unguarded .status branch, then distinguish the domain consequences instead of routing every unknown situation to success.
-
-### Which external enum omission is an error in Swift 6 mode, and which warns while still reaching a fallback?
-
-Omitting the required future-case fallback for an external nonfrozen enum is an error in Swift 6. Covering known cases through @unknown default can warn while still reaching that fallback. Compile with a real separate library: a same-module enum cannot establish the external resilience behavior. Warning promotion must be checked on the selected compiler.
-
-## Focused exercise
-
-**Task:** Map a response enum using guarded status cases. Check success, unexpected status, failure, and cancellation; explain remaining coverage.
-
-**Acceptance checks:**
-
-- Check success range edges and an unexpected status below and above the range.
-- Failure and cancellation remain different outcomes.
-- Removing the unguarded status branch must make the switch nonexhaustive.
-
-**Solution:**
-
-Standalone synchronous mapping:
+The first status branch handles only a range. The following unguarded status branch handles its remainder.
 
 ```swift
 enum Response {
@@ -68,69 +44,343 @@ enum Response {
 }
 func message(_ response: Response) -> String {
     switch response {
-    case let .status(code) where (200..<300).contains(code): "success"
-    case let .status(code): "unexpected \(code)"
-    case let .failed(reason): "failed \(reason)"
+    case .status(let code) where (200..<300).contains(code): "ok \(code)"
+    case .status(let code): "unexpected \(code)"
+    case .failed(let reason): "failure \(reason)"
     case .cancelled: "cancelled"
     }
 }
-precondition(message(.status(200)) == "success")
-precondition(message(.status(299)) == "success")
-precondition(message(.status(300)) == "unexpected 300")
-precondition(message(.failed("offline")) == "failed offline")
-precondition(message(.cancelled) == "cancelled")
+precondition(message(.status(204)) == "ok 204")
+precondition(message(.status(404)) == "unexpected 404")
 ```
 
-**Reasoning:** The unguarded status pattern owns the remainder without hiding other enum cases. Adding a new Response case causes a compile-time review. Coverage still does not prove the status policy is correct; assertions establish the chosen mapping.
+**Walkthrough:** let binds code for the guard and body. The first matching case wins; putting unguarded status first would swallow the success branch.
 
-## In practice
+### Filter with patterns and combine tuple conditions
 
-**Choose it when:** Use exhaustive switching for closed domain mappings and selective patterns for event filtering.
-
-**Investigate by:** List each case's payload space, then subtract guarded subsets in source order.
-
-**Strong evidence:** Exercise boundary payloads and verify the fallback against a separately compiled resilient library.
-
-### External enum fixture — optional
-
-Build the following as module SDKStates without library evolution. The attribute makes its case set nonexhaustive to outside consumers:
+for case skips nonmatching elements. A tuple pattern can inspect several components at once; grouped alternatives share one body.
 
 ```swift
-@nonexhaustive
-public enum SDKStatus: Sendable {
-    case ready
-    case waiting
+let values: [Int?] = [1, nil, 3]
+var present: [Int] = []
+for case .some(let value) in values { present.append(value) }
+precondition(present == [1, 3])
+func action(_ state: (Bool, Int)) -> String {
+    switch state {
+    case (true, 0), (false, 0): "empty"
+    case (true, let count) where count > 0: "send"
+    default: "wait"
+    }
+}
+precondition(action((false, 0)) == "empty")
+precondition(action((true, 2)) == "send")
+precondition(action((true, -1)) == "wait")
+```
+
+**Walkthrough:** nil elements do not enter the loop body. The tuple switch’s grouped zero patterns need no bindings; the positive branch binds count. if case and guard case use the same pattern idea for a single value.
+
+### fallthrough enters a body without retesting
+
+This is an explicit control-flow jump. Ordinary Swift cases do not fall through by default.
+
+```swift
+func trace(_ input: Int) -> [String] {
+    var events: [String] = []
+    switch input {
+    case 2:
+        events.append("two")
+        fallthrough
+    case 99:
+        events.append("next body")
+    default:
+        events.append("other")
+    }
+    return events
+}
+precondition(trace(2) == ["two", "next body"])
+```
+
+**Walkthrough:** The second body runs even though 2 does not match 99. Use a shared function when the intent is to share work without this jump; fallthrough does not create bindings for the destination pattern.
+
+## Rules and pitfalls
+
+### A guarded case does not cover its whole payload space
+
+**Common pitfall:** Handling only successful status integers while assuming the status case is exhausted.
+
+**Mistake:** Compile-only; intentionally rejected.
+
+```swift
+enum Response {
+    case status(Int)
+    case failed, cancelled
+}
+func render(_ response: Response) -> String {
+    switch response {
+    case .status(let code) where (200..<300).contains(code): "ok"
+    case .failed: "failed"
+    case .cancelled: "cancelled"
+    }
 }
 ```
 
-Build this in a separate consumer module, importing that compiled module:
+**Consequence:** The compiler reports a nonexhaustive switch: status values outside the range have no branch.
+
+**Why:** The where clause covers only a subset of Int payloads.
+
+**Correction:** Add an explicit unguarded remainder for that case.
+
+```swift
+enum Response {
+    case status(Int)
+    case failed, cancelled
+}
+func render(_ response: Response) -> String {
+    switch response {
+    case .status(let code) where (200..<300).contains(code): "ok"
+    case .status(let code): "unexpected \(code)"
+    case .failed: "failed"
+    case .cancelled: "cancelled"
+    }
+}
+precondition(render(.status(199)) == "unexpected 199")
+precondition(render(.status(200)) == "ok")
+```
+
+**What changes:** The remainder is deliberate, and a newly added enum case still requires review.
+
+### where belongs to its individual pattern
+
+**Common pitfall:** Writing one guard after a comma-separated group and expecting it to constrain every alternative. This warning-bearing script is run without -warnings-as-errors.
+
+**Mistake:** Runnable with the warning described below; compile without `-warnings-as-errors`.
+
+```swift
+enum Event {
+    case progress(Int)
+    case finished(Int)
+}
+func positive(_ event: Event) -> Bool {
+    switch event {
+    case let .progress(value), let .finished(value) where value > 0:
+        _ = value
+        return true
+    default: return false
+    }
+}
+precondition(positive(.progress(0)))  // Unwanted true.
+```
+
+**Consequence:** progress(0) matches the first unguarded pattern. This compiler also warns that where applies only to the second pattern.
+
+**Why:** Comma-separated patterns are alternatives, each with its own condition.
+
+**Correction:** Repeat the condition or split the cases. This separate corrected script repeats it.
+
+```swift
+enum Event {
+    case progress(Int)
+    case finished(Int)
+}
+func positive(_ event: Event) -> Bool {
+    switch event {
+    case .progress(let value) where value > 0,
+        .finished(let value) where value > 0:
+        true
+    default: false
+    }
+}
+precondition(!positive(.progress(0)))
+precondition(!positive(.finished(0)))
+precondition(positive(.progress(1)) && positive(.finished(1)))
+```
+
+**What changes:** Both alternatives now test their payload. Grouped patterns that bind values must bind compatible names and types.
+
+## Worked example
+
+### A catch-all can hide a domain change
+
+**Setup:** Standalone script. The same enum is rendered with explicit cases and with an overly broad fallback.
+
+**Predict:** Does compilation prove that cancellation is handled correctly?
+
+```swift
+enum Response {
+    case ready(String)
+    case failed, cancelled
+}
+func explicit(_ value: Response) -> String {
+    switch value {
+    case .ready(let text): text
+    case .failed: "failed"
+    case .cancelled: "cancelled"
+    }
+}
+func lossy(_ value: Response) -> String {
+    switch value {
+    case .ready(let text): text
+    default: "failed"
+    }
+}
+precondition(explicit(.cancelled) == "cancelled")
+precondition(lossy(.cancelled) == "failed")
+```
+
+**Outcome:** Both functions compile, but lossy merges cancellation into failure.
+
+**Why:** Exhaustiveness checks branch coverage. Assertions check the chosen meaning. Adding a case would force explicit to change while lossy would keep compiling.
+
+### Shared external-enum setup
+
+@nonexhaustive tells outside consumers that the case list is not closed, so they need a future-case policy even when they handle all current cases. The attribute was introduced in Swift 6.2.3 and is supported by this baseline. This source-checking rule is separate from a library’s binary-resilience contract. [SE-0487](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md)
+
+Save the next block as SDKStates.swift and compile it as a separate module named SDKStates. Using the baseline flags, add `-parse-as-library -module-name SDKStates -emit-module -emit-module-path /tmp/SDKStates.swiftmodule -c -o /tmp/SDKStates.o`. Clients add `-I /tmp`; runnable clients also link `/tmp/SDKStates.o`. Do not paste this declaration into the client: that would remove the module boundary being tested. The validation uses an isolated temporary directory in place of /tmp.
+
+```swift
+@nonexhaustive
+public enum SDKStatus: Sendable { case ready, waiting }
+```
+
+## Interview questions
+
+### Why does a guarded case need remaining payload coverage?
+
+**Answer:** Its where condition excludes some payloads. An unguarded branch for the same enum case covers those values without hiding other domain cases.
+
+**Example:** Standalone runnable example.
+
+```swift
+enum Response {
+    case status(Int)
+    case failed(String)
+    case cancelled
+}
+func message(_ response: Response) -> String {
+    switch response {
+    case .status(let code) where (200..<300).contains(code): "success"
+    case .status(let code): "unexpected \(code)"
+    case .failed(let reason): "failed \(reason)"
+    case .cancelled: "cancelled"
+    }
+}
+precondition(message(.status(299)) == "success")
+precondition(message(.status(300)) == "unexpected 300")
+precondition(message(.cancelled) == "cancelled")
+```
+
+**Walkthrough:** 299 matches the first branch; 300 fails its guard and reaches the next. Cancellation has an independent branch.
+
+**Boundary:** Correct coverage does not establish whether every 2xx code should have the same business behavior; that is the application’s policy.
+
+### Which external enum omission is an error in Swift 6 mode, and which warns while still reaching fallback?
+
+**Answer:** For this external @nonexhaustive enum, omitting future-case fallback is an error in Swift 6 mode. With @unknown default, omitting a known case produces a warning and that case still executes the fallback.
+
+**Example:** Separate runnable client of Shared external-enum setup; add the client import/search/link flags described there.
 
 ```swift
 import SDKStates
 
-func describeStatus(_ status: SDKStatus) -> String {
+func describe(_ status: SDKStatus) -> String {
     switch status {
     case .ready: "ready"
     case .waiting: "waiting"
     @unknown default: "future"
     }
 }
+precondition(describe(.ready) == "ready")
+precondition(describe(.waiting) == "waiting")
 ```
 
-The consumer compiles and returns ready/waiting for the known cases. Removing only the fallback is rejected in Swift 6 mode for possible additional unknown values. Keeping the fallback but removing .waiting compiles with a known-case warning and returns future for .waiting. Replacing @unknown default with plain default accepts that same omission without the warning.
+**Walkthrough:** Explicit branches handle both current cases. The fallback supplies behavior if the external API introduces a different case. [SE-0487](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md)
 
-| Boundary / source change | Checked consequence |
-| --- | --- |
-| Local closed enum; omit a case with no catch-all | Error: incomplete switch |
-| External @nonexhaustive enum; handle known cases but omit fallback | Error in Swift 6 mode |
-| Same consumer in Swift 5 mode | Warning for possible unknown values |
-| @unknown default but omit a known case | Warning in the tested Swift 6 compiler; fallback still runs |
-| Plain default and omit a known case | Accepted without that warning |
-| Add a new local Response case | Explicit render must change; lossyRender still compiles |
+**Boundary:** This attribute controls source checking; it does not enable binary resilience. [[B11 — Library Evolution and Resilience-Aware API Design|B11]] separately validates resilient/frozen/same-package variants and library replacement. @unknown default is not a runtime filter limited to future cases.
 
-@nonexhaustive is a Swift 6.2.3 feature, revalidated for this baseline. Its warn form supports staged source migration; it does not enable binary resilience. Same-module/package code is co-developed and has different checking. B11 records checked plain/resilient/frozen/warn/same-package variants and an unchanged client executing a newly added resilient enum case. This chapter's source-only example does not promise an ABI-stable drop-in library replacement. [SE-0487](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0487-extensible-enums.md), [SE-0192](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0192-non-exhaustive-enums.md)
+This separate client variant is **intentionally rejected** in Swift 6 mode. Use the compiled SDKStates module; object compilation needs only `-I /tmp`.
 
-Warnings are review evidence; do not assume a missing known case is a hard error just because the build uses Swift 6. B11 also records a diagnostic-policy limitation in this particular toolchain. Record the real exit status and diagnostics of the gate your project uses.
+```swift
+import SDKStates
+
+func incomplete(_ status: SDKStatus) -> String {
+    switch status {
+    case .ready: "ready"
+    case .waiting: "waiting"
+    }
+}
+```
+
+This separate variant is **warning-bearing and runnable**. Compile without `-warnings-as-errors` to observe the warning and result. The selected compiler’s warning-promotion limitation is recorded in [[B11 — Library Evolution and Resilience-Aware API Design|B11]]; inspect actual diagnostics and exit status in your build.
+
+```swift
+import SDKStates
+
+func omittedKnown(_ status: SDKStatus) -> String {
+    switch status {
+    case .ready: "ready"
+    @unknown default: "fallback"
+    }
+}
+precondition(omittedKnown(.waiting) == "fallback")
+```
+
+A plain default also reaches fallback for waiting, but suppresses the useful omitted-known-case warning:
+
+```swift
+import SDKStates
+
+func plainDefault(_ status: SDKStatus) -> String {
+    switch status {
+    case .ready: "ready"
+    default: "fallback"
+    }
+}
+precondition(plainDefault(.waiting) == "fallback")
+```
+
+## Focused exercise
+
+**Task:** Map a response enum using guarded success statuses and a deliberate remainder.
+
+**Acceptance checks:**
+
+- Check 199, 200, 299, and 300.
+- Failure and cancellation retain separate outcomes.
+- Removing the unguarded status branch is rejected, as in the pitfall.
+
+**Solution:** Standalone script.
+
+```swift
+enum Response {
+    case status(Int)
+    case failed(String)
+    case cancelled
+}
+func message(_ response: Response) -> String {
+    switch response {
+    case .status(let code) where (200..<300).contains(code): "success"
+    case .status(let code): "unexpected \(code)"
+    case .failed(let reason): "failed \(reason)"
+    case .cancelled: "cancelled"
+    }
+}
+for code in [199, 200, 299, 300] {
+    let expected = (200..<300).contains(code) ? "success" : "unexpected \(code)"
+    precondition(message(.status(code)) == expected)
+}
+precondition(message(.failed("offline")) == "failed offline")
+precondition(message(.cancelled) == "cancelled")
+```
+
+**Reasoning:** The success branch subtracts one range from the status payload space. The unguarded status branch covers everything left without absorbing a future Response case.
+
+## In practice
+
+**Choose it when:** Use explicit exhaustive cases for closed domain mappings and selective patterns for filtering events.
+
+**Investigate by:** List each case’s payload space, then subtract guarded subsets in source order. Review where conditions individually.
+
+**Strong evidence:** Test boundary payloads and the actual external-module fallback, separating source warnings from ABI and deployment guarantees.
 
 ## References
 

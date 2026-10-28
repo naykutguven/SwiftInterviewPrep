@@ -9,131 +9,388 @@ tags:
 
 # A11 — Access Control
 
-**Goal:** Expose a constructible public value and verify its access permissions from an ordinary client.
+**Learning goals:**
+
+- Distinguish private, fileprivate, internal, package, public, and open through real file and module boundaries.
+- Check type naming, construction, getters, setters, and subclassing independently.
+- Separate source access from inlinable bodies, ABI helpers, and Swift 6.4 export/memberwise rules.
+
+**Prerequisites:** [[A3 — Initialization model]] for initializers and [[A10 — Extensions and Retroactive Modeling]] for extensions. [[E5 — Modules, packages, targets, products, and resources]] explains modules and package identity; [[E8 — Binary frameworks, inlineability, and public implementation detail leakage]] expands implementation export.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-Access control grants specific source permissions: naming a type, constructing it, reading or writing members, conforming, subclassing, and overriding are separate operations. Public visibility of a struct does not expose a public synthesized initializer. Access control neither synchronizes state nor protects secrets in a shipped binary. [Access Control](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/)
+Seeing a public struct does not mean you can construct it, read every property, or assign every setter. Each operation requires its own permission. Access control defines those source permissions across declarations, files, modules, and packages; it neither synchronizes state nor keeps secrets out of a shipped binary.
 
-## Rules and pitfalls
+private covers the owning declaration and its same-file extensions. fileprivate additionally permits unrelated code in that file. internal covers a module. package covers modules built with the same package identity. public permits external source use; open additionally promises supported external subclassing or overriding. A testable import gives testing permissions that ordinary clients lack. [Access Control](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/accesscontrol/)
 
-### Test the actual boundary
+## Essential mechanics
 
-Private means the enclosing declaration and its same-file extensions; fileprivate includes unrelated declarations in the file. Internal covers a module; package covers modules with the same package identity. Public permits external use. Open additionally permits supported external subclassing or overriding.
+### Example setup
 
-**Common pitfall:** Testing only inside the module, or with @testable, conceals missing public initializers and members. Compile an ordinary client in a separate module and check each needed permission.
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; potentially trapping or deadlocking code is never run.
 
-### Separate setter access and emitted implementation
+### Getter and setter permissions differ
 
-Private(set) narrows assignment to the property through its setter, not mutation inside arbitrary referenced objects. @usableFromInline exposes ABI-callable internal implementation; @inlinable exposes a body under visibility constraints. Neither creates public source access to an internal helper.
-
-**Common pitfall:** Treating export/interface controls as access modifiers confuses source naming with implementation distribution. Inspect both client source use and emitted interfaces; see [[E8 — Binary frameworks, inlineability, and public implementation detail leakage]].
-
-## Interview questions
-
-### Why can a sibling package module name a struct but fail to construct it, and why does Swift 6.4 not fix that automatically?
-
-The struct's visibility and its initializer's access differ. Memberwise synthesis remains at most internal, including after Swift 6.4 changes which initialized private properties participate. Declare a package or public initializer explicitly for the intended clients rather than assuming the type modifier publishes construction.
-
-### How do ordinary external, same-package, and testable clients differ when reading members or subclassing/overriding?
-
-Ordinary external clients see public/open surfaces. Same-package clients additionally see package declarations under matching package identity. Testable import with an enable-testing build permits extra internal access and testing customization; it does not prove ordinary source compatibility or expose private state. Open is the supported external customization promise.
-
-### Why can a same-file type extension read private state while an unrelated helper or another-file extension cannot?
-
-Swift permits the owning type's same-file extensions to participate in its private implementation. An unrelated helper is outside that private context; another-file extension loses the same-file permission. Use fileprivate only when unrelated declarations in the file deliberately share the implementation.
-
-### How do private(set), usableFromInline, inlinable, and export(interface) constrain different aspects of an API?
-
-Private(set) constrains setter access. @usableFromInline commits a source-internal declaration to ABI use. @inlinable exposes an eligible implementation body to clients. @export(interface) controls exported interface implementation policy under its rules; it does not let ordinary clients name private/internal declarations. Review each axis separately.
-
-## Focused exercise
-
-**Task:** Expose a small public value from a module. Compile an ordinary client that constructs and reads it, and reject private member access.
-
-**Acceptance checks:**
-
-- An ordinary import can construct and read Reading.
-- Private state and the restricted setter reject external access.
-- The check uses no @testable import.
-
-**Solution:**
-
-Two source files in separate modules; compile Core first, then Client using its module and library search paths.
+The public getter can expose a value while the type keeps writes behind a method. This same-file example is a first step, not an external-client test.
 
 ```swift
-// Core.swift, module Core
+public struct Reading {
+    public private(set) var value: Int
+    public init(value: Int) { self.value = value }
+    public mutating func increment() { value += 1 }
+}
+var reading = Reading(value: 7)
+reading.increment()
+precondition(reading.value == 8)
+```
+
+**Walkthrough:** Callers can request the supported increment operation. They cannot directly assign value outside the setter’s private context. A reference-valued property could still expose mutable object state despite private(set).
+
+### Shared module setup: AccessCore
+
+Build the following as its own file/module with the baseline flags plus `-parse-as-library -module-name AccessCore -package-name Study -enable-testing -emit-module -emit-module-path /tmp/AccessCore.swiftmodule -c -o /tmp/AccessCore.o`. Client source is always a different module. Use `-I /tmp` and link AccessCore.o for a runnable client. Validation substitutes its isolated temporary directory.
+
+The ordinary-client cases use `-package-name Outside`; sibling-package cases use `-package-name Study`. @testable import additionally requires this module’s -enable-testing build. These are deliberate independent boundaries.
+
+```swift
 public struct Reading {
     public private(set) var value: Int
     private let source: String
     public init(value: Int) {
         self.value = value
-        self.source = "sensor"
+        source = "sensor"
     }
+}
+public struct PublicLabel {
+    public var text: String
+    private var revision = 0
+}
+package struct PackageLabel { package var text: String }
+package struct PackageReading {
+    package let value: Int
+    package init(value: Int) { self.value = value }
+}
+internal struct InternalReading { var value: Int }
+public class PublicBase {
+    public init() {}
+    public func value() -> Int { 1 }
+}
+open class OpenBase {
+    public init() {}
+    open func value() -> Int { 1 }
 }
 ```
 
+## Rules and pitfalls
+
+### Public visibility does not publish synthesized construction
+
+**Common pitfall:** Expecting a public struct’s memberwise initializer to be public.
+
+**Mistake:** Compile-only; intentionally rejected.
+
 ```swift
-// Client.swift
-import Core
+import AccessCore
+
+let label = PublicLabel(text: "Ada")
+```
+
+**Consequence:** An ordinary client cannot call the internal synthesized initializer.
+
+**Why:** The type’s public visibility and construction access are separate. Swift 6.4 can omit the initialized private revision, but the memberwise access ceiling is still internal.
+
+**Correction:** Offer an explicit public initializer for a public construction contract. AccessCore.Reading already does this.
+
+```swift
+import AccessCore
+
 let reading = Reading(value: 7)
 precondition(reading.value == 7)
 ```
 
-Build Core with swiftc -emit-library -emit-module -module-name Core; pass F5's baseline flags. Compile the client with -I and -L pointing at the output directory and -lCore. In a separate rejected client, read reading.source or assign reading.value.
+**What changes:** The client uses the intended public initializer and getter without testing permissions.
 
-**Reasoning:** The explicit initializer publishes construction; public getter visibility publishes observation. These permissions do not expose the private source or mutation API. A successful same-file compile would not test this boundary.
+### A public conformance needs public witnesses
 
-## In practice
+**Common pitfall:** Keeping a required property internal on a public type conforming to a public protocol.
 
-**Choose it when:** Start with the smallest source contract needed by real clients; reserve open for supported customization.
+**Mistake:** Compile-only; intentionally rejected.
 
-**Investigate by:** Compile ordinary, package, and testable consumers separately.
+```swift
+public protocol ReadingSource { var value: Int { get } }
+public struct SensorReading: ReadingSource { let value: Int }
+```
 
-**Strong evidence:** Preserve legitimate clients while reducing package/public commitments and checking emitted-body visibility.
+**Consequence:** Compilation requires the witness to be public.
 
-### Memberwise access compatibility — optional
+**Why:** External clients using the public protocol need the implementation promised by that public conformance.
 
-#### Swift 6.4 memberwise synthesis and compatibility
+**Correction:** Make the intended witness public and expose construction deliberately. Compile this correction as module WitnessCore with the shared module command.
 
-This standalone probe is shared with the rubric:
+```swift
+public protocol ReadingSource { var value: Int { get } }
+public struct SensorReading: ReadingSource {
+    public let value: Int
+    public init(value: Int) { self.value = value }
+}
+```
+
+**What changes:** Public protocol use, property reading, and construction now have explicit source permissions.
+
+Ordinary external client of that correction, linking WitnessCore.o:
+
+```swift
+import WitnessCore
+
+func read<T: ReadingSource>(_ source: T) -> Int { source.value }
+precondition(read(SensorReading(value: 9)) == 9)
+```
+
+### Exporting a body does not grant arbitrary source access
+
+**Common pitfall:** Referencing a private helper from an inlinable public body.
+
+**Mistake:** Compile-only; intentionally rejected.
+
+```swift
+private func hidden() -> Int { 7 }
+@inlinable public func value() -> Int { hidden() }
+```
+
+**Consequence:** Compilation rejects the private dependency in an externally available body.
+
+**Why:** Clients compiling the exposed body need a declaration that is eligible for use through the ABI, the compiled binary calling contract. A private source helper does not satisfy those rules.
+
+**Correction:** Expose the helper for ABI use only when that commitment is intended. This is compile-only module source.
+
+```swift
+@usableFromInline internal func helper() -> Int { 7 }
+@inlinable public func value() -> Int { helper() }
+```
+
+**What changes:** The helper becomes available to emitted client implementations while remaining internal to source callers. Keeping the public body unexposed is another option when optimization does not justify the commitment.
+
+## Worked example
+
+### Same-file extensions participate in private implementation
+
+**Setup:** Standalone file. Draft’s extension belongs to the type’s private context in this file.
+
+**Predict:** Can the extension restore a private initialized revision?
 
 ```swift
 struct Draft {
     var title: String
     private var revision = 0
 }
-
 extension Draft {
     var revisionNumber: Int { revision }
     static func restored(title: String, revision: Int) -> Self {
         Self(title: title, revision: revision)
     }
 }
-
-func initializerAccessProbe() -> [Int] {
-    let fresh = Draft(title: "New")
-    let restored = Draft.restored(title: "Old", revision: 7)
-    return [fresh.revisionNumber, restored.revisionNumber]
-}
+let fresh = Draft(title: "New")
+let restored = Draft.restored(title: "Old", revision: 7)
+precondition([fresh.revisionNumber, restored.revisionNumber] == [0, 7])
 ```
 
-It returns `[0, 7]`. The new initializer omits the initialized less-visible revision; the same-file extension can still use the private compatibility overload that includes it. No experimental flag is needed for this checked Swift 6.4 source. [SE-0502](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0502-exclude-private-from-memberwise-init.md)
+**Outcome:** The same-file extension can read revision and use the private compatibility initializer.
 
-This is not “all private properties disappear.” The rule compares memberwise-initializable properties against the maximum relevant access, capped at internal, and excludes less-visible properties only when they have an initial value (including a default-nil optional). An uninitialized private field still constrains initialization. A type whose relevant fields are all private does not gain a broadly accessible memberwise initializer. A separately synthesized no-argument default initializer can still allow construction from those defaults; do not confuse it with the private memberwise overload. A private setter alone is not the same as a private property for this rule.
+**Why:** Swift 6.4 offers an internal form omitting initialized less-visible revision, while preserving the applicable private form. This does not publish either form as public/package API. [SE-0502](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0502-exclude-private-from-memberwise-init.md)
 
-The synthesized initializer remains at most internal. This public type still cannot be constructed by an ordinary external client through synthesis:
+## Interview questions
+
+### Why can a sibling package module name a struct but fail to construct it?
+
+**Answer:** package visibility exposes the type, but a synthesized memberwise initializer is still at most internal. Swift 6.4 changes property participation, not that access ceiling. Provide a package initializer when siblings should construct it.
+
+**Example:** Runnable sibling client of AccessCore: use -package-name Study.
 
 ```swift
-public struct PublicLabel {
-    public var text: String
-    private var revision = 0
-}
+import AccessCore
+
+let visibleType = PackageLabel.self
+_ = visibleType
+let reading = PackageReading(value: 9)
+precondition(reading.value == 9)
 ```
 
-Add an explicit public initializer to offer public construction. When moving from 6.2/6.3, inspect unbound references such as Draft.init and extension initializers whose signatures collide with the newly synthesized form; A3 validates those compatibility cases. Do not remove explicit API initializers just because the same-module spelling now compiles.
+**Walkthrough:** Matching Study package identity permits naming PackageLabel. PackageReading explicitly exposes construction, so that separate call works.
+
+**Boundary:** PackageLabel(text:) remains inaccessible to a sibling module. Matching package identity is a build setting/manifest relationship, not a folder naming convention. [SE-0386](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0386-package-access-modifier.md)
+
+Separate sibling client, **intentionally rejected** because PackageLabel has no package initializer:
+
+```swift
+import AccessCore
+
+let label = PackageLabel(text: "Ada")
+```
+
+### How do ordinary external, same-package, and testable clients differ for reading and subclassing?
+
+**Answer:** An ordinary client uses public/open API. A sibling additionally uses package API. @testable import exposes eligible internal API and testing customization from an -enable-testing build. open is the supported external customization contract.
+
+**Example:** Runnable ordinary Outside client of AccessCore.
+
+```swift
+import AccessCore
+
+final class Specialized: OpenBase {
+    override func value() -> Int { 2 }
+}
+precondition(Specialized().value() == 2)
+precondition(Reading(value: 7).value == 7)
+```
+
+**Walkthrough:** An ordinary Outside client can construct Reading and subclass/override OpenBase. It cannot use InternalReading or subclass the non-open PublicBase through this import.
+
+**Boundary:** Same-package visibility does not expose private storage. Testable success does not prove ordinary source compatibility. Public non-open customization remains a different contract from open. [SE-0117](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0117-non-public-subclassable-by-default.md)
+
+Separate runnable sibling client with -package-name Study. It can read package API; non-open PublicBase still does not publish cross-module customization through an ordinary import:
+
+```swift
+import AccessCore
+
+precondition(PackageReading(value: 9).value == 9)
+```
+
+Separate runnable testing client, using the same compiled AccessCore with -enable-testing:
+
+```swift
+@testable import AccessCore
+
+final class TestSubclass: PublicBase {
+    override func value() -> Int { 3 }
+}
+precondition(InternalReading(value: 4).value == 4)
+precondition(TestSubclass().value() == 3)
+```
+
+Two separate ordinary Outside clients are **intentionally rejected**:
+
+```swift
+import AccessCore
+
+let internalValue = InternalReading(value: 4)
+```
+
+```swift
+import AccessCore
+
+class InvalidSubclass: PublicBase {}
+```
+
+### Why can a same-file extension read private state while an unrelated helper or another-file extension cannot?
+
+**Answer:** The type’s same-file extensions share its private implementation context. Unrelated declarations and other-file extensions do not. fileprivate deliberately broadens access to unrelated code in one file.
+
+**Example:** Standalone runnable example.
+
+```swift
+struct Secret {
+    private var number = 7
+    fileprivate var label = "visible in this file"
+}
+extension Secret { var exposedNumber: Int { number } }
+func helper(_ secret: Secret) -> String { secret.label }
+precondition(Secret().exposedNumber == 7)
+precondition(helper(Secret()) == "visible in this file")
+```
+
+**Walkthrough:** The extension can read number; helper can read label because it is fileprivate. helper does not gain permission to read number.
+
+**Boundary:** Moving the extension to another file removes its private access. Do not make storage public merely to repair file organization; expose the smallest needed operation instead.
+
+Separate **intentionally rejected** unrelated-helper example:
+
+```swift
+struct Secret { private var number = 7 }
+func unrelated(_ secret: Secret) -> Int { secret.number }
+```
+
+For the other-file check, save this compile-only declaration as Secret.swift:
+
+```swift
+struct Secret { private var number = 7 }
+```
+
+Compile this second file together with Secret.swift using `-parse-as-library -whole-module-optimization`; it is **intentionally rejected**:
+
+```swift
+extension Secret { var exposedNumber: Int { number } }
+```
+
+### How do private(set), usableFromInline, inlinable, and export(interface) constrain different aspects?
+
+**Answer:** private(set) controls source assignment. @usableFromInline makes an internal helper eligible for ABI use by exposed bodies. @inlinable exposes an implementation body. @export(interface) emits a callable symbol while withholding that body from clients; none upgrades a private/internal name to public source API.
+
+**Example:** Compile-only library source. Use baseline flags plus -parse-as-library. [[E8 — Binary frameworks, inlineability, and public implementation detail leakage|E8]] supplies binary-distribution checks.
+
+```swift
+public struct Counter {
+    public private(set) var count = 0
+    public init() {}
+    public mutating func increment() { count += 1 }
+}
+@usableFromInline internal func incremented(_ value: Int) -> Int { value + 1 }
+@inlinable public func next(_ value: Int) -> Int { incremented(value) }
+private func policy() -> Int { 7 }
+@export(interface) public func libraryPolicy() -> Int { policy() }
+```
+
+**Walkthrough:** The setter remains private. next’s visible body may call the ABI-visible helper. libraryPolicy’s body can call a private helper while keeping that body on the library side. [SE-0497](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0497-definition-visibility.md)
+
+**Boundary:** These are distinct commitments, not access synonyms. @export cannot simply be combined with @inlinable or @usableFromInline on the same declaration. [[E8 — Binary frameworks, inlineability, and public implementation detail leakage|E8]] records interface/symbol and unchanged-client experiments; this block only compiles the API shape.
+
+## Focused exercise
+
+**Task:** Expose a small public value and verify ordinary-client construction, reads, and denied writes/private reads.
+
+**Acceptance checks:**
+
+- An ordinary import constructs Reading and reads value.
+- Reading.source and direct assignment to Reading.value are rejected.
+- No testable import or matching package identity is used.
+
+**Solution:** Runnable ordinary Outside client of AccessCore. The two rejected clients immediately below are independent files.
+
+```swift
+import AccessCore
+
+let reading = Reading(value: 7)
+precondition(reading.value == 7)
+```
+
+**Reasoning:** The explicit public initializer exposes construction; the getter exposes observation. The negative clients test the separate permissions that a successful read cannot establish.
+
+Independent **intentionally rejected** clients, using the same -I and Outside package settings:
+
+```swift
+import AccessCore
+
+let reading = Reading(value: 7)
+let source = reading.source
+```
+
+```swift
+import AccessCore
+
+var reading = Reading(value: 7)
+reading.value = 9
+```
+
+## In practice
+
+**Choose it when:** Start with the smallest source contract needed by real clients. Reserve open for supported customization.
+
+**Investigate by:** Compile ordinary, same-package, and testable clients separately; test construction and each member operation.
+
+**Strong evidence:** Preserve legitimate clients while reducing public/package commitments, and review emitted-body visibility separately from source access.
+
+The memberwise examples do not mean all private properties disappear. The Swift 6.4 rule omits initialized properties that are less visible than the relevant synthesized access. Uninitialized private storage still restricts initialization; all-private storage does not gain a broadly visible memberwise initializer. A separately synthesized no-argument default initializer is a different overload. A private setter alone is not a private property. [[A3 — Initialization model|A3]] covers initializer collisions and unbound init references during migration.
 
 ## References
 

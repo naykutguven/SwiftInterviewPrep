@@ -11,120 +11,279 @@ tags:
 
 # A1 — Value Semantics, Reference Semantics, Identity, and Copy-on-Write
 
-**Goal:** Predict which edits remain independent after copying a reference-containing draft.
+**Learning goals:**
+
+- Predict what assignment copies, including arrays that contain objects or closures.
+- Distinguish equality, object identity, domain identity, ownership, and isolation.
+- Explain the observable guarantee of copy-on-write without promising deep copies or allocation counts.
+
+**Prerequisites:** Basic stored properties and function calls. [[A2 — `let`, `var`, `mutating`, and method semantics]] explains mutation syntax; no concurrency knowledge is needed for the core examples.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-Copying an ordinary value produces a second logical value; copying an object reference preserves the object identity. A struct copies each stored property's value, including any references or closures. It does not recursively clone an object graph. Copy-on-write can preserve independent array values while sharing storage until a mutation requires separation. That is a representation strategy, not a promise of deep copying or a fixed allocation count. [Structures and classes](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/)
+Suppose an editor copies a saved draft before changing it. The useful question is whether those edits can change the saved version. A **value** has its own logical contents after assignment. A **reference** identifies an object, so assigning the reference gives another path to that same object. A struct copies its stored values; a stored object reference is still a reference after that copy.
+
+Array, String, and Dictionary provide value behavior. Their implementations can share backing storage until a write needs independent storage. This is **copy-on-write**: an implementation strategy that preserves the value contract. It does not recursively clone objects stored inside the collection, and it does not promise an allocation on every assignment or mutation. [Structures and classes](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/)
+
+## Essential mechanics
+
+### Example setup
+
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; potentially trapping or deadlocking code is never run.
+
+### Two values, one object
+
+Read each assignment as copying the right-hand value. For a class, that value is a reference to an instance.
+
+```swift
+struct Point { var x: Int }
+final class Marker { var x = 1 }
+var firstPoint = Point(x: 1)
+var secondPoint = firstPoint
+secondPoint.x = 2
+precondition(firstPoint.x == 1)
+precondition(secondPoint.x == 2)
+let firstMarker = Marker()
+let secondMarker = firstMarker
+secondMarker.x = 2
+precondition(firstMarker.x == 2)
+precondition(firstMarker === secondMarker)
+```
+
+**Walkthrough:** The struct edit changes secondPoint. Both marker bindings identify the same instance, so either path observes its changed x. The let bindings prevent replacing those references; they do not freeze the marker.
+
+### Collection independence stops at its elements
+
+Replacing an element changes the array sequence. Editing an object reached through an element changes that object.
+
+```swift
+final class Item {
+    var title: String
+    init(_ title: String) { self.title = title }
+}
+let saved = [Item("Draft")]
+var edited = saved
+edited[0].title = "Shared edit"
+precondition(saved[0].title == "Shared edit")
+edited[0] = Item("Replacement")
+edited.append(Item("Extra"))
+precondition(saved.count == 1)
+precondition(saved[0].title == "Shared edit")
+precondition(edited[0] !== saved[0])
+```
+
+**Walkthrough:** The first edit follows the copied reference into the shared item. Replacement and append change only edited’s sequence. The result establishes value behavior; it does not measure storage sharing or allocations.
 
 ## Rules and pitfalls
 
-### Define the observable snapshot
+### Define what a snapshot includes
 
-Describe which state a caller may edit independently. Array element replacement changes one array value, while mutating a class element reaches the same object through every retained alias. Extracting an array property from a class creates a separate array value even though the owning class is shared.
+**Common pitfall:** Calling a copied struct a snapshot while it still exposes mutable reference state.
 
-**Common pitfall:** Calling a struct a snapshot without checking its reference fields or captured environments allows edits to leak. Store value data, explicitly clone the required graph, or document intentional sharing.
+**Mistake:** Standalone runnable example.
 
-### Separate identity, ownership, and isolation
+```swift
+final class Text { var value = "Saved" }
+struct Draft { var text: Text }
+let saved = Draft(text: Text())
+let edited = saved
+edited.text.value = "Changed"
+precondition(saved.text.value == "Changed")  // The unwanted change is observable.
+```
 
-Use equality for an agreed comparison, object identity for the same instance, and a domain identifier for an entity across reloads. Noncopyable ownership restricts duplication of the wrapper, not all aliases reachable inside it. Sendable checking is another contract; it does not establish an independent snapshot.
+**Consequence:** The saved draft changes through edited, even though both outer bindings are let.
 
-**Common pitfall:** A let reference or private field does not freeze the referenced object. Isolation or synchronization must protect shared mutable state. See [[D6 — `Sendable`, `@Sendable`, and `sending`]].
+**Why:** Both drafts contain a reference to the same Text. Copying the outer struct did not clone Text.
+
+**Correction:** Store the data that must be independent as values.
+
+```swift
+struct Draft { var text: String }
+let saved = Draft(text: "Saved")
+var edited = saved
+edited.text = "Changed"
+precondition(saved.text == "Saved")
+precondition(edited.text == "Changed")
+```
+
+**What changes:** The text is now inside the value boundary. A deliberate clone can also work, but it must cover every mutable node that the snapshot promises to isolate.
+
+### let and private do not protect a shared object
+
+Sendable is a promise, checked under Swift’s rules, about sharing or transferring values between concurrency domains. It does not promise an independent snapshot. An actor owns an isolation domain: outside callers follow its access rules instead of directly editing its stored state. The following example introduces that distinction; [[D4 — Actors and Actor Isolation]] and [[D6 — `Sendable`, `@Sendable`, and `sending`]] develop it.
+
+**Common pitfall:** Assuming an immutable binding or hidden field makes reachable mutable state safe to transfer.
+
+**Mistake:** Compile-only; intentionally rejected.
+
+```swift
+final class Counter { var count = 0 }
+struct SharedCounter: Sendable {
+    private let storage = Counter()
+    func increment() { storage.count += 1 }
+}
+```
+
+**Consequence:** Swift rejects the checked Sendable conformance because Counter is mutable, non-Sendable reference state.
+
+**Why:** Access control limits which source code can name the field. It does not provide isolation or synchronization for the object.
+
+**Correction:** Make the shared service own an isolation boundary. This separate runnable example uses an actor.
+
+```swift
+actor SharedCounter {
+    private var count = 0
+    func increment() { count += 1 }
+    func value() -> Int { count }
+}
+let counter = SharedCounter()
+await counter.increment()
+let observed = await counter.value()
+precondition(observed == 1)
+```
+
+**What changes:** Every access to the actor’s state follows its isolation rules. An actor remains a shared reference; it is not an independent value snapshot. See [[D4 — Actors and Actor Isolation|D4]] and [[D6 — `Sendable`, `@Sendable`, and `sending`|D6]].
+
+## Worked example
+
+### Extracting an array from a shared owner
+
+**Setup:** Standalone script. A Shelf is shared, but its titles property is an Array value.
+
+**Predict:** Does appending to extracted also append to shelf.titles?
+
+```swift
+final class Shelf { var titles = ["A"] }
+let shelf = Shelf()
+let alias = shelf
+var extracted = shelf.titles
+extracted.append("B")
+alias.titles.append("C")
+precondition(extracted == ["A", "B"])
+precondition(shelf.titles == ["A", "C"])
+```
+
+**Outcome:** extracted contains A, B; shelf.titles contains A, C.
+
+**Why:** Reading the property produces an array value. Mutating that local value is different from mutating the property through the shared owner.
 
 ## Interview questions
 
 ### What question do ==, ===, and explicit domain IDs each answer?
 
-`==` asks whether values satisfy their equality rule. `===` asks whether object references identify the same instance, including optional references; two nil references do not establish that an object exists. Domain IDs identify entities according to an explicit lifetime and scope. Equal content, entity identity, and object identity can change independently.
+**Answer:** == follows a type’s equality rule; === compares object identity. A domain ID identifies an entity under an application-defined scope and lifetime. These answers need not agree.
+
+**Example:** Standalone runnable example.
+
+```swift
+final class User: Equatable {
+    let id: Int
+    var name: String
+    init(id: Int, name: String) {
+        self.id = id
+        self.name = name
+    }
+    static func == (lhs: User, rhs: User) -> Bool { lhs.name == rhs.name }
+}
+let old = User(id: 7, name: "Ada")
+let reloaded = User(id: 7, name: "Ada")
+precondition(old == reloaded)
+precondition(old !== reloaded)
+reloaded.name = "Ada L."
+precondition(old != reloaded)
+precondition(old.id == reloaded.id)
+let absent: User? = nil
+precondition(absent === nil)
+```
+
+**Walkthrough:** Separate allocations can compare equal. Editing content changes this chosen equality result without changing either entity ID. Comparing nil references says nothing about an existing user.
+
+**Boundary:** This equality rule is illustrative. Production models must define whether equality means all content, entity identity, or something else; an ID is useful only with a documented uniqueness scope.
 
 ### Why do object mutation, array-element replacement, and extracting an array property have different aliasing effects?
 
-Object mutation changes shared storage. Replacing an array element changes that array's sequence of reference values, preserving the other array. Extracting an array property copies its value contract, so later sequence edits need not mutate the owner's property. Follow the particular operation rather than classifying every value reached through a class as reference-semantic.
+**Answer:** The operation determines which storage changes. Object mutation follows a reference; replacement edits an array value; property extraction reads that array value into another binding.
 
-### How can a copied struct containing a closure share mutable state, and why does noncopyable ownership not guarantee a deeply unique graph?
-
-A closure can retain shared mutable captured storage, so copying a struct holding that closure can share its counter or service state. A noncopyable wrapper can still hold a reference aliased elsewhere. Neither syntax proves a deeply unique object graph; review the reachable state and the permitted mutation paths.
-
-## Focused exercise
-
-**Task:** Copy a draft containing an array and a class payload. Check independent array edits, shared object mutation, and the original snapshot.
-
-**Acceptance checks:**
-
-- Appending preserves the original array sequence.
-- Payload mutation is shared; replacing the reference affects only the edited draft.
-- Check an empty items array and a separately constructed payload.
-
-**Solution:**
-
-Standalone, synchronous model probe:
+**Example:** Standalone runnable example.
 
 ```swift
-final class Payload { var count = 1 }
-struct Draft { var items: [Int]; var payload: Payload }
-let original = Draft(items: [1], payload: Payload())
-var edited = original
-edited.items.append(2)
-edited.payload.count = 9
-precondition(original.items == [1])
-precondition(edited.items == [1, 2])
-precondition(original.payload.count == 9)
-let shared = original.payload
-edited.payload = Payload()
-precondition(original.payload === shared)
-precondition(edited.payload !== shared)
+final class Item { var count = 0 }
+final class Store { var items = [Item()] }
+let store = Store()
+var draft = store.items
+draft[0].count = 5
+precondition(store.items[0].count == 5)
+draft[0] = Item()
+draft.append(Item())
+precondition(store.items.count == 1)
+precondition(store.items[0].count == 5)
+precondition(draft[0].count == 0 && draft.count == 2)
 ```
 
-**Reasoning:** The draft copies an Array value and an object reference. Array's independence covers the sequence of references or integers stored in it, not arbitrary state behind a reference. A full immutable snapshot would convert Payload into independent value data before returning the draft.
+**Walkthrough:** The first write reaches the shared item. The next two writes change draft’s sequence of references, leaving the owner’s array intact.
 
-## In practice
+**Boundary:** An array of value elements would also isolate the element’s value edits. Neither case promises how many buffer copies the optimizer performs.
 
-**Choose it when:** Use values for independent edits and snapshots; references suit shared services and lifecycle identity.
+### How can copied closures share state, and why does noncopyable ownership not guarantee a deeply unique graph?
 
-**Investigate by:** Draw the aliases and test mutation through every exposed path, including closures.
+**Answer:** A copied closure can retain the same captured storage. A noncopyable wrapper cannot be duplicated implicitly, but it can contain a class reference that already has other aliases.
 
-**Strong evidence:** Define the snapshot boundary, verify old snapshots after commit, and choose an explicit conflict policy for stale drafts.
-
-### Ownership and transfer boundaries — optional
-
-#### Noncopyable does not mean reference type or deeply unique graph
-
-This independent specialist fixture uses a mutable reference payload:
+**Example:** Standalone runnable example.
 
 ```swift
-final class Counter {
-    var value: Int
-    init(_ value: Int) { self.value = value }
+func makeCounter() -> () -> Int {
+    var count = 0
+    return {
+        count += 1
+        return count
+    }
 }
+struct Action { let next: () -> Int }
+let first = Action(next: makeCounter())
+let second = first
+precondition(first.next() == 1)
+precondition(second.next() == 2)
+final class Counter { var count = 0 }
+struct Owner: ~Copyable { let counter: Counter }
+func probeOwner() {
+    let shared = Counter()
+    let owner = Owner(counter: shared)
+    shared.count = 9
+    precondition(owner.counter.count == 9)
+}
+probeOwner()
 ```
+
+**Walkthrough:** Both actions call a closure that updates one captured variable. Owner cannot be copied, yet shared and owner.counter still reach the same Counter.
+
+**Boundary:** Ownership, snapshot independence, and Sendable safety are separate contracts. A final immutable class containing Sendable data can be Sendable while still retaining object identity.
+
+### Extension: what does consuming a noncopyable value actually prevent?
+
+**Answer:** It prevents later use of that consumed value unless the variable is reinitialized. It does not make references inside the value deeply unique.
+
+**Example:** Standalone runnable example.
 
 ```swift
 struct Ticket: ~Copyable {
     let number: Int
     consuming func redeem() -> Int { number }
 }
-
-struct UniqueCounterOwner: ~Copyable {
-    let counter: Counter
-}
-
-func ownershipProbe() {
+func redeemTicket() -> Int {
     let ticket = Ticket(number: 7)
     let transferred = consume ticket
-    print(transferred.redeem())
-
-    let shared = Counter(1)
-    let owner = UniqueCounterOwner(counter: shared)
-    shared.value = 9
-    print(owner.counter.value)
+    return transferred.redeem()
 }
+precondition(redeemTicket() == 7)
 ```
 
-ownershipProbe prints `7`, then `9`. The Ticket is transferred and consumed; no duplicate usable ticket is created. UniqueCounterOwner cannot be copied, but its class payload still has the separately retained alias named shared. Unique ownership of one wrapper does not erase aliases already inside its object graph.
+**Walkthrough:** Ownership moves into transferred and then into redeem. No second usable ticket is created. [SE-0390](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md)
 
-This is **intentionally rejected** when compiled with the Ticket definition:
+**Boundary:** [[C7 — Ownership modifiers - `borrowing`, `consuming`, and `consume`|C7]]/[[C8 — Copyable, noncopyable types, and `~Copyable`|C8]] cover borrowing and destruction. UniqueArray and borrowed views have different ownership contracts from a copyable Array snapshot; [[C12 — `Span`, `InlineArray`, and modern low-level abstractions|C12]] covers those APIs and deployment requirements.
+
+With only the Ticket declaration from the preceding answer, this function is **intentionally rejected** during object compilation:
 
 ```swift
 func cannotReuse() -> Int {
@@ -134,41 +293,53 @@ func cannotReuse() -> Int {
 }
 ```
 
-The original ticket is used after it has been consumed. Ownership diagnostics need actual compilation, not only a parser or a shallow type-checking experiment. Noncopyable structs/enums predate 6.4; they correct the older blanket statement that every struct can be copied. C7/C8 explain borrowing, consuming, and resource lifetimes. [SE-0390](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0390-noncopyable-structs-and-enums.md)
+## Focused exercise
 
-Swift 6.4's unique-storage and borrowing tools add representation choices. A UniqueArray is not an interchangeable copyable Array snapshot; choosing it changes the ownership contract. Borrowed views do not become owned snapshots just because their syntax looks value-like. C8/C12 give the checked API and deployment requirements; F3 measures a limited workload without claiming universal speedups.
+**Task:** Copy a draft containing an array and a class payload. Identify the independent edits and the shared edits.
 
-#### Value behavior and Sendable safety are separate
+**Acceptance checks:**
+
+- Appending preserves the saved array, including when it starts empty.
+- Payload mutation is shared, while replacing the reference affects only the edited draft.
+- A separately constructed payload does not share changes.
+
+**Solution:** Standalone script. The same probe checks nonempty and empty arrays.
 
 ```swift
-struct NumberSnapshot: Sendable {
+final class Payload { var count = 1 }
+struct Draft {
     var items: [Int]
+    var payload: Payload
 }
-
-final class Catalog: Sendable {
-    let names: [String]
-    init(names: [String]) { self.names = names }
+func checkDraft(items: [Int]) {
+    let saved = Draft(items: items, payload: Payload())
+    var edited = saved
+    edited.items.append(2)
+    edited.payload.count = 9
+    precondition(saved.items == items)
+    precondition(edited.items == items + [2])
+    precondition(saved.payload.count == 9)
+    let originalPayload = saved.payload
+    edited.payload = Payload()
+    precondition(saved.payload === originalPayload)
+    precondition(edited.payload !== originalPayload)
+    let separate = Draft(items: items, payload: Payload())
+    separate.payload.count = 4
+    precondition(saved.payload.count == 9)
 }
-
-func requiresSendable<T: Sendable>(_ value: T) {}
-
-func sendableProbe() {
-    requiresSendable(NumberSnapshot(items: [1]))
-    requiresSendable(Catalog(names: ["Book"]))
-}
+checkDraft(items: [1])
+checkDraft(items: [])
 ```
 
-Both types satisfy Sendable. NumberSnapshot contains independently stored Int array values. Catalog is a final immutable reference type whose stored data satisfies the required checking. That does not imply every immutable reference binding, or every class with let properties, is safe: those properties can themselves refer to mutable state.
+**Reasoning:** Each array assertion checks observable value independence. The reference assertions distinguish mutating a shared payload from replacing a reference. An immutable snapshot would store the needed payload data as values or clone the promised mutable graph.
 
-This declaration is **intentionally rejected** with the Counter declaration in this subsection:
+## In practice
 
-```swift
-struct BadTransfer: Sendable {
-    let counter: Counter
-}
-```
+**Choose it when:** Use values when callers need independent edits. Use references for intentional sharing or lifecycle identity.
 
-Its stored Counter reference is non-Sendable. Spelling struct or let does not repair that. Do not add unchecked conformance merely to make this example pass; choose an appropriate value snapshot, immutable representation, actor, or audited synchronization model. D6 covers region transfers and isolation-specific rules beyond this simple declared-conformance check. [SE-0302](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md)
+**Investigate by:** Draw every alias, including references stored in containers and variables retained by closures. Mutate through each public path.
+
+**Strong evidence:** State exactly what a snapshot includes, verify that old snapshots survive edits, and define how stale drafts are reconciled.
 
 ## References
 
