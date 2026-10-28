@@ -8,7 +8,7 @@ tags:
 
 # Guide Revision Validation
 
-The October 16 record below describes that historical revision. The [initial October 28 teaching revision](#teaching-revision--2026-10-28) updates the template, README, and D1–D3. The [remaining D-guide revision](#remaining-d-guides--2026-10-28) extends the same explanation and example requirements to D4–D14. The [A-guide revision](#a-guides--2026-10-28) applies that standard to A1–A16, and the [B-guide revision](#b-guides--2026-10-28) applies it to B1–B14. The other 26 guides in C, E, and F are still awaiting review against the new standard.
+The October 16 record below describes that historical revision. The [initial October 28 teaching revision](#teaching-revision--2026-10-28) updates the template, README, and D1–D3. The [remaining D-guide revision](#remaining-d-guides--2026-10-28) extends the same explanation and example requirements to D4–D14. The [A-guide revision](#a-guides--2026-10-28) applies that standard to A1–A16, the [B-guide revision](#b-guides--2026-10-28) applies it to B1–B14, and the [C-guide revision](#c-guides--2026-10-28) applies it to C1–C12. The other 14 guides in E and F are still awaiting review against the new standard.
 
 Reviewed 2026-10-16. All **70 topic guides** were updated from the existing working tree: A1–A16, B1–B14, C1–C12, D1–D14, E1–E8, and F1–F6. F5 and D14 were revised first to establish consistent settings.
 
@@ -355,3 +355,81 @@ Fixtures, manifests, exact commands, per-block hashes/results, raw/xcsift logs, 
 Historical compiler limitations remain explicit: inferred noncopyable key-path roots and one noncopyable generic wrapper caused compiler failures; those crash probes were not rerun or counted as intended rejections. Some invalid direct same-type/generic-builder expressions failed to yield useful diagnostics in the earlier validation; fixed function-type/ordinary-closure/direct-builder probes expose the intended errors. Current @export(interface) helper eligibility still does not replace the working @usableFromInline pattern for an exposed @inlinable caller. Proposal text alone is not treated as SDK/compiler support.
 
 Runtime evidence is **arm64 macOS 27.0.1 only**. iOS/device execution, older-runtime behavior, rendered SwiftUI, live services, production registry lifecycle, performance/allocation measurements, scheduling fairness, an older-compiler textual-interface matrix, and full binary-framework distribution remain outside these checks. The SwiftUI examples test construction/type behavior; the KVO example tests a synchronous local observation and invalidation. Library replacement demonstrates the specific preserved contracts, not arbitrary API/layout compatibility. Previously revised A/D examples and unrelated C/E/F guides were not rerun for these B-only edits.
+
+## C guides — 2026-10-28
+
+### Scope and teaching review
+
+Revised **C1–C12** against the strengthened template and the D/A/B teaching standard. README now records **A1–A16, B1–B14, C1–C12, and D1–D14** as complete; **14 guides in E and F** remain. The template and rubric did not need another change. Topic IDs, filenames, frontmatter, tags, and aliases are unchanged. Earlier validation sections retain their historical scope and counts.
+
+Concrete problems and definitions now precede the advanced ownership, lifetime, and compiler combinations. Every chapter includes learning goals, prerequisites, small mechanics, a worked example, and a focused exercise with observable acceptance checks. All **27 pitfalls** include a mistake, consequence, cause, correction, and explanation of the restored behavior. All **49 interview answers**, including extensions, include a direct answer, local code, a walkthrough, and a meaningful boundary. C9's inspection pitfall uses actual SIL commands as its correction, as the template permits for tooling. Shared declarations identify their assembly order, and deliberately rejected or unexecuted code is labelled at its use site.
+
+The coverage review maps the essential rubric expectations and questions to teaching material, and each exercise requirement to its solution and verification:
+
+| Guide | Essential expectations, questions, pitfalls, and exercise evidence |
+| --- | --- |
+| C1 | Strong/weak/unowned graphs, bound methods, external registrations, explicit shutdown, isolated-deinit completion limits, and unique-owner class aliases. The cycle exercise invokes its callback, explicitly stops the graph, records each destruction once without ordering them, and defines later weak-trigger behavior. Bounded observations and withExtendedLifetime avoid assumptions about temporary strong reads or lexical scope. |
+| C2 | Logical copies versus buffer/capacity costs, class payload mutation versus slot replacement, slice indices and invisible retention, outer CoW uniqueness versus an inner Array snapshot, and synchronization limits. Every custom mutation path starts from a fresh shared copy. The exercise checks nonzero/empty slice indices, independent source/owned-copy values, and rebasing. UniqueArray's different ownership contract follows the foundations. |
+| C3 | Evaluated snapshots before inout access, computed get/set writeback, exclusive whole-variable access, static rejection versus dynamic conflict, pointer conversion limits, and noncopyable borrow/mutate/MutableRef access. The exercise rejects one variable passed twice and verifies independent-value and swapAt repairs. |
+| C4 | Character/scalar/UTF-16/UTF-8 counts, canonical equality versus bytes, same-snapshot indices, whole-grapheme boundary policy, overflow-safe Foundation range validation, selection revisions, Character/byte budgets, and UTF8Span validation. Truncation checks include empty/exact boundaries, combining marks, flags, CRLF, joined emoji, and ellipsis accounting; rendered width remains separate. |
+| C5 | Single-pass Sequence versus Collection, custom noninteger indices, instrumented forward traversal versus random-access index work, mutation versus identity, sorted binary search, and borrowing Iterable with typed failure. The search exercise covers nonzero slice indices, first duplicates, boundaries, absence, and empty input. Generic failure checking is distinguished from the concrete Never runtime examples. |
+| C6 | Allocation, binding/assuming/rebinding, initialized prefixes, alignment, bounds, access lifetime, and scoped versus retained native addresses. Invalid cleanup, incompatible binding, and escaped reads remain unexecuted. Corrections verify destruction after success/throw, owned empty/nonempty checksums, Darwin's supported sockaddr prefix rebinding, and initialized temporary raw bytes. |
+| C7 | Borrowing versus consuming, Copyable caller copies, explicit consume, all-path reinitialization, class aliases after wrapper transfer, owned getters versus borrowed/mutable projections, and Ref/MutableRef scope. The function-local getter reference observes its copied temporary while MutableRef updates the actual slot. The token exercise checks repeated borrowing, rejected later use, transfer, and valid reinitialization. |
+| C8 | Suppression of owner/associated-type/use-site Copyable defaults, actual noncopyable protocol support, unique-owner transfer and clone behavior, Set/CustomStringConvertible limitations, and the installed Optional surface. The resource exercise transfers and closes exactly once while its independent class alias remains usable; it makes no native-descriptor adoption claim. Missing proposed reference accessors and RigidArray are explicit rejections. |
+| C9 | Type relationships versus specialization, witness dispatch, representation, allocation, and measurement; concrete/opaque/generic/existential/enum/closure contracts; equivalent traversal and observable effect order; actual library/client boundaries; and reachable SIL inspection. The pipeline exercise tests empty/edge/all-UInt8 inputs and five clamp bounds through four contracts, checks original input, and states what a later benchmark must measure. |
+| C10 | Effective optimization/assertion/source-condition settings, required work outside assert, recoverable preparation failure, algorithmic comparisons versus timings, mandatory inlining versus body visibility/specialization, and callback pointer-escape limits. The repair exercise verifies both preparation outcomes across six settings; no required work disappears with assertions. |
+| C11 | Checker versus warning policy and actual correctness, narrow unsafe acknowledgment, unsafe declaration obligations, unverified @safe claims, and a complete C checksum boundary. The audit exercises initialized input, bounds, empty input, non-retention, synchronous lifetime, and the absence of native allocation/cleanup. Compile acceptance of an invalid count or escaped pointer is never treated as runtime safety evidence. |
+| C12 | Owned dynamic/inline/unique storage versus borrowed Span/Ref views, fixed-count layout versus stack placement, initialized count versus capacity, borrowing iteration, cleanup on throw, wire fields versus Swift struct layout, and operation-specific availability. The parser exercise checks an unaligned final valid field, empty/short input, negative/Int.min/Int.max offsets, explicit endian order, and nil before invalid access. |
+
+A final reading pass checked explanation order, named setup, broad comparisons, exercise boundaries, and cross-guide consistency. Invalid examples must expose the intended rule rather than an unrelated missing argument or access error. C1's optimized checks exposed both early release after a last use and temporary strong ownership from a weak read; its final probes now bound those effects explicitly. Official references are consolidated and deduplicated, including repaired inherited Apple links.
+
+### Compiler and runtime checks
+
+Apple Swift **6.4**, `swiftlang-6.4.0.34.1` (`clang-2100.3.34.1`), from `/Applications/Xcode_27.app/Contents/Developer`. The SDK is macOS **27.0**; the arm64 host is macOS **27.0.1**, build **26A434**. Ordinary examples use:
+
+```sh
+-swift-version 6 -default-isolation nonisolated \
+  -enable-upcoming-feature NonisolatedNonsendingByDefault \
+  -enable-upcoming-feature InferIsolatedConformances \
+  -target arm64-apple-macos27.0 -warnings-as-errors
+```
+
+Every published Swift fence was extracted from the final Markdown and assembled with only its named dependencies. Exact compiler/SDK paths, complete arguments, source SHA-256, statuses, diagnostics, and runtime output are retained per case. Function-only, intentionally invalid-to-run, and rejected examples were **object-compiled** with -c, including ownership/SIL diagnostics. Runnable examples were linked and executed separately with 15-second timeouts. Compiler output passed through xcsift with raw output and the pipeline status retained. Diagnostic checks inspect error/warning lines so a matching word in an argument or source note cannot establish the intended rejection.
+
+| Guide | Published Swift blocks checked | Runnable examples passed | Intended compiler rejections |
+| --- | --- | --- | --- |
+| C1 | 18 | 12 | 2 |
+| C2 | 15 | 13 | 0 |
+| C3 | 16 | 11 | 3 |
+| C4 | 15 | 14 | 0 |
+| C5 | 15 | 11 | 4 |
+| C6 | 15 | 11 | 1 |
+| C7 | 19 | 12 | 7 |
+| C8 | 20 | 10 | 9 |
+| C9 | 16 | 11 | 1 |
+| C10 | 17 | 11 | 3 |
+| C11 | 12 | 9 | 0 |
+| C12 | 16 | 11 | 4 |
+| C1–C12 total | **194** | **136** | **34** |
+
+The other **24 published blocks** are accepted object-compilation cases, including shared declarations, the separate PixelCore module, and deliberately unexecuted examples. C11's unacknowledged native-call example uses strict checking without warnings-as-errors to demonstrate its expected warning; ordinary accepted cases retain warnings as errors. All 194 final published blocks pass their stated dispositions.
+
+### Additional configuration and boundary controls
+
+**74 additional Swift compiler cases** add **50 successful runtime cases** and **8 intended rejections**. Three separately compiled specified-trap cases execute in isolated child processes and terminate as expected. Overall, the C revision records **268 Swift compiler cases**, **186 successful runtime cases**, **42 intended compiler rejections**, and **3 expected runtime traps**. The native dependency adds **one C compilation**, counted separately.
+
+- **Ownership and registration:** Every runnable C1 block also passes with -O. C2's mutation/retention, C7's getter temporary, C8's resource cleanup, C9's captured-object lifetime, and C12's temporary cleanup pass optimized controls. The actual PeriodicRefresh timer is manually fired on MainActor in Onone/O: replacement invalidates the old timer, stop is idempotent, invalidated timers cannot increment, and isolated owner destruction invalidates a retained registration. No sleeps prove event order. The read-only ImmutableWeakCaptures control accepts and observes later absence.
+- **Availability and scope:** Unguarded UniqueBox/UniqueArray/Ref use rejects for macOS 26 and iOS 26; guarded declarations compile. The UIKit lifecycle adapter object-compiles with the iOS 27 SDK. Noncopyable borrow/mutate accessors compile for macOS 13. InlineArray indexing rejects for macOS 25 and compiles for 26. Basic Span indexing and temporary output spans compile under strict checking for macOS 13 and iOS 18; Array.span separately rejects for macOS 25. Unguarded endian loads reject for macOS 26, while the guarded parser compiles there and both its modern and explicit fallback operations run on the OS 27 host. Function-local getter Ref accepts, while the top-level getter-temporary lifetime rejects.
+- **Unicode:** Optimized range/selection and display-truncation checks preserve the same snapshot, overflow, whole-grapheme, and budget policies. UTF8Span accepts valid decomposed UTF-8 and rejects a truncated sequence through its validating initializer. The Foundation conversion inside a combining Character is recorded as this target's observation rather than a portable selection-validation guarantee.
+- **Equivalent work and SIL:** C9 emits SILGen/Onone, mandatory SIL/Onone, and optimized SIL/O from the published assembled source. Reachability follows function_ref targets: each initial/mandatory known or unknown path has one transform witness call; optimized known generic/known existential paths have none and contain the bounded subtraction, while the unknown path retains one. The separately emitted resilient PixelCore library retains a witness call in both its generic and existential paths. Its public interface omits those bodies, and the ordinary separately compiled client supplies its own conformer and checks equal output. These observations measure neither time nor allocation.
+- **Assertions and inlining:** Onone/O/Osize/Ounchecked and explicit Release/Debug assertion configurations produce the documented assert/precondition evaluation counts. Required preparation and recoverable failure remain observable under all six. Onone/O alone leave DEBUG undefined; -D DEBUG enables the source condition. C10's complement call is present in SILGen and removed from the wrapper by mandatory SIL/Onone, O, and Osize, where subtraction is visible. B11's historical body-export/replacement evidence is referenced with its original scope rather than rerun or inferred from this wrapper.
+- **Native audit:** The exact published C source/header/modulemap build with Apple Clang 21.0.0, clang-2100.3.34.2, C11, -Wall -Wextra -Werror, and matching explicit SDK/target. Swift clients link that object. The ordinary unacknowledged call runs; strict checking plus warning promotion rejects it. Unacknowledged broad-wrapper calls and unsafe declaration bodies also reject. Bounds/empty-input corrections execute; acknowledged out-of-bounds reads and @safe pointer escapes remain compile-only.
+- **Specified traps:** Dynamic exclusivity and debug assertion traps report the expected failure; an optimized precondition traps too. These three child executions have ten-second timeouts and core dumps disabled. The optimized assertion case returns normally because its condition is omitted. Invalid pointers, incompatible bindings, uninitialized destruction, races, and unchecked overflow are never executed.
+
+### Evidence and limits
+
+Fixtures, extraction manifests, source hashes/results, exact commands, raw/xcsift output, native files/object, module/interface/client, SIL/reachability observations, configuration controls, formatting results, and editorial checks remain under `/private/tmp/swift-study-c-guides-20261028`. Only Markdown is changed in the repository. Final checks preserve original frontmatter, require every template section and local pitfall/answer example, compare published source hashes with compiler records, validate incoming/outgoing guide and heading links, and check whitespace. The native source/header/modulemap hashes also match their published blocks.
+
+Sources reviewed include the Swift language book, installed SDK declarations, Apple API documentation, and relevant proposals for weak let, isolated deinitialization, ownership/noncopyability, borrowing accessors, Ref/MutableRef, UniqueBox/UniqueArray, Iterable, UTF8Span, strict memory safety, temporary output spans, safe raw loading, and mandatory inlining. A proposal's acceptance is not substituted for support in the selected SDK.
+
+Execution evidence is **arm64 macOS 27.0.1 only**. Older deployment targets and iOS evidence are compilation checks. There is no new device/UI run, older-runtime execution, live native service, sanitizer/Instruments campaign, resident-memory/allocation measurement, throughput benchmark, custom failing Iterable runtime, or older-compiler matrix. The timer fixture tests synchronous manual firing on its declared executor, not real run-loop scheduling latency. The resource token models a cleanup contract rather than a real descriptor. Layout, weak-lifetime, traversal-count, and SIL observations retain their stated limits. Previously revised A/B/D examples and the remaining E/F guides were not rerun for these C-only edits.
