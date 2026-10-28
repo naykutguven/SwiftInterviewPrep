@@ -10,59 +10,80 @@ tags:
 
 # E3 — C Interoperability and Unsafe Boundaries
 
-**Goal:** Wrap a synchronous C pointer/count operation with explicit empty-input and failure cleanup.
+**Learning goals:**
+
+- Translate native counts, initialization, nullability, ownership, errors, and callback lifetime into a small Swift API.
+- Verify failure and zero-length cleanup against a real C implementation rather than relying on annotations.
+- Distinguish generated safe overloads, raw C ABI implementations, exported headers, and confinement.
+
+**Prerequisites:** [[C6 — Unsafe pointers, buffers, and raw memory]] for pointer storage states, [[C11 — Strict Memory Safety Mode and Safe Systems Programming]] for strict memory safety, [[C12 — `Span`, `InlineArray`, and modern low-level abstractions]] for Span, and [[A13 — Error handling and typed throws]] for errors. [[C1 — ARC fundamentals]] and [[D9 — Continuations and Bridging Callback APIs]] explain retained callback context and asynchronous registration.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-A C declaration rarely states the full ownership contract. Pointer type and count do not prove allocation size, initialization, retention, or who releases output on failure. A Swift wrapper must combine the actual native contract with scoped inputs, owned outputs, status mapping, and confinement. [C interoperability](https://www.swift.org/documentation/c-interop/)
+A C function receives an address and a count. Its type does not tell Swift whether the bytes are initialized, whether the function saves the address, or who frees a returned allocation after failure. Start with the native contract, then use scoped borrowed input and owned Swift output to make those obligations local.
 
-## Rules and pitfalls
+**Ownership** tells you who must release a resource; **nullability** tells you whether a pointer may be null. Neither tells you allocation size. The **ABI** is the binary calling contract, including the pointer/count parameters and result representation. Bounds and lifetime annotations can generate safer Swift overloads, but they remain promises about the implementation. [C interoperability](https://www.swift.org/documentation/c-interop/)
 
-### Register cleanup for every owned output
+## Essential mechanics
 
-If a native API transfers an allocation even on failure or with zero length, register the matching release immediately after receiving ownership, before status-based returns. Match allocator and deallocator exactly.
+### Example setup
 
-**Common pitfall:** Checking status before registering cleanup leaks failure output. A zero count does not mean a nonnull owned allocation can be ignored; ownership follows the contract, not size.
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; examples with invalid memory access or data races are never run. Specified traps, where demonstrated, are isolated in separate processes as stated.
 
-### Keep borrowed input within the native use
+### Begin with a synchronous counted byte operation
 
-Use scoped buffer access for a synchronous nonretaining call. A retaining operation needs an owner lasting through completion and cancellation. PassUnretained callback context is valid only while another guaranteed owner spans every callback.
+Shared E3Safe fixture. Save the header, module map, and C source in one temporary directory. The implementation reads exactly count initialized bytes synchronously, retains no pointer, and returns the sum modulo 2^32. Null with zero is valid; null with positive count is not.
 
-**Common pitfall:** Bounds annotations, @safe, or unsafe acknowledgment do not verify C implementation behavior. Inspect and run the native fixture; check generated Span overloads separately from a pointer/count ABI implementation.
+```c
+#pragma once
+#include <stddef.h>
+#include <stdint.h>
+#include <ptrcheck.h>
+#include <lifetimebound.h>
+uint32_t e3_sum(const uint8_t * _Nullable __counted_by(count) bytes __noescape, size_t count);
+uint32_t e3_swift_sum(const uint8_t * _Nullable __counted_by(count) bytes __noescape, size_t count);
+```
 
-## Interview questions
+```text
+module E3Safe { header "E3Safe.h" export * }
+```
 
-### Who owns an output returned on failure or with zero length, and where must cleanup be registered?
+```c
+#include "E3Safe.h"
+uint32_t e3_sum(const uint8_t *bytes, size_t count) {
+    uint32_t result = 0;
+    for (size_t i = 0; i < count; ++i) result += bytes[i];
+    return result;
+}
+```
 
-The caller owns it whenever the C contract transfers ownership, including failure and zero-length cases. Register matching cleanup immediately after ownership is established, then inspect status/count. Treat borrowed outputs and static sentinels according to their different contracts.
+Build with the selected Xcode SDK/target: xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -c E3Safe.c -o /tmp/E3Safe.o. Swift clients add -I with the header directory and link that object. Validation records the explicit matching SDK/target. No experimental safe-wrapper flag is used.
 
-### Why does a counted/noescape declaration provide a safe Span overload while its Swift @implementation still takes pointer/count?
+The counted/noescape declaration generates a Span overload. Shared safeSum setup; Array.span separately needs Apple OS 26.
 
-The importer can generate a Swift-facing Span overload from bounds and noescape annotations, encoding safer access for callers. The exported/imported C ABI still uses pointers and counts, so a Swift @implementation supplies that raw signature. A safe overload does not rewrite the ABI or prove the implementation.
+```swift
+import E3Safe
 
-### When is passUnretained valid for callback context, and what changes if callbacks can escape or overlap?
+func safeSum(_ bytes: Span<UInt8>) -> UInt32 { e3_sum(bytes) }
+@available(anyAppleOS 26.0, *)
+func sumProbe() {
+    let bytes: [UInt8] = [0, 1, 255]
+    precondition(safeSum(bytes.span) == 256)
+    let empty: [UInt8] = []
+    precondition(safeSum(empty.span) == 0)
+}
+if #available(anyAppleOS 26.0, *) { sumProbe() }
+```
 
-Only when a separate owner guarantees the context remains alive for all callbacks and no use occurs after teardown. Escaping or overlapping callbacks need a retained registration owner, synchronized terminal state, and exactly matched release after all native access ends. Avoid releasing context from one callback while another can still use it.
+**Walkthrough:** Swift callers pass an initialized borrowed view rather than inventing a pointer/count pair. The C call still has its original ABI and must honor its annotations. The empty check exercises the documented null/zero behavior without reading storage. [Safe interoperability](https://www.swift.org/documentation/cxx-interop/safe-interop/)
 
-## Focused exercise
+### A complete owned-handle fixture
 
-**Task:** Wrap a synchronous pointer/count C call. Check empty input and failure cleanup; state whether the callee may retain the input.
+Shared E3Native setup. The native decoder copies input during creation and returns inverted owned output bytes. Every nonnull handle/output belongs to the caller, even on failure or with logical count zero. Only the matching destroy/free function releases it. Input and callbacks are synchronous/nonretaining. Fixture counters and failure modes are sequential instrumentation, not synchronized library state.
 
-**Acceptance checks:**
-
-- Empty input follows the documented null/count and ownership rules.
-- A failure that returns owned output still releases it once.
-- Successful output is copied before native release; the input is not retained.
-
-**Solution:**
-
-The complete native fixture below is part of this solution. Use its exact owned-output/release API rather than substituting an unrelated free. The wrapper accepts Swift-owned bytes, lends them only for the synchronous call, registers output cleanup before checking failure, then copies successful output to Swift-owned data.
-
-**Native fixture contract:** Wrap E3Native using Data input/results and Swift errors. Input is copied during creation. Every nonnull output belongs to the wrapper, including partial failure and zero-length allocation. Support bounded input/output, valid empty results, deterministic idempotent close, fallback deinitialization, and use-after-close rejection. Keep the owner explicitly non-Sendable because the fixture supplies no shared-access guarantee.
-
-The complete E3Native.h used by the wrapper is:
+Save the following header, module map, and implementation together and build E3Native.c with the same command as E3Safe.c. Swift clients import E3Native, add its directory with -I, and link E3Native.o.
 
 ```c
 #pragma once
@@ -96,99 +117,11 @@ int e3_destroyed_handles(void);
 int e3_freed_buffers(void);
 ```
 
-Import it as a Clang module using temporary module.modulemap:
-
-> module E3Native { header "E3Native.h" export * }
-
-The enum constants above import as Int in this fixture, while the status return is CInt. The wrapper converts the status to Int for matching and retains the original CInt for unknown codes. E3_MAX_INPUT and E3_VERSION import as simple constants; E3_MIN does not become a Swift function. C preprocessor macros and Swift compiler macros are different systems.
-
-Reference implementation:
-
-```swift
-import Foundation
-import E3Native
-
-public enum ByteDecoderError: Error, Equatable {
-    case inputTooLarge, invalidInput, allocationFailed, decodeFailed, invalidOutput, closed
-    case unknownStatus(CInt)
-    init(status: CInt) {
-        switch Int(status) {
-        case E3_INVALID_INPUT: self = .invalidInput
-        case E3_OUT_OF_MEMORY: self = .allocationFailed
-        case E3_DECODE_FAILED: self = .decodeFailed
-        default: self = .unknownStatus(status)
-        }
-    }
-}
-
-@safe
-public final class ByteDecoder: ~Sendable {
-    private var handle: OpaquePointer?
-    public static let maximumInputCount = Int(E3_MAX_INPUT)
-    public static let libraryVersion = E3_VERSION
-
-    private init(adopting handle: OpaquePointer) { unsafe self.handle = handle }
-    deinit { close() }
-
-    public static func make(_ input: Data) throws -> ByteDecoder {
-        guard input.count <= maximumInputCount else { throw ByteDecoderError.inputTooLarge }
-        return unsafe try input.withUnsafeBytes { raw in
-            var created: OpaquePointer?
-            let status = unsafe e3_decoder_create(
-                raw.bindMemory(to: UInt8.self).baseAddress, raw.count, &created
-            )
-            guard status == E3_OK else {
-                unsafe e3_decoder_destroy(created)
-                throw ByteDecoderError(status: status)
-            }
-            guard let created = unsafe created else { throw ByteDecoderError.invalidOutput }
-            return unsafe ByteDecoder(adopting: created)
-        }
-    }
-
-    public func copyBytes() throws -> Data {
-        guard let handle = unsafe handle else { throw ByteDecoderError.closed }
-        var output: UnsafeMutablePointer<UInt8>?
-        var count = 0
-        let status = unsafe e3_decoder_copy_bytes(handle, &output, &count)
-        defer { unsafe e3_bytes_free(output) }
-        guard status == E3_OK else { throw ByteDecoderError(status: status) }
-        guard count >= 0, count <= Self.maximumInputCount else { throw ByteDecoderError.invalidOutput }
-        if count == 0 { return Data() }
-        guard let output = unsafe output else { throw ByteDecoderError.invalidOutput }
-        return unsafe Data(bytes: output, count: count)
-    }
-
-    public func close() {
-        guard let owned = unsafe handle else { return }
-        unsafe handle = nil
-        unsafe e3_decoder_destroy(owned)
-    }
-}
+```text
+module E3Native { header "E3Native.h" export * }
 ```
 
-The output allocation is registered for cleanup before checking status/count. A zero count returns empty Data while still freeing any nonnull allocation. A nonzero count requires a nonnull output and must fit the resource policy. Data copies the bytes before native release, so returned data survives handle closure. The wrapper cannot independently measure an arbitrary pointer's real capacity; that invariant still comes from the audited C implementation.
-
-The class reference deliberately has shared identity; it is not a value-semantic copy of a decoder. ~Sendable states the confinement intent, and @safe states that safe callers need not manage its pointer contract themselves. Neither attribute synchronizes the C implementation or forces a particular thread for cleanup. A thread-affine library needs an owner/teardown design that actually honors that requirement.
-
-These independent negatives use the header and wrapper respectively. A nil handle cannot call a _Nonnull decoder parameter, and the explicitly non-Sendable wrapper cannot satisfy a Sendable generic requirement.
-
-```swift
-import E3Native
-func nilRequiredHandle() {
-    var bytes: UnsafeMutablePointer<UInt8>?
-    var count = 0
-    _ = unsafe e3_decoder_copy_bytes(nil, &bytes, &count)
-}
-```
-```swift
-func requireSendable<T: Sendable>(_ value: T) {}
-func sendDecoder(_ decoder: ByteDecoder) { requireSendable(decoder) }
-```
-
-### Real fixture implementation and failure modes
-
-E3Native.c below owns allocations with malloc/free, pairs every resource with the documented release function, and copies input. Its modes are deliberately test-only: 0 normal; 1 simulated creation allocation failure; 2 partial handle failure; 3 successful status with missing handle; 4 partial output failure; 5 nil with positive count; 6 nil/zero success; 7 allocated/zero success; 8 over-limit count; 9 SIZE_MAX count; 10 unknown status. Modes 8/9 must be rejected before any read of their deliberately insufficient allocation.
+The implementation is included so cleanup claims can be checked. Modes 0–10 inject normal operation, creation failure, partial handle failure, missing handle, output failure, nil/positive count, nil/zero, allocated/zero, over-limit count, SIZE_MAX count, and an unknown status. Modes 8/9 deliberately advertise more than allocated and must be rejected before reading.
 
 ```c
 #include "E3Native.h"
@@ -248,87 +181,254 @@ void e3_visit(const uint8_t *bytes, size_t count, E3Visitor visitor, void *conte
 }
 ```
 
-**Acceptance cases:** empty input; every byte value and boundary size; copied input despite caller mutation; independent owned output after native cleanup; repeated decode; normal close twice; closing through an alias; deinit without explicit close; oversized input; each creation/decode fault mode; exact live/destroy/free counters; synchronous context callbacks; generated C export/enum calls; expected compiler rejections; strict-memory-safety and Address Sanitizer checks. Do not execute the escaped-pointer example or violate annotated native bounds to test a crash.
+### Adopt, copy, and close through one confined owner
 
-The validation harness uses bounded sequential cases and checks that native live counts return to zero. Simulated allocation failure proves that branch, not real system exhaustion. Counters establish cleanup for these calls, not a universal absence of leaks or races in an arbitrary C library.
-
-**Reasoning:** The safety argument comes from the fixture's explicit allocation/retention behavior plus the wrapper's cleanup order. Aliases of a class owner share close state; non-sendability alone does not synchronize native globals. Check the native API's concurrency and failure contracts independently.
-
-## In practice
-
-**Choose it when:** Expose a small Swift contract that hides native allocation and error conventions.
-
-**Investigate by:** Inspect real headers and implementation, then test native failure output and cleanup counters.
-
-**Strong evidence:** Validate generated headers, ordinary native consumers, and strict-memory diagnostics without treating annotations as proof.
-
-### Generated C interfaces and safe overloads — optional
-
-#### Generate a C header from Swift
-
-The following emits E3Mode with its integer cases and E3Transform into the C-compatible section of the generated header. The C client below calls both cases for every UInt8 value. @c uses the C calling convention and a C name; choose collision-resistant names for a real library. Supply only valid enum values under this exported closed-enum contract.
+Shared ByteDecoder setup. It limits input/output to 4096 bytes, translates known and unknown statuses, and registers output cleanup before status/count checks. Class aliases share close state. Compile this source with -strict-memory-safety and link E3Native; it is a declaration-only block.
 
 ```swift
-@c(E3Mode)
-public enum ExportMode: CInt {
-    case identity = 0
-    case invert = 1
+import E3Native
+import Foundation
+
+public enum ByteDecoderError: Error, Equatable {
+    case inputTooLarge, invalidInput, allocationFailed, decodeFailed, invalidOutput, closed
+    case unknownStatus(CInt)
+    init(status: CInt) {
+        switch Int(status) {
+        case E3_INVALID_INPUT: self = .invalidInput
+        case E3_OUT_OF_MEMORY: self = .allocationFailed
+        case E3_DECODE_FAILED: self = .decodeFailed
+        default: self = .unknownStatus(status)
+        }
+    }
 }
 
-@c(E3Transform)
-public func transform(_ value: UInt8, _ mode: ExportMode) -> UInt8 {
-    switch mode {
-    case .identity: value
-    case .invert: 255 - value
+@safe
+public final class ByteDecoder: ~Sendable {
+    private var handle: OpaquePointer?
+    public static let maximumInputCount = Int(E3_MAX_INPUT)
+    public static let libraryVersion = E3_VERSION
+
+    private init(adopting handle: OpaquePointer) { unsafe self.handle = handle }
+    deinit { close() }
+
+    public static func make(_ input: Data) throws -> ByteDecoder {
+        guard input.count <= maximumInputCount else { throw ByteDecoderError.inputTooLarge }
+        return unsafe try input.withUnsafeBytes { raw in
+            var created: OpaquePointer?
+            let status = unsafe e3_decoder_create(
+                raw.bindMemory(to: UInt8.self).baseAddress, raw.count, &created
+            )
+            guard status == E3_OK else {
+                unsafe e3_decoder_destroy(created)
+                throw ByteDecoderError(status: status)
+            }
+            guard let created = unsafe created else { throw ByteDecoderError.invalidOutput }
+            return unsafe ByteDecoder(adopting: created)
+        }
+    }
+
+    public func copyBytes() throws -> Data {
+        guard let handle = unsafe handle else { throw ByteDecoderError.closed }
+        var output: UnsafeMutablePointer<UInt8>?
+        var count = 0
+        let status = unsafe e3_decoder_copy_bytes(handle, &output, &count)
+        defer { unsafe e3_bytes_free(output) }
+        guard status == E3_OK else { throw ByteDecoderError(status: status) }
+        guard count >= 0, count <= Self.maximumInputCount else {
+            throw ByteDecoderError.invalidOutput
+        }
+        if count == 0 { return Data() }
+        guard let output = unsafe output else { throw ByteDecoderError.invalidOutput }
+        return unsafe Data(bytes: output, count: count)
+    }
+
+    public func close() {
+        guard let owned = unsafe handle else { return }
+        unsafe handle = nil
+        unsafe e3_decoder_destroy(owned)
     }
 }
 ```
 
-Use the generated header flag even though its historical spelling mentions Objective-C: -emit-objc-header -emit-objc-header-path E3Exports.h. The tested header compiles as C11. @c/@implementation are 6.3 additions, not new 6.4 syntax; moving from an underscored @_cdecl export can have symbol/ABI consequences and requires consumer review. [SE-0495](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0495-cdecl.md)
+**Walkthrough:** make destroys a partial created handle before throwing and adopts a valid successful handle. copyBytes registers defer immediately after receiving output, then validates status, count, and nonnull storage. Data copies successful bytes before native release. close clears the owned slot before destruction and is idempotent; deinit is a backstop. @safe asserts the wrapper’s contract, and ~Sendable states confinement; neither verifies C or provides a lock. E3_MAX_INPUT/E3_VERSION import as simple constants; function-like E3_MIN is not a Swift function.
 
-#### Import bounds and lifetime into a safe overload
+## Rules and pitfalls
 
-Temporary E3Safe.h annotates a read-only pointer with its element count and synchronous nonescape contract. The C implementation of e3_sum adds bytes modulo 2^32. e3_swift_sum is declared here but implemented in Swift in the next block.
+### Checking failure before registering output cleanup leaks owned failure output
 
-```c
-#pragma once
-#include <stddef.h>
-#include <stdint.h>
-#include <ptrcheck.h>
-#include <lifetimebound.h>
-uint32_t e3_sum(const uint8_t * _Nullable __counted_by(count) bytes __noescape, size_t count);
-uint32_t e3_swift_sum(const uint8_t * _Nullable __counted_by(count) bytes __noescape, size_t count);
-```
-> module E3Safe { header "E3Safe.h" export * }
-```c
-#include "E3Safe.h"
-uint32_t e3_sum(const uint8_t *bytes, size_t count) {
-    uint32_t result = 0;
-    for (size_t i = 0; i < count; ++i) result += bytes[i];
-    return result;
-}
-```
+**Common pitfall:** Assuming a failure status means no ownership was transferred. Prepend ByteDecoder setup; this incorrect function is never called.
 
-The installed compiler produces a Span<UInt8> overload from this nullable counted/noescape pointer declaration without an experimental flag. The checked empty case uses nil with count zero. The nonoptional Span API does not imply that nil with a positive count is valid for native callers. Bounds annotations must describe reality; __noescape is a lifetime promise, not an instruction to copy/retain input.
+**Mistake:** Compile-only.
 
 ```swift
-import E3Safe
-
-func sum(_ bytes: Span<UInt8>) -> UInt32 {
-    e3_sum(bytes)
-}
-
-@available(anyAppleOS 26.0, *)
-func sumArray(_ bytes: [UInt8]) -> UInt32 {
-    e3_sum(bytes.span)
+func lateCleanup(_ decoder: OpaquePointer) throws -> Data {
+    var output: UnsafeMutablePointer<UInt8>?
+    var count = 0
+    let status = unsafe e3_decoder_copy_bytes(decoder, &output, &count)
+    guard status == E3_OK else { throw ByteDecoderError.decodeFailed }
+    defer { unsafe e3_bytes_free(output) }
+    guard count > 0, let output else { return Data() }
+    return Data(bytes: output, count: count)
 }
 ```
 
-sum takes an existing Span and compiles for the older targets used here. sumArray uses Array.span and therefore carries the separate Apple OS 26 availability requirement. Scope, declaration annotations, SDK availability, and strict-memory-safety checking remain distinct. [Safe interop documentation](https://www.swift.org/documentation/cxx-interop/safe-interop/)
+**Consequence:** Mode 4 can transfer an allocation and then report failure; the early throw skips its release.
 
-#### Implement a pre-existing C declaration in Swift
+**Why:** The API transfers every nonnull output regardless of status. Cleanup registration belongs immediately after that transfer, before any throwing branch.
 
-The raw implementation matches the imported pointer/count signature. Its unsafe construction trusts the C caller's annotated bounds/lifetime contract; nativeSum then operates on a checked borrowed view. Swift callers can select the generated imported overload through E3Safe.e3_swift_sum. The generated E3Exports.h does not redeclare the @implementation function: native consumers keep using E3Safe.h.
+**Correction:** Use the shared wrapper, whose defer is registered before status validation. Prepend ByteDecoder setup; reset only with no live fixture resources.
+
+```swift
+e3_fixture_reset(4)
+let decoder = try ByteDecoder.make(Data([1, 2]))
+do {
+    _ = try decoder.copyBytes()
+    preconditionFailure()
+} catch ByteDecoderError.decodeFailed {}
+precondition(e3_live_buffers() == 0 && e3_freed_buffers() == 1)
+decoder.close()
+precondition(e3_live_handles() == 0 && e3_destroyed_handles() == 1)
+```
+
+**What changes:** The output is freed exactly once even when no Data result is produced. This verifies the injected branch, not real allocation exhaustion or arbitrary native capacity.
+
+### Zero logical length does not erase allocation ownership
+
+**Common pitfall:** Returning before release because count is zero. Prepend ByteDecoder setup; this bad function is compile-only.
+
+**Mistake:** Compile-only.
+
+```swift
+func ignoresOwnedEmpty(_ decoder: OpaquePointer) -> Data {
+    var output: UnsafeMutablePointer<UInt8>?
+    var count = 0
+    _ = unsafe e3_decoder_copy_bytes(decoder, &output, &count)
+    if count == 0 { return Data() }
+    unsafe e3_bytes_free(output)
+    return Data()
+}
+```
+
+**Consequence:** Mode 7 returns a nonnull owned allocation with zero logical count; this function forgets it.
+
+**Why:** Count describes readable output, while the native contract describes release responsibility. A zero count can accompany either null or allocated storage.
+
+**Correction:** Return empty Data after cleanup has already been registered. Prepend ByteDecoder setup.
+
+```swift
+e3_fixture_reset(7)
+let decoder = try ByteDecoder.make(Data())
+let result = try decoder.copyBytes()
+precondition(result.isEmpty && e3_freed_buffers() == 1 && e3_live_buffers() == 0)
+decoder.close()
+decoder.close()
+precondition(e3_destroyed_handles() == 1)
+```
+
+**What changes:** Both empty-result forms are supported, and close does not destroy the same handle twice. A borrowed static sentinel would require its own different contract.
+
+### An unretained context address is not a new owner
+
+**Common pitfall:** Returning an address to a local object and expecting it to remain alive.
+
+**Mistake:** Compile-only.
+
+```swift
+final class VisitBox { var values: [UInt8] = [] }
+func invalidContext() -> UnsafeMutableRawPointer {
+    Unmanaged.passUnretained(VisitBox()).toOpaque()
+}
+```
+
+**Consequence:** Using that address after the local owner is gone would access a destroyed object. No such use is executed.
+
+**Why:** passUnretained records a pointer without adding a strong retaining edge. The C API must finish every use within an independently guaranteed lifetime.
+
+**Correction:** Keep the box alive through the complete synchronous native call. Shared visitBytes setup; E3Native calls serially and retains no input, function, or context.
+
+```swift
+import E3Native
+
+private final class VisitBox { var values: [UInt8] = [] }
+private func visitThunk(_ value: UInt8, _ context: UnsafeMutableRawPointer) {
+    let box = unsafe Unmanaged<VisitBox>.fromOpaque(context).takeUnretainedValue()
+    box.values.append(value)
+}
+func visitBytes(_ values: [UInt8]) -> [UInt8] {
+    let box = VisitBox()
+    return withExtendedLifetime(box) {
+        values.withUnsafeBufferPointer { buffer in
+            unsafe e3_visit(
+                buffer.baseAddress, buffer.count, visitThunk,
+                Unmanaged.passUnretained(box).toOpaque())
+        }
+        return box.values
+    }
+}
+precondition(visitBytes([]).isEmpty)
+precondition(visitBytes(Array(UInt8.min...UInt8.max)) == Array(UInt8.min...UInt8.max))
+```
+
+**What changes:** Every callback finishes while box and input storage are valid. An asynchronous/overlapping registration needs retained ownership, synchronization, and teardown after all callbacks stop; this synchronous wrapper does not implement that protocol.
+
+## Worked example
+
+### Returned Data survives close, while aliases share handle state
+
+**Setup:** Prepend ByteDecoder setup. Sequential mode-0 fixture.
+
+**Predict:** Does copying the class reference create another native decoder?
+
+```swift
+e3_fixture_reset(0)
+let decoder = try ByteDecoder.make(Data([0, 1, 255]))
+let alias = decoder
+let result = try alias.copyBytes()
+precondition(result == Data([255, 254, 0]))
+precondition(e3_live_buffers() == 0 && e3_freed_buffers() == 1)
+decoder.close()
+precondition(e3_destroyed_handles() == 1 && e3_live_handles() == 0)
+do {
+    _ = try alias.copyBytes()
+    preconditionFailure()
+} catch ByteDecoderError.closed {}
+precondition(result == Data([255, 254, 0]))
+```
+
+**Outcome:** There is one destroyed handle. The alias observes closed state, but returned Data remains independently owned.
+
+**Why:** Class-reference assignment shares one owner object. Data copies the native result before its buffer is freed; closing the handle cannot invalidate those bytes.
+
+## Interview questions
+
+### Who owns an output returned on failure or with zero length, and where must cleanup be registered?
+
+**Answer:** Whoever the native contract names as owner, independently of status or length. Register the matching release immediately after transfer, before a failure or empty-result return.
+
+**Example:** Prepend ByteDecoder setup.
+
+```swift
+for mode in [4, 7] {
+    e3_fixture_reset(CInt(mode))
+    let decoder = try ByteDecoder.make(Data([1]))
+    do {
+        let result = try decoder.copyBytes()
+        precondition(mode == 7 && result.isEmpty)
+    } catch ByteDecoderError.decodeFailed { precondition(mode == 4) }
+    precondition(e3_live_buffers() == 0 && e3_freed_buffers() == 1)
+    decoder.close()
+}
+```
+
+**Walkthrough:** The failure and allocated-empty paths each release one buffer. Destruction of the handle is a separate responsibility covered by close.
+
+**Boundary:** Do not substitute free for a library release or apply an owned-output rule to a borrowed/static result. Capacity remains a native implementation invariant.
+
+### Why does a counted/noescape declaration provide a safe Span overload while its Swift @implementation still takes pointer/count?
+
+**Answer:** The overload improves Swift calls; it does not change the C ABI. The Swift implementation must match the original raw signature, then justify constructing its checked borrowed view.
+
+**Example:** Compile-only implementation block. Import E3Safe and use the matching native declaration; link E3Safe.o for clients.
 
 ```swift
 import E3Safe
@@ -352,7 +452,62 @@ func callSwiftImplementation(_ bytes: Span<UInt8>) -> UInt32 {
 }
 ```
 
-A complete native client follows. Compile the Swift export and implementation under module E3Exports to emit E3Exports.h, compile this C source plus E3Safe.c, and link the objects with the Swift driver/runtime. It uses real generated/imported declarations, not a guessed Swift-compatible C prototype.
+**Walkthrough:** The raw implementation accepts nullable pointer plus Int count, constructs a span under that C contract, and uses checked indexing. Swift callers can select the imported generated overload through E3Safe.e3_swift_sum. The native consumer below checks null/zero and real arrays.
+
+**Boundary:** A C caller that violates the annotations still violates the contract. @implementation is not a verifier; it does not appear as a new declaration in the generated export header.
+
+An attempted safe-overload signature is **intentionally rejected** as the raw implementation:
+
+```swift
+import E3Safe
+
+@c @implementation
+func e3_swift_sum(_ bytes: Span<UInt8>) -> UInt32 { 0 }
+```
+
+### When is passUnretained valid for callback context, and what changes if callbacks can escape or overlap?
+
+**Answer:** Only when an independent owner spans every callback and teardown. The synchronous serial contract here permits a bounded lifetime; escaped or overlapping callbacks need a different retained registration and terminal-state protocol.
+
+**Example:** Prepend visitBytes setup.
+
+```swift
+let input = Array(UInt8.min...UInt8.max)
+precondition(visitBytes(input) == input)
+precondition(visitBytes([]) == [])
+```
+
+**Walkthrough:** visitBytes keeps its box alive until C finishes every callback and returns copied Swift values. There is no callback after return or concurrent mutation of that box.
+
+**Boundary:** A retained registration must release exactly once after native use stops; releasing during one callback can race another. [[D9 — Continuations and Bridging Callback APIs|D9]] teaches the asynchronous state machine rather than silently extending this fixture.
+
+### Extension: What proves a Swift C export is usable by a native consumer?
+
+**Answer:** A generated C-compatible header, representable signatures, and a compiled/executed C client using that header. A guessed prototype proves less.
+
+**Example:** Compile-only E3Exports module. Combine with the raw implementation block, add -parse-as-library -module-name E3Exports -emit-module -c -emit-objc-header-path /tmp/E3Exports.h.
+
+```swift
+@c(E3Mode)
+public enum ExportMode: CInt {
+    case identity = 0
+    case invert = 1
+}
+
+@c(E3Transform)
+public func transform(_ value: UInt8, _ mode: ExportMode) -> UInt8 {
+    switch mode {
+    case .identity: value
+    case .invert: 255 - value
+    }
+}
+```
+
+**Walkthrough:** The integer enum and E3Transform are emitted into the C-compatible header section. @c uses the C convention and chosen symbol name; valid enum cases select bounded UInt8 arithmetic.
+
+**Boundary:** These attributes arrived in Swift 6.3. Changing from an underscored export can affect symbols/ABI; choose names deliberately and do not feed invalid enum values. [C-compatible declarations](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0495-cdecl.md)
+
+Compile this [[C11 — Strict Memory Safety Mode and Safe Systems Programming|C11]] client after emitting E3Exports.h; link E3Safe.o, the Swift export/implementation object, and the Swift runtime with the Swift driver. It exercises every valid enum byte combination and actual raw native calls:
 
 ```c
 #include "E3Exports.h"
@@ -374,34 +529,103 @@ int main(void) {
 }
 ```
 
-#### Rejected signatures and an explicit unsafe call
+The native compiler and linker commands, emitted-header inspection, and execution are retained in the validation fixtures. The generated header flag keeps its historical Objective-C spelling even for its C-compatible section.
 
-Each negative is independent. The first cannot export an ordinary Swift struct. The next two use E3Safe: one changes the imported size parameter to Double; the other attempts to use the safe Span signature as the raw @implementation. Both fail matching/representability checks.
+### Extension: What do nullability and non-sendability actually reject?
+
+**Answer:** They reject particular invalid calls or transfers, rather than proving the whole library safe. A nonnull parameter does not accept nil, and an explicitly non-Sendable owner cannot satisfy a Sendable requirement.
+
+**Example:** Prepend ByteDecoder setup. Intentionally rejected.
+
+```swift
+func requireSendable<T: Sendable>(_ value: T) {}
+func sendDecoder(_ decoder: ByteDecoder) { requireSendable(decoder) }
+```
+
+**Walkthrough:** This call is rejected because ByteDecoder explicitly suppresses Sendable. The owner’s class aliases still share state, so confinement must cover all of them.
+
+**Boundary:** The fixture’s global failure mode/counters are also sequential. Neither ~Sendable nor a safe wrapper serializes arbitrary native globals.
+
+Independent **intentionally rejected** nullability, representability, and ABI-mismatch controls:
+
+```swift
+import E3Native
+
+func nilRequiredHandle() {
+    var bytes: UnsafeMutablePointer<UInt8>?
+    var count = 0
+    _ = unsafe e3_decoder_copy_bytes(nil, &bytes, &count)
+}
+```
 
 ```swift
 struct NotCRepresentable { let value: Int }
 @c
 func invalidExport(_ value: NotCRepresentable) {}
 ```
+
 ```swift
 import E3Safe
+
 @c @implementation
 func e3_swift_sum(_ bytes: UnsafePointer<UInt8>?, _ count: Double) -> UInt32 { 0 }
 ```
-```swift
-import E3Safe
-@c @implementation
-func e3_swift_sum(_ bytes: Span<UInt8>) -> UInt32 { 0 }
-```
 
-The following raw call can compile in ordinary mode but is rejected when StrictMemorySafety diagnostics are promoted to errors. Its pointer/count signature remains unsafe even though a safe overload exists. Adding unsafe acknowledges the raw contract; prefer the safe overload when it fits the operation.
+The raw pointer/count call is also **intentionally rejected** under -strict-memory-safety and -warnings-as-errors. Safe overload availability does not make the raw call safe:
 
 ```swift
 import E3Safe
+
 func unacknowledgedRawCall(_ bytes: UnsafePointer<UInt8>?, _ count: Int) -> UInt32 {
     e3_sum(bytes, count)
 }
 ```
+
+## Focused exercise
+
+**Task:** Wrap synchronous native byte processing with empty-input and failure cleanup, then state whether input may be retained.
+
+**Acceptance checks:**
+
+- Success copies output before release and preserves it after close.
+- Empty input and allocated-empty output return empty Data.
+- Partial failure releases its buffer; close is idempotent and malformed output is rejected before access.
+
+**Solution:** Prepend ByteDecoder setup. Reset only after each case has closed its handle.
+
+```swift
+for input in [Data(), Data([0, 255]), Data(UInt8.min...UInt8.max)] {
+    e3_fixture_reset(0)
+    let decoder = try ByteDecoder.make(input)
+    let first = try decoder.copyBytes()
+    let second = try decoder.copyBytes()
+    precondition(first == Data(input.map { $0 ^ 0xff }) && second == first)
+    decoder.close()
+    decoder.close()
+    precondition(e3_live_handles() == 0 && e3_live_buffers() == 0)
+    precondition(e3_destroyed_handles() == 1)
+}
+for mode in [4, 5, 8, 9] {
+    e3_fixture_reset(CInt(mode))
+    let decoder = try ByteDecoder.make(Data([1]))
+    do {
+        _ = try decoder.copyBytes()
+        preconditionFailure("Expected invalid result")
+    } catch {}
+    decoder.close()
+    precondition(e3_live_handles() == 0 && e3_live_buffers() == 0)
+}
+```
+
+**Reasoning:** The native code copies input synchronously and retains no borrowed address. Each output is either copied under validated bounds or rejected before reading, with cleanup already registered. Additional controls check all creation modes, boundaries, alias/deinit paths, and input mutation; simulated failure does not establish a general leak-free library.
+
+## In practice
+
+**Choose it when:** Translate a real documented native contract into owned Swift values and a small confined owner.
+
+**Investigate by:** Inspect actual headers/implementation, count every owned resource, and exercise native failure output and generated clients.
+
+**Strong evidence:** Verify raw ABI, generated safe calls, cleanup, and consumers separately; annotations and successful compilation are supporting evidence, not capacity or lifetime proofs.
 
 ## References
 

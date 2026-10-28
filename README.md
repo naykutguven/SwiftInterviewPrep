@@ -10,7 +10,7 @@ By no means is this an always-correct, always-complete document set. I try to ke
 
 All 70 topic guides were revised on 2026-10-16 using the approved template and revised senior/staff rubric. The [guide revision validation](<./Guide Revision Validation.md>) records settings, compiler/runtime evidence, and remaining limits.
 
-The teaching requirements were strengthened on 2026-10-28 after a review found that the revised guides often stated rules without enough explanation or examples. D1 is the reference chapter for this standard. The core semantics guides, A1–A16, type system and API design guides, B1–B14, memory, ownership, performance, and safety guides, C1–C12, and concurrency guides, D1–D14, now follow it. The other 14 guides in E and F retain the earlier structure and still need review against the new requirements. The validation record separates the October 28 A, B, C, and D revisions from the October 16 checks.
+The teaching requirements were strengthened on 2026-10-28 after a review found that the revised guides often stated rules without enough explanation or examples. D1 is the reference chapter for this standard. Guides A1–A16, B1–B14, C1–C12, D1–D14, and E1–E8 now follow it. The six F guides retain the earlier structure and still need review against the new requirements. The validation record separates these October 28 teaching revisions from the October 16 checks.
 
 Unless an example explicitly compares other configurations, the shared baseline is:
 
@@ -61,7 +61,7 @@ Think of this repo as a study map, not a sacred text.
 
 ## What each guide includes 🔍
 
-The [answer template](<./Swift Section Answer Template Revised.md>) now requires the following teaching structure. A1–A16, B1–B14, C1–C12, and D1–D14 implement it; E and F are awaiting revision:
+The [answer template](<./Swift Section Answer Template Revised.md>) now requires the following teaching structure. A1–A16, B1–B14, C1–C12, D1–D14, and E1–E8 implement it; F is awaiting revision:
 
 - Learning goals covering the topic's essential rubric expectations, prerequisites, and explicit example settings.
 - A mental model grounded in a concrete problem, followed by essential mechanics taught through small code examples.

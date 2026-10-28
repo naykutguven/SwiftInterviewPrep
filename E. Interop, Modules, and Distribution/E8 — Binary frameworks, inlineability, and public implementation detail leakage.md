@@ -11,59 +11,31 @@ tags:
 
 # E8 — Binary Frameworks, Inlineability, and Public Implementation Detail Leakage
 
-**Goal:** Show which implementation an unchanged optimized client retains after a compatible library update.
+**Learning goals:**
+
+- Distinguish source naming, callable library symbols, client-visible bodies, mandatory inlining, and library-side specialization.
+- Choose exposed bodies/helpers around real client rebuild and behavior-update requirements.
+- Verify unchanged/rebuilt consumers, interfaces and symbols, and define arithmetic correctness before optimization.
+
+**Prerequisites:** [[B11 — Library Evolution and Resilience-Aware API Design]] and [[E7 — Resilience, ABI, and Module Stability]] for resilience/replacement, [[E6 — Import Visibility and Dependency Leakage]] for import exposure, [[C9 — Existential, generic, and allocation performance model]]/[[C10 — Compiler Optimization Behavior and Debug vs Release Differences]] for specialization/inlining evidence, and [[F3 — Performance investigation habits]] for measurement.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-A library and its clients may rebuild on different schedules. Source visibility controls naming; symbol export controls library entry points; body visibility allows client emission/optimization. Mandatory inlining and library-side specialization make still different commitments. A client-emitted implementation can survive a library update even when it was not inlined into its caller. [SE-0497](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0497-definition-visibility.md)
+A library fix arrives, but an old executable still uses an implementation copied into it. Giving clients a function body is a compatibility choice: it allows their compiler to emit or optimize that body, and replacing the library cannot necessarily update those client copies.
 
-## Rules and pitfalls
+Keep **source access** (what callers can name), **symbol export** (callable library entries), and **body visibility** (what client compilers can use) separate. @inlinable exposes a body; it does not require every call to inline. @export(implementation) can emit a client definition even with @inline(never). [Definition visibility](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0497-definition-visibility.md)
 
-### Expose bodies only for a justified boundary
+## Essential mechanics
 
-A normal library call can reach updated code. An inlinable or implementation-exported body can leave old copies in clients. @usableFromInline keeps a helper source-internal but makes it an ABI dependency for exposed implementations.
+### Example setup
 
-**Common pitfall:** Making an internal helper public solely to satisfy an exposed body creates an unnecessary source contract. Keep the caller opaque unless client optimization justifies the binary commitment.
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; examples with invalid memory access or data races are never run. Specified traps, where demonstrated, are isolated in separate processes as stated.
 
-### Separate optimization controls from correctness
+### Four controls put behavior in different places
 
-@inline(always) requests mandatory eligible direct inlining; it differs from the older optimizer hint. @specialized can create selected library-side specializations and redispatch while preserving a generic API. These controls arrived in 6.3 and are available in 6.4.
-
-**Common pitfall:** A specialization attribute does not prove a speedup or validate arithmetic. Define input range/overflow policy and compare equivalent optimized work; see [[F3 — Performance investigation habits]].
-
-## Interview questions
-
-### Why does replacing the dylib update an interface-exported function but leave the client-emitted function unchanged?
-
-The interface-exported call reaches the library's callable implementation, so replacement changes its result. The client-emitted function's definition already belongs to the original executable, so replacing the dylib cannot change it. @inline(never) prevents inlining but does not move that definition back into the library.
-
-### When is @usableFromInline preferable to a public helper, and when should the caller stay opaque?
-
-Use @usableFromInline when a source-internal helper must be referenced by a deliberately exposed body and its ABI commitment is acceptable. Keep the public caller opaque when implementation freedom and behavior updates matter more than client optimization. Public helper access is appropriate only for a real supported client use.
-
-### How can prespecialization retain a generic API without exposing its implementation?
-
-The library builds selected specializations and chooses them from its generic implementation path without giving clients the algorithm body or publishing a separate specialized source API. Verify emitted interfaces/symbols and measure actual callers. Specialization is a build/representation choice, not new generic semantics.
-
-## Focused exercise
-
-**Task:** Compare a library-called function with a client-visible body across a compatible library replacement. Explain which output an unchanged client may retain.
-
-**Acceptance checks:**
-
-- Run the identical original executable with v1 and a compatible v2 library.
-- Compare it with a rebuilt v2 consumer and inspect emitted interface/symbols.
-- Report observed client retention without claiming every inlinable call always inlines.
-
-**Solution:**
-
-Use separate E8Visibility library and client builds with -enable-library-evolution -O, baseline concurrency flags, stable install names, and recorded executable hashes:
-
-### An unchanged client and a replaced library
-
-Build this as module `E8Visibility`, with `-enable-library-evolution -O` and binary/textual module output. It is version 1:
+Shared E8Visibility v1 library. Compile with the baseline plus -parse-as-library -O -enable-library-evolution -emit-module -c; emit its textual interface. Replacement controls build a dylib from the same source with a stable @rpath install name. Version 2 changes exactly these four returned literals from 1 to 2, with compatible signatures/module name.
 
 ```swift
 @export(interface)
@@ -79,44 +51,66 @@ public func visibleRevision() -> Int { 1 }
 public func forcedRevision() -> Int { 1 }
 ```
 
-Build this client separately with `-O`:
+**Walkthrough:** libraryRevision has a callable library implementation without an exported body. clientRevision supplies a client-emitted definition and explicitly avoids inlining. visibleRevision gives the compiler an optimization-visible body while retaining a library entry. forcedRevision mandates eligible direct inlining. These controls arrived before 6.4; they describe different commitments.
+
+### Specialization need not expose the generic algorithm
+
+Shared containsZero source for E8Utilities. The chosen specialization is [Int], while the public generic contract still accepts Sequences of BinaryInteger elements. Keep this as a declaration-only source for the later library assembly.
 
 ```swift
-import E8Visibility
-
-@main struct Client {
-    static func main() {
-        print(libraryRevision(), clientRevision(),
-              visibleRevision(), forcedRevision())
+@specialized(where S == [Int])
+public func containsZero<S: Sequence>(_ values: S) -> Bool
+where S.Element: BinaryInteger {
+    for value in values {
+        if value == 0 { return true }
     }
+    return false
 }
 ```
 
-Make version 2 by changing all four returned literals from 1 to 2. Preserve the module name, dynamic-library install name, and compatible signatures. Replace only the dylib and start a new process; this is not live hot-swapping.
+**Walkthrough:** The library may build a selected concrete path and retain a generic fallback. This does not add new Sequence semantics or prove a faster caller. The question below tests multiple input types and inspects the emitted interface/SIL separately.
 
-| Library / client | Observed output in the earlier recorded macOS builds |
-| --- | --- |
-| v1 / original optimized executable | `1 1 1 1` |
-| v2 / identical original executable | `2 1 1 1` |
-| v2 / rebuilt executable | `2 2 2 2` |
+## Rules and pitfalls
 
-The executable hash is unchanged during replacement. The emitted interface hides `libraryRevision`'s body and exposes the other three. Exported-symbol inspection finds `libraryRevision`, `visibleRevision`, and `forcedRevision`, but no `clientRevision` entry point. The `@inline(never)` function still retains 1 because its definition belongs to the old client. These are observations for this fixture and settings; do not predict every `@inlinable` call will always be inlined.
+### Remainder does not make an increment safe
 
-**Reasoning:** The four functions deliberately separate library calls, client emission, exposed optimization, and mandatory direct inlining. Runtime output must be interpreted alongside interface and symbol evidence, because the same value alone does not identify which mechanism produced it.
+**Common pitfall:** Using (index + 1) % capacity without validating capacity or overflow. Compile-only; invalid arithmetic paths are never executed.
 
-## In practice
+**Mistake:** Compile-only.
 
-**Choose it when:** Set binary-library visibility policy around independent client rebuild schedules.
+```swift
+func invalidNext(after index: Int, capacity: Int) -> Int { (index + 1) % capacity }
+```
 
-**Investigate by:** Inspect callable symbols, interface bodies, and unchanged-client output separately.
+**Consequence:** Zero capacity divides by zero, and index + 1 can overflow before remainder is computed.
 
-**Strong evidence:** Justify each exposed helper/body and validate arithmetic domain, compatibility, and measured performance.
+**Why:** The expression has hidden input requirements. An optimization attribute cannot validate or repair them.
 
-### Helper visibility, arithmetic, and specialization — optional
+**Correction:** Define the complete domain and choose the wrap case before incrementing. Shared nextIndex setup.
 
-#### A private dependency in an exposed body
+```swift
+public enum IndexFailure: Error, Equatable {
+    case invalidCapacity
+    case outOfBounds
+}
 
-Expected rejection, checked in all three compilation configurations:
+@inlinable
+public func nextIndex(after index: Int, capacity: Int)
+    throws(IndexFailure) -> Int
+{
+    guard capacity > 0 else { throw .invalidCapacity }
+    guard index >= 0, index < capacity else { throw .outOfBounds }
+    return index == capacity - 1 ? 0 : index + 1
+}
+```
+
+**What changes:** For positive capacity and 0 <= index < capacity, the last index wraps to zero; otherwise the increment is representable. This works even at Int.max without allocating a buffer. The error cases and any exposed body remain API commitments.
+
+### A private helper cannot be referenced from an exposed public body
+
+**Common pitfall:** Exposing a function body while retaining an inaccessible implementation dependency.
+
+**Mistake:** Compile-only; intentionally rejected.
 
 ```swift
 private func clamp(_ value: Int) -> Int {
@@ -124,13 +118,25 @@ private func clamp(_ value: Int) -> Int {
 }
 
 @inlinable public func clamped(_ value: Int) -> Int {
-    clamp(value) // Expected rejection: private helper in an exposed body.
+    clamp(value)  // Expected rejection: private helper in an exposed body.
 }
 ```
 
-The compiler reports that `clamp` is private and cannot be referenced from an `@inlinable` function. Either keep the caller opaque, or deliberately make the helper usable from inlineable code as in the optional helper redesign below. Making it public is appropriate only if clients should actually use it.
+**Consequence:** The compiler rejects the private helper reference from @inlinable.
 
-This attempted shortcut is also rejected:
+**Why:** Clients must be allowed to compile every referenced declaration in an exposed body. Public signature types alone are insufficient.
+
+**Correction:** Use an internal ABI-visible helper only when the exposed caller is a deliberate commitment; otherwise leave the caller opaque.
+
+```swift
+@usableFromInline internal func clamp(_ value: Int) -> Int { max(0, min(value, 100)) }
+@inlinable public func clamped(_ value: Int) -> Int { clamp(value) }
+precondition(clamped(-1) == 0 && clamped(101) == 100)
+```
+
+**What changes:** @usableFromInline keeps source access internal while making the helper an ABI dependency. It must remain available for old clients that reference it; making the helper public would add an unnecessary naming contract.
+
+The attempted private annotation is independently **intentionally rejected**; usableFromInline applies to internal/package declarations:
 
 ```swift
 @usableFromInline
@@ -139,11 +145,11 @@ private func clamp(_ value: Int) -> Int {
 }
 ```
 
-The diagnostic says `@usableFromInline` applies to internal or package declarations, not this private function. These are fresh Swift 6.4 checks; exact source locations and diagnostic formatting are not API contracts.
+### Client-visible policy can outlive a library policy update
 
-#### Review an overexposed utility API
+**Common pitfall:** Marking every convenience method @inlinable, including username and event-name policy.
 
-This compiles, but mixes product policy with a stable arithmetic operation:
+**Mistake:** Compile-only.
 
 ```swift
 public import Foundation
@@ -163,9 +169,11 @@ public enum UtilityKit {
 }
 ```
 
-Decide which behavior must change for already-built clients when the library changes. Explain the dependency implications of the exposed Foundation calls. Do not assume this illustrative username transformation is an appropriate account-identity or Unicode normalization policy.
+**Consequence:** Already-built clients may retain those policy bodies and Foundation dependencies after the library changes.
 
-A candidate revision hides the two policy bodies. The arithmetic body remains exposed only to demonstrate the ABI-visible helper tradeoff; remove that annotation too unless measurements justify it.
+**Why:** Exposed bodies can be copied/optimized into clients. That is different from a normal call reaching replaceable library code.
+
+**Correction:** Keep policy bodies opaque; expose the small arithmetic body only if its optimization/ABI tradeoff is justified. Shared E8Utilities source; prepend nextIndex and containsZero declarations when building this module.
 
 ```swift
 internal import Foundation
@@ -194,49 +202,124 @@ internal func clampPercentage(_ value: Int) -> Int {
 }
 ```
 
-The resilient interface contains the two policy signatures without their bodies or Foundation import. It contains the clamp body and a source-internal helper declaration. An ordinary external client can use the public API but cannot name `clampPercentage`. The helper has an exported symbol in the checked library. Changing its implementation can update calls that still reach it; it does not recover any policy already copied by previously shipped exposed bodies.
+**What changes:** The interface omits policy bodies and the hidden Foundation import, but exposes the clamp body/helper declaration. This illustrative username transformation is not a production Unicode/account-identity policy. Previously shipped client copies are not retroactively removed by hiding a later version’s body.
 
-#### Define the arithmetic domain before considering optimization
+## Worked example
 
-A storage-dependent `isFull` body can commit clients to a representation. A formula such as `(index + 1) % capacity` also hides two bugs: zero capacity and overflow before remainder. A complete checked index operation is a clearer exercise than an incomplete ring buffer:
+### An unchanged client keeps three old definitions
 
-```swift
-public enum IndexFailure: Error, Equatable {
-    case invalidCapacity
-    case outOfBounds
-}
+**Setup:** Compile this optimized ordinary client against E8Visibility v1. The direct block check links its object; the replacement control uses the exact source with a dylib/rpath build.
 
-@inlinable
-public func nextIndex(after index: Int, capacity: Int)
-    throws(IndexFailure) -> Int {
-    guard capacity > 0 else { throw .invalidCapacity }
-    guard index >= 0, index < capacity else { throw .outOfBounds }
-    return index == capacity - 1 ? 0 : index + 1
-}
-```
-
-The contract accepts positive capacity and `0 <= index < capacity`. At the last index it returns zero; otherwise incrementing is safe. Capacity `Int.max` needs no allocation and the arithmetic still works. The error cases and exposed algorithm are compatibility commitments. A real queue needs separate occupancy, insertion/removal, and optional-element semantics; this function does not implement a queue.
-
-#### Keep a generic algorithm inside the library
-
-Add this to `E8Utilities` with the revised utility and index files:
+**Predict:** Does @inline(never) guarantee a call reaches the new dylib?
 
 ```swift
-@specialized(where S == [Int])
-public func containsZero<S: Sequence>(_ values: S) -> Bool
-    where S.Element: BinaryInteger {
-    for value in values {
-        if value == 0 { return true }
+import E8Visibility
+
+@main struct Client {
+    static func main() {
+        print(
+            libraryRevision(), clientRevision(),
+            visibleRevision(), forcedRevision())
     }
-    return false
 }
 ```
 
-The optimized SIL contains an exact `S` versus `Array<Int>` metatype check, an array-specific path, and the generic iterator/witness path. The textual interface retains the signature and specialization annotation without the algorithm body. This demonstrates prespecialization structure, not a speedup claim.
+**Outcome:** V1 gives 1 1 1 1. After compatible library replacement, the identical executable gives 2 1 1 1; rebuilding against v2 gives 2 2 2 2.
 
-#### Exercise the external contract
+**Why:** The ordinary library entry updates. The client-emitted no-inline definition, optimized visible body, and mandatory-inlined body retain their checked old values. Interfaces/symbols distinguish mechanisms that runtime output alone cannot identify.
 
-This is an ordinary client of `E8Utilities`, not a testable import:
+## Interview questions
+
+### Why does replacing the dylib update an interface-exported function but leave the client-emitted function unchanged?
+
+**Answer:** The first reaches a callable library implementation; the second has a definition emitted into the original executable. Preventing inlining does not move that definition back to the library.
+
+**Example:** Ordinary optimized v1 client; compare the separately preserved replacement executable.
+
+```swift
+import E8Visibility
+
+print(libraryRevision(), clientRevision(), visibleRevision(), forcedRevision())
+```
+
+**Walkthrough:** The direct v1 check prints four ones. The preserved worked executable’s replacement result is 2 1 1 1, and its hash remains unchanged. Symbol inspection finds the library/interface entries but no library clientRevision entry.
+
+**Boundary:** These are selected-source/compiler observations, not proof that every @inlinable call always inlines. Runtime behavior, interface visibility, and symbol ownership must be checked together.
+
+### When is @usableFromInline preferable to a public helper, and when should the caller stay opaque?
+
+**Answer:** Use it for a deliberate ABI-visible implementation helper that clients should not name in source. Keep the public caller opaque when behavior updates and implementation freedom outweigh measured client optimization.
+
+**Example:** Ordinary external E8Utilities client; no testable import.
+
+```swift
+import E8Utilities
+
+precondition(UtilityKit.normalizedUsername("  ADA\n") == "ada")
+precondition(UtilityKit.analyticsEventName("OPEN") == "ios_v2_open")
+precondition(UtilityKit.clampedPercentage(-1) == 0)
+precondition(UtilityKit.clampedPercentage(101) == 100)
+```
+
+**Walkthrough:** The public client can call the intended utilities but cannot name clampPercentage. The interface retains the helper declaration for exposed code; the checked library exports that helper’s symbol.
+
+**Boundary:** Changing a helper can update calls that still reach it, but cannot recover policy already copied by old clients. Keep stable arithmetic exposed only with evidence; avoid publishing helpers solely to satisfy the compiler.
+
+An ordinary client naming the source-internal helper is **intentionally rejected**:
+
+```swift
+import E8Utilities
+
+let invalid = clampPercentage(50)
+```
+
+### How can prespecialization retain a generic API without exposing its implementation?
+
+**Answer:** The library can build selected specializations and redispatch internally while preserving a generic signature and fallback. Clients need not receive the algorithm body or a separate specialized source API.
+
+**Example:** Ordinary optimized E8Utilities client.
+
+```swift
+import E8Utilities
+
+precondition(containsZero([1, 0, 2]))
+precondition(!containsZero([Int]()))
+precondition(!containsZero([1, 2, 3]))
+precondition(containsZero([Int8(1), 0]))
+precondition(containsZero(-2...2))
+```
+
+**Walkthrough:** The same public generic accepts the selected [Int] case, another integer type, and a range. Optimized library SIL separately shows the exact-type test, concrete array path, and generic witness fallback. The interface retains the signature/annotation without the body.
+
+**Boundary:** This establishes emitted structure and equivalent semantics, not a speedup. Match module/optimization settings and representative caller types before measuring. [Explicit specialization](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0460-specialized.md)
+
+### Extension: How is mandatory inline(always) different from body export and an optimization hint?
+
+**Answer:** It requires eligible direct calls to inline, whereas body export controls where a definition is available/emitted and the older underscored spelling is an optimizer hint. Dynamic targets and ABI compatibility are separate questions.
+
+**Example:** Standalone runnable example.
+
+```swift
+@inline(always) func complement(_ value: UInt8) -> UInt8 { 255 - value }
+@inline(never) public func complementProbe(_ value: UInt8) -> UInt8 { complement(value) }
+for value in UInt8.min...UInt8.max { precondition(complementProbe(value) == 255 - value) }
+```
+
+**Walkthrough:** All byte inputs preserve the bounded result. Separate SILGen versus mandatory/optimized SIL controls identify whether the eligible direct helper call was removed; a function name or output alone does not identify inlining.
+
+**Boundary:** Mandatory inlining does not establish a faster app or a safe private helper in a public exposed body. [[C10 — Compiler Optimization Behavior and Debug vs Release Differences|C10]]/[[B11 — Library Evolution and Resilience-Aware API Design|B11]] retain their separate visibility and ABI evidence. [Mandatory inlining](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0496-inline-always.md)
+
+## Focused exercise
+
+**Task:** Compare a callable-library function with a client-visible definition across compatible replacement; review arithmetic and helper boundaries with an ordinary consumer.
+
+**Acceptance checks:**
+
+- The identical original executable runs with v1/v2 and retains the documented client values.
+- Rebuilding yields the new values; interface/symbol inspection explains the difference.
+- Public utility clients check clamp extremes, index domain/boundaries and multiple generic inputs without naming helpers.
+
+**Solution:** Preserve the earlier E8Visibility client and change only the four returned literals in a separate v2 library. Use [[E7 — Resilience, ABI, and Module Stability|E7]]’s matching module/install-name/rpath build pattern, hash the executable before/after, and rebuild into a different output. The complete ordinary utility client below exercises the separate E8Utilities sources:
 
 ```swift
 import E8Utilities
@@ -245,8 +328,10 @@ import E8Utilities
     static func main() throws {
         precondition(UtilityKit.normalizedUsername("  ADA\n") == "ada")
         precondition(UtilityKit.analyticsEventName("OPEN") == "ios_v2_open")
-        for (input, expected) in [(Int.min, 0), (-1, 0), (0, 0),
-                                  (37, 37), (100, 100), (Int.max, 100)] {
+        for (input, expected) in [
+            (Int.min, 0), (-1, 0), (0, 0),
+            (37, 37), (100, 100), (Int.max, 100),
+        ] {
             precondition(UtilityKit.clampedPercentage(input) == expected)
         }
         let one = try nextIndex(after: 0, capacity: 1)
@@ -258,7 +343,7 @@ import E8Utilities
             (0, -1, IndexFailure.invalidCapacity),
             (-1, 3, IndexFailure.outOfBounds),
             (3, 3, IndexFailure.outOfBounds),
-            (Int.max, Int.max, IndexFailure.outOfBounds)
+            (Int.max, Int.max, IndexFailure.outOfBounds),
         ] {
             do {
                 _ = try nextIndex(after: index, capacity: capacity)
@@ -277,7 +362,15 @@ import E8Utilities
 }
 ```
 
-It prints `utility boundaries passed` in both macOS settings. The cases cover clamp extremes, capacity one, the largest valid indices, invalid domains, empty/no-match arrays, a different integer element type, and a range. The two client sources also compile for the iOS deployment target; iOS runtime behavior is not tested here.
+**Reasoning:** Int.min/Int.max clamp inputs, capacity one, Int.max capacity and invalid indices test correctness independently of optimizer choices. Equal generic results do not measure speed. The compatible v2 replacement tests body ownership rather than changing public signatures or running an incompatible layout.
+
+## In practice
+
+**Choose it when:** Choose callable entries and exposed definitions around actual client rebuild schedules and performance evidence.
+
+**Investigate by:** Inspect interfaces, symbols, helper eligibility and unchanged/rebuilt outputs; test domain boundaries before optimizing.
+
+**Strong evidence:** Keep source access, client emission, mandatory inlining, library specialization and measured runtime costs distinct.
 
 ## References
 

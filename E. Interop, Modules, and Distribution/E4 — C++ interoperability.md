@@ -9,63 +9,33 @@ tags:
 
 # E4 — C++ Interoperability
 
-**Goal:** Copy and mutate an imported C++ value while tracing the native copy and lifetime contract.
+**Learning goals:**
+
+- Read imported copy/move/destruction and invalidation from the real C++ API.
+- Separate stable Span inputs, conditional return wrappers, owned snapshots, and native exception handling.
+- Keep native mutable ownership confined and validate the actual consumer dialect, module, and runtime.
+
+**Prerequisites:** [[C6 — Unsafe pointers, buffers, and raw memory]]/[[C7 — Ownership modifiers - `borrowing`, `consuming`, and `consume`]]/[[C8 — Copyable, noncopyable types, and `~Copyable`]]/[[C12 — `Span`, `InlineArray`, and modern low-level abstractions]] for memory, ownership, and spans; [[D4 — Actors and Actor Isolation]] for actors; [[E3 — C Interoperability and Unsafe Boundaries]] for native contracts. [[E5 — Modules, packages, targets, products, and resources]]/[[E6 — Import Visibility and Dependency Leakage]] explain consumer build settings and dependency exposure. This chapter is relevant when the role uses C++.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-Supported C++ classes and structs generally import as Swift values whose copy/move/destruction behavior follows C++ special members. Value syntax does not establish deep independence: a vector-owning value and a borrowed-pointer value have different semantics. Importability, lifetime, exception handling, concurrency confinement, and consumer build requirements are separate review questions. [Swift/C++ interoperability](https://www.swift.org/documentation/cxx-interop/)
+Assigning an imported C++ class value does not automatically share an Objective-C-style object. Its native copy constructor decides whether copying duplicates a vector, shares storage, or merely copies a raw address. A borrowed native view is still invalidated by whatever operations its owner permits.
 
-## Rules and pitfalls
+Review copy/move/destruction, borrowed lifetime, mutation, exceptions, and concurrency separately. A Swift actor can serialize access, and an owned Swift snapshot can outlive native mutation, but neither repairs a wrong C++ lifetime annotation. [C++ interoperability](https://www.swift.org/documentation/cxx-interop/)
 
-### Inspect native ownership before adapting it
+## Essential mechanics
 
-Review constructors, copy/move operations, destructors, invalidating mutations, and borrowed return values. Convert retained results into Swift-owned snapshots when clients should not depend on native lifetime. Keep throwing C++ behavior behind a supported error boundary.
+### Example setup
 
-**Common pitfall:** Copying a native value that contains a shared pointer or borrowed view can still share the underlying resource. Do not infer semantics from the imported Swift type category.
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; examples with invalid memory access or data races are never run. Specified traps, where demonstrated, are isolated in separate processes as stated.
 
-### Verify build and lifetime surfaces independently
+### Build the actual C++20 contract
 
-Use a real C++20 module and the required Swift C++ interop mode for dependent targets. Stable Span input bridging and experimental lifetime-dependent return overloads have different support limits.
+Shared E4Core setup. Save the following complete header as E4Core.hpp with the module map beside it. Swift builds add -I with that directory, -cxx-interoperability-mode=default, and -Xcc -std=c++20. C++20 is separate from Swift 6 mode; Apple validation uses the selected SDK and libc++. A SwiftPM target uses .interoperabilityMode(.Cxx) and the package cxxLanguageStandard: .cxx20. [Build settings](https://www.swift.org/documentation/cxx-interop/project-build-setup/)
 
-**Common pitfall:** A Swift-only return DTO does not make the native engine Sendable or necessarily remove transitive C++ build requirements. Compile an ordinary consumer and run empty/mutation/lifetime cases before claiming the boundary works.
-
-## Interview questions
-
-### Which native operations can copy, invalidate a view, or throw, and how would your Swift API encode each contract?
-
-Native copy constructors define copying; container growth, mutation, or destruction can invalidate views; exceptions can arise from native operations under their C++ contract. Encode independent snapshots, scoped borrows, and fallible operations explicitly in Swift. Prevent unsupported exceptions from escaping the interop boundary.
-
-### Why does a Swift-only snapshot not make the engine Sendable or remove a dependent module's C++ setting?
-
-Converting an output does not synchronize the engine's mutable internals or global state. Imported declarations can still require C++ interoperability in dependent compilation. Keep the engine confined and validate the ordinary consumer's actual manifest and imports.
-
-### What evidence distinguishes the stable span input support from the conditional return-overload examples?
-
-Stable input support is established by compiling/running the supported C++20 span input functions without the experimental return feature. Conditional return overloads require their additional annotations/flags and still show lifetime limitations in this toolchain. Separate successful inputs from rejected return uses and keep the latter outside baseline recommendations.
-
-## Focused exercise
-
-**Task:** Copy an imported C++ value, mutate the copy, and observe native copy/destruction behavior. Explain which result depends on the native contract.
-
-**Acceptance checks:**
-
-- Copy the imported value and mutate the copy; inspect both values.
-- Observe copy/destruction counters without asserting an optimizer-independent count or destruction order.
-- Compile and run a native-backed empty-input case and an ordinary interop-enabled consumer.
-
-**Solution:**
-
-Use the real C++ module, value type, and Swift probe below. The source defines what native copying means; it is not inferred from Swift assignment syntax.
-
-### Build a real C++20 module
-
-Use -cxx-interoperability-mode=default and -Xcc -std=c++20 for Swift. Compile native consumers as C++20 with the same SDK/target and C++ standard library. The Apple checks use libc++. std::span requires the C++20 dialect; the Swift language mode is separately -swift-version 6.
-
-For SwiftPM, .interoperabilityMode(.Cxx) belongs in the Swift target's settings and cxxLanguageStandard: .cxx20 selects the package dialect. An umbrella header/module map exposes the C++ target. Review downstream requirements before enabling interop in an existing package. E5 covers manifests and E6 covers import visibility. [Build setup](https://www.swift.org/documentation/cxx-interop/project-build-setup/), [supported configurations](https://www.swift.org/documentation/cxx-interop/status/)
-
-Complete temporary E4Core.hpp:
+E4Value deliberately copies its vector independently and records sequential copy/live counters. E4Buffer deletes copying, catches replacement exceptions into status values, and exposes a borrowed view invalidated by replacement. Instrumentation is not a thread-safe production API.
 
 ```cpp
 #pragma once
@@ -140,17 +110,13 @@ inline std::optional<int> e4Optional(bool present) {
 }
 ```
 
-Temporary module.modulemap:
+```text
+module E4Core { header "E4Core.hpp" requires cplusplus export * }
+```
 
-> module E4Core { header "E4Core.hpp" requires cplusplus export * }
+### Observe a native value copy before discussing performance
 
-E4Buffer starts empty and cannot be copied; its move operations allow native ownership transfer. replace copies input into a temporary vector, then swaps only after success. Its status is 0 success, 1 over the 4096-byte policy, or 2 native failure. The injected exception is caught before returning to Swift. failNextReplacement and the E4Value counters are test instrumentation, not a thread-safe production monitoring API.
-
-E4Value, e4Name, and the conversion examples are bounded successful copy/conversion probes. They do not define a recoverable allocation-failure policy for every C++ standard-library constructor or copy. Audit all potentially throwing native operations in a real adapter; the complete exception-to-status contract here belongs to E4Buffer.replace.
-
-### Value semantics, copies, and destruction
-
-The following probe keeps original and copy observable after mutating the copy. It returns original first element 1, copied first element 9, and an observed native copy count of at least one. After the function returns, the fixture's live-value count is zero. A separate borrowedRead call leaves the copy count unchanged in the checked debug and optimized builds.
+Shared valueProbe setup. Native counters describe these bounded calls; they are reset only without concurrent fixture use.
 
 ```swift
 import E4Core
@@ -163,42 +129,17 @@ func valueProbe() -> (CInt, CInt, CInt) {
     return (original.first(), copy.first(), e4CopyCount())
 }
 func borrowedRead(_ value: borrowing E4Value) -> CInt { value.first() }
+
+let state = valueProbe()
+precondition(state.0 == 1 && state.1 == 9 && state.2 >= 1)
+precondition(e4LiveCount() == 0)
 ```
 
-These counters establish what this fixture did under the recorded settings. They do not prove that every argument pass copies, that borrowing eliminates all allocations inside a function, or that Swift and C++ containers share a copy-on-write model. E4Value's copy constructor deliberately deep-copies its vector. A C++ copy constructor could instead retain shared storage or copy an unsafe pointer.
+**Walkthrough:** Mutating the copy leaves the original’s first element equal to 1. At least one native copy was observed in this configuration; all probe-owned values are destroyed by return. The number/order of copies is not a portable Swift guarantee.
 
-C++ types with suitable deleted-copy/move members can import as noncopyable. SWIFT_NONCOPYABLE also expresses a Swift-side restriction for a native type that is otherwise copyable. Reference semantics require a different mapping: SWIFT_SHARED_REFERENCE names real retain/release functions, and return-ownership annotations must match the native API. SWIFT_IMMORTAL_REFERENCE and SWIFT_UNSAFE_REFERENCE describe different lifetime obligations. Do not infer Swift reference counting just from the C++ class keyword. These reference mappings are source-reviewed context; this fixture tests value and unique ownership. [C++ mapping documentation](https://www.swift.org/documentation/cxx-interop/)
+### Use the supported borrowed input overload
 
-### Explicit standard-library conversions
-
-The imported std::string and std::optional<int> remain C++ types. This returns ("Swift + C++", 42, nil); the optional payload is CInt, matching C++ int in the tested targets.
-
-```swift
-import E4Core
-import CxxStdlib
-
-func converted() -> (String, CInt?, CInt?) {
-    (String(e4Name()), Optional(fromCxx: e4Optional(true)), Optional(fromCxx: e4Optional(false)))
-}
-```
-
-Do not assume a conversion implies valid application data, independent nested resources, or negligible cost. std::string_view is a borrowed view and needs an owner/lifetime policy even when an explicit String conversion eventually creates owned text.
-
-**Reasoning:** The native implementation determines whether copies are independent. Counter observations describe one build and call path, not a language-guaranteed number of copies. The borrowed-view and output-snapshot fixtures retain their confinement requirements below.
-
-## In practice
-
-**Choose it when:** A role or product genuinely requires C++ interoperability.
-
-**Investigate by:** Compile actual headers/dialects and inspect native ownership, invalidation, and exception contracts.
-
-**Strong evidence:** Verify stable inputs, conditional returns, native execution, and consumer settings separately.
-
-### Span support and confined snapshot facade — optional
-
-#### Stable read-only and mutable span inputs
-
-These compile with the ordinary interop settings and strict-memory-safety diagnostics promoted to errors, without SafeInteropWrappers. e4Sum uses std::span<const uint8_t>; e4Invert uses std::span<uint8_t>. The latter imports a safe overload taking inout MutableSpan<UInt8>. The signatures do not imply ownership transfer or asynchronous retention. The explicit empty checks are necessary for this distribution: directly calling the generated e4Sum overload with Span<UInt8>() traps with signal 5, while an empty array-backed span passed. The local Cxx overlay requires a nonnil buffer pointer during its span conversion. Keep empty handling in the audited boundary; do not infer identical behavior for all empty backing representations.
+Shared bridge/invert setup. Strict checking is enabled; no experimental return feature is used. Explicitly guard empty spans for the installed overlay’s conversion limitation.
 
 ```swift
 import E4Core
@@ -211,77 +152,58 @@ func invert(_ bytes: inout MutableSpan<UInt8>) {
 }
 ```
 
-For the tested noescape calls, the generated overload performs the boundary conversion. For nonempty input, no manually constructed C++ span is needed at the Swift call site. Array.span itself requires Apple OS 26; the temporary older-deployment driver constructs a Swift Span from a scoped buffer with an explicit unsafe acknowledgment. That scope/annotation audit remains separate from API availability.
+**Walkthrough:** Nonempty input uses a generated std::span conversion for the noescape call. Empty read returns the sum identity and empty mutation does nothing before conversion. This avoids the earlier recorded empty-default-span trap without executing it again. Array.span needs OS 26 separately.
 
-An otherwise identical function without the noescape annotation does not accept a Swift Span in the baseline configuration:
+### Convert standard-library results explicitly
 
-```swift
-import E4Core
-func missingContract(_ bytes: Span<UInt8>) -> UInt32 { e4Unannotated(bytes) }
-```
-
-#### Lifetime-dependent returns: a checked limitation
-
-The release announcement describes Span/std::span bridging in both directions. The installed compiler accepts the input overloads above but rejects the following return-overload calls with ordinary settings. The corresponding Clang importer source explicitly gates lifetimebound wrapper generation behind the legacy SafeInteropWrappers feature. [Swift 6.4 release](https://www.swift.org/blog/swift-6.4-released/), [importer implementation](https://github.com/swiftlang/swift/blob/main/lib/ClangImporter/SwiftifyDecl.cpp)
-
-**Compile-only research example:** Both functions below compile in the tested configuration after adding -enable-experimental-feature SafeInteropWrappers -enable-experimental-feature LifetimeDependence. The experimental runtime driver nevertheless failed with signal 11 in both isolation configurations. One diagnostic run with AddressSanitizer reached the first empty-tail case and reported stack-overflow during the subsequent native sum. The root cause is not established; neither function receives a successful runtime-validation claim from that driver. Do not execute these examples as a production recipe or enable the flags project-wide on this evidence. The baseline owned-copy exercise below passes its separate runtime checks.
+Shared converted setup. Native std::string and optional are different types from Swift String/Optional.
 
 ```swift
-import E4Core
-func tailSum(_ bytes: Span<UInt8>) -> UInt32 {
-    let tail: Span<UInt8> = e4Tail(bytes)
-    return e4Sum(tail)
-}
-func borrowedChecksum(_ buffer: borrowing E4Buffer) -> UInt32 {
-    let view: Span<UInt8> = buffer.view()
-    return e4Sum(view)
-}
-```
-
-The following independent negatives use that same experimental configuration. The first returns a view into a local array; the anchor parameter deliberately makes a return lifetime expressible so the diagnostic concerns the wrong local dependency. The second tries to mutate a buffer while its view remains in use. Both are rejected for their intended lifetime/exclusivity violation. The Array.span control separately has OS 26 availability.
-
-```swift
-import E4Core
-@available(anyAppleOS 26.0, *)
-func escaped(_ anchor: Span<UInt8>) -> Span<UInt8> { let local: [UInt8] = [1, 2];return e4Tail(local.span) }
-```
-```swift
-import E4Core
-func overlap() -> UInt32 { var buffer = E4Buffer();let view: Span<UInt8> = buffer.view();buffer.failNextReplacement();return e4Sum(view) }
-```
-
-No dangling access or overlapping mutation is executed. Do not replace lifetime annotations with a false independent-value annotation to make a compiler error disappear. The historical safe-interop page describes the 6.2 experiment; its return examples should not be copied as an unconditional 6.4 build recipe. [Safe interop annotations](https://www.swift.org/documentation/cxx-interop/safe-interop/)
-
-#### Ownership and conversion negatives
-
-Each snippet is independent and rejected in the ordinary baseline. E4Buffer cannot be consumed twice. The C++ string and optional require explicit conversion, and a C++ value does not automatically satisfy a Sendable constraint.
-
-```swift
-import E4Core
-func take(_ buffer: consuming E4Buffer) {}
-func twice() { let buffer = E4Buffer();take(buffer);take(buffer) }
-```
-```swift
-import E4Core
-func implicitString() -> String { e4Name() }
-```
-```swift
-import E4Core
-func implicitOptional() -> CInt? { e4Optional(true) }
-```
-```swift
-import E4Core
-func needsSendable<T: Sendable>(_ value: T) {}
-func sendNativeValue() { needsSendable(E4Value()) }
-```
-
-**Task:** Replace a feature-layer native vector/span API with a bounded service. Preserve old state on failure, keep native mutation serialized, and return independently owned bytes/checksum. Verify the real implementation and show which unsafe assumptions remain inside the adapter.
-
-The baseline copy helper deliberately does not return a borrowed view. It borrows the E4Buffer owner for the entire synchronous operation, obtains the native view under an explicit unsafe acknowledgment, copies its bytes, and discards both views before returning. No native mutation or suspension occurs inside the helper. The unsafe conversion's Swift lifetime tracking alone does not recover the hidden native owner relationship; the helper's contract and implementation supply that audit.
-
-```swift
-import E4Core
 import CxxStdlib
+import E4Core
+
+func converted() -> (String, CInt?, CInt?) {
+    (String(e4Name()), Optional(fromCxx: e4Optional(true)), Optional(fromCxx: e4Optional(false)))
+}
+
+let result = converted()
+precondition(result.0 == "Swift + C++" && result.1 == 42 && result.2 == nil)
+```
+
+**Walkthrough:** String copies the supported native text representation and Optional(fromCxx:) maps present/absent CInt. This bounded conversion says nothing about validation of arbitrary encoding or allocation-failure recovery.
+
+## Rules and pitfalls
+
+### A borrowed view must not be retained across invalidating mutation
+
+**Common pitfall:** Saving an unsafe native view then replacing its vector. Compile-only; no invalidated access is executed.
+
+**Mistake:** Compile-only.
+
+```swift
+import CxxStdlib
+import E4Core
+
+func invalidView() -> UInt32 {
+    var buffer = E4Buffer()
+    let bytes: [UInt8] = [1, 2]
+    _ = buffer.replace(bytes.span)
+    let view = unsafe buffer.view()
+    _ = unsafe buffer.replace(E4ReadOnlyBytes())
+    let expired = unsafe Span(_unsafeCxxSpan: view)
+    return expired.isEmpty ? 0 : UInt32(expired[0])
+}
+```
+
+**Consequence:** The view still describes storage that replacement may have released; converting its wrapper does not restore validity.
+
+**Why:** std::span owns no vector storage. The unsafe conversion cannot infer an owner relationship that has been erased into the imported native view.
+
+**Correction:** Copy while borrowing the owner, with no mutation or suspension, and return only owned bytes. Shared copyBytes setup.
+
+```swift
+import CxxStdlib
+import E4Core
 
 func copyBytes(_ buffer: borrowing E4Buffer) -> [UInt8] {
     let nativeView = unsafe buffer.view()
@@ -293,7 +215,26 @@ func copyBytes(_ buffer: borrowing E4Buffer) -> [UInt8] {
 }
 ```
 
-Combine that helper with the following service:
+**What changes:** The owner stays alive through the complete copy. Both view values are discarded before returning, so later mutation cannot invalidate the Array. The unsafe audit still depends on E4Buffer’s real implementation and confinement.
+
+### Imported native values do not automatically become Sendable
+
+**Common pitfall:** Satisfying a Sendable consumer just because the type imports as a value.
+
+**Mistake:** Compile-only; intentionally rejected.
+
+```swift
+import E4Core
+
+func needsSendable<T: Sendable>(_ value: T) {}
+func sendNativeValue() { needsSendable(E4Value()) }
+```
+
+**Consequence:** The generic call is rejected; the native type has no checked Sendable promise.
+
+**Why:** Value import does not prove independent nested resources or synchronized native operations. A facade must keep its live native owner in a valid access domain.
+
+**Correction:** Keep E4Buffer private to an actor, serialize replacement, and export owned Sendable snapshots. Prepend copyBytes setup; this shared SampleService source uses synchronous bounded native work.
 
 ```swift
 import E4Core
@@ -319,7 +260,9 @@ func replace(_ buffer: inout E4Buffer, with bytes: [UInt8]) throws(SampleError) 
 public actor SampleService {
     private var storage = E4Buffer()
     public init() {}
-    public func replaceSamples(_ bytes: [UInt8]) throws(SampleError) { try replace(&storage, with: bytes) }
+    public func replaceSamples(_ bytes: [UInt8]) throws(SampleError) {
+        try replace(&storage, with: bytes)
+    }
     public func snapshot() -> SampleSnapshot {
         let bytes = copyBytes(storage)
         return SampleSnapshot(bytes: bytes, checksum: bytes.reduce(0) { $0 &+ UInt32($1) })
@@ -327,17 +270,245 @@ public actor SampleService {
 }
 ```
 
-For empty replacement, the adapter calls the raw overload with an explicitly constructed empty C++ span, avoiding the generated conversion while preserving the native clear operation. For nonempty replacement, replace uses a synchronous borrowed input; the native function copies before returning and catches its own exceptions. The owner stays private to the actor. snapshot copies while isolated and computes the checksum from those same owned bytes, so the pair is coherent. There is no await between acquiring native state and finishing the snapshot. Callers can keep or mutate their arrays without changing stored native data, and subsequent replacement cannot invalidate an earlier snapshot.
+**What changes:** The actor never transfers E4Buffer to another executor. snapshot copies bytes and computes the checksum from those same owned bytes before returning, with no intervening await. C++ exceptions are caught in replace, then mapped to SampleError. This does not promise automatic cancellation or a dedicated native thread.
 
-The public actor boundary does not pass E4Buffer to another executor. The helper's inout access covers the native mutation; the synchronous scoped input does not escape. This is still a bounded synchronous native operation, with no automatic cancellation or dedicated-thread guarantee.
+### A missing lifetime contract cannot be supplied by call-site optimism
 
-With the full exercise in scope, this nonisolated synchronous call is rejected:
+**Common pitfall:** Passing Swift Span to an otherwise identical unannotated std::span parameter.
+
+**Mistake:** Compile-only; intentionally rejected.
+
+```swift
+import E4Core
+
+func missingContract(_ bytes: Span<UInt8>) -> UInt32 { e4Unannotated(bytes) }
+```
+
+**Consequence:** The baseline call rejects because this generated input overload requires the supported noescape contract.
+
+**Why:** The importer must know that borrowed Swift storage does not escape through the call. An arbitrary native function is not automatically nonretaining.
+
+**Correction:** Use the annotated operation whose implementation actually honors nonescape. Prepend bridge/invert setup.
+
+```swift
+let bytes: [UInt8] = [0, 1, 255]
+precondition(bridge(bytes.span) == 256)
+precondition(bridge(Span<UInt8>()) == 0)
+var mutable: [UInt8] = [0, 1, 255]
+mutable.withUnsafeMutableBufferPointer { raw in
+    var view = unsafe MutableSpan(_unsafeElements: raw)
+    invert(&view)
+}
+precondition(mutable == [255, 254, 0])
+```
+
+**What changes:** The real native input and mutation execute under the supported contract, and empty input is handled before conversion. No borrowed view escapes.
+
+## Worked example
+
+### Owned snapshots survive later replacement
+
+**Setup:** Prepend copyBytes and SampleService setups. This actor has a single private native buffer.
+
+**Predict:** Will a saved snapshot or caller input change after native replacement?
+
+```swift
+let service = SampleService()
+var input: [UInt8] = [1, 2, 3]
+try await service.replaceSamples(input)
+input[0] = 9
+let saved = await service.snapshot()
+precondition(saved.bytes == [1, 2, 3] && saved.checksum == 6)
+try await service.replaceSamples([8])
+let next = await service.snapshot()
+precondition(saved.bytes == [1, 2, 3] && next.bytes == [8] && next.checksum == 8)
+```
+
+**Outcome:** Saved state remains [1, 2, 3], while the new snapshot contains [8]. Caller mutation is independent too.
+
+**Why:** replace copies the input into native storage; snapshot separately copies that native storage into a Swift Array. These are explicit ownership contracts, not an inferred deep-copy promise from an imported class keyword.
+
+## Interview questions
+
+### Which native operations can copy, invalidate a view, or throw, and how should a Swift API encode each contract?
+
+**Answer:** Read each operation’s native contract: E4Value copies independently, E4Buffer replacement can invalidate its views, and replace catches its own exceptions into a status. Borrow for a bounded read, copy for retention, and translate declared failure.
+
+**Example:** Prepend copyBytes and SampleService setups.
+
+```swift
+func failureProof() throws {
+    var buffer = E4Buffer()
+    try replace(&buffer, with: [1, 2])
+    buffer.failNextReplacement()
+    do {
+        try replace(&buffer, with: [9])
+        preconditionFailure()
+    } catch SampleError.nativeFailure {}
+    precondition(copyBytes(buffer) == [1, 2])
+    try replace(&buffer, with: [9])
+    precondition(copyBytes(buffer) == [9])
+}
+try failureProof()
+```
+
+**Walkthrough:** The injected native exception is caught before leaving C++, translated into nativeFailure, and leaves the old vector intact. Retry succeeds because the native failure flag is one-shot.
+
+**Boundary:** E4Value constructors/copies and std::string conversion are only bounded successful probes; this does not define allocation-failure recovery for every C++ standard-library operation. Never unwind an uncaught C++ exception through Swift.
+
+### Why does a Swift-only snapshot not make the engine Sendable or remove a dependent module’s C++ setting?
+
+**Answer:** The snapshot changes the public values that cross the boundary. The implementation still owns a native object, and consumer compilation can still require its C++ module/settings according to the emitted module dependencies.
+
+**Example:** Prepend copyBytes and SampleService setups.
+
+```swift
+let service = SampleService()
+try await service.replaceSamples([0, 255])
+let snapshot: SampleSnapshot = await service.snapshot()
+func accept<T: Sendable>(_ value: T) {}
+accept(snapshot)
+precondition(snapshot.bytes == [0, 255] && snapshot.checksum == 255)
+```
+
+**Walkthrough:** The Sendable generic accepts SampleSnapshot, whose fields are owned Swift values. The native owner remains inside the actor. A separate ordinary module/client build checks the consumer settings rather than assuming the signature erases import dependencies.
+
+**Boundary:** Do not mark the engine unchecked Sendable to satisfy a call. [[E6 — Import Visibility and Dependency Leakage|E6]] separates module loading from linkage; a source-only facade does not establish binary distribution or synchronized native globals.
+
+### What evidence distinguishes stable span input support from the conditional return-overload examples?
+
+**Answer:** Compile and run inputs under ordinary settings, then check return wrappers separately with their required annotations/features. Successful input conversion is not evidence that a lifetime-dependent return is production-ready.
+
+**Example:** Compile-only, intentionally rejected under the ordinary interop baseline. Import E4Core.
+
+```swift
+import E4Core
+
+func tailSum(_ bytes: Span<UInt8>) -> UInt32 {
+    let tail: Span<UInt8> = e4Tail(bytes)
+    return e4Sum(tail)
+}
+func borrowedChecksum(_ buffer: borrowing E4Buffer) -> UInt32 {
+    let view: Span<UInt8> = buffer.view()
+    return e4Sum(view)
+}
+```
+
+**Walkthrough:** Under ordinary settings these return-overload calls reject. Separate object-compilation controls add SafeInteropWrappers and LifetimeDependence and test the return declarations without executing them. The earlier driver failed with signal 11 in both tested isolation configurations; one Address Sanitizer run reported stack overflow, and the root cause was not established. This revision object-compiles the experimental declarations and does not claim successful return execution.
+
+**Boundary:** The historical release announcement is broader than this installed compiler result. Keep the owned-copy path as the checked recipe and preserve the limitation. [Importer implementation](https://github.com/swiftlang/swift/blob/main/lib/ClangImporter/SwiftifyDecl.cpp)
+
+With -enable-experimental-feature SafeInteropWrappers -enable-experimental-feature LifetimeDependence, the following independent lifetime violations are **intentionally rejected**. No dangling read or overlapping mutation is executed:
+
+```swift
+import E4Core
+
+@available(anyAppleOS 26.0, *)
+func escaped(_ anchor: Span<UInt8>) -> Span<UInt8> {
+    let local: [UInt8] = [1, 2]
+    return e4Tail(local.span)
+}
+```
+
+```swift
+import E4Core
+
+func overlap() -> UInt32 {
+    var buffer = E4Buffer()
+    let view: Span<UInt8> = buffer.view()
+    buffer.failNextReplacement()
+    return e4Sum(view)
+}
+```
+
+### Extension: Which ownership and conversion boundaries remain source errors?
+
+**Answer:** A deleted-copy owner cannot be transferred twice, and native string/optional results require explicit Swift conversion. These are separate constraints, not signs that every imported C++ type behaves alike.
+
+**Example:** Standalone runnable example.
+
+```swift
+import CxxStdlib
+import E4Core
+
+let text = String(e4Name())
+let present: CInt? = Optional(fromCxx: e4Optional(true))
+let absent: CInt? = Optional(fromCxx: e4Optional(false))
+precondition(text == "Swift + C++" && present == 42 && absent == nil)
+```
+
+**Walkthrough:** The value conversions are explicit and preserve the native CInt payload. The negatives below expose transfer and implicit-conversion assumptions independently.
+
+**Boundary:** SWIFT_SHARED_REFERENCE requires real retain/release functions, while immortal/unsafe reference mappings have different lifetimes. This fixture checks value/unique ownership rather than claiming those reference mappings were run.
+
+```swift
+import E4Core
+
+func take(_ buffer: consuming E4Buffer) {}
+func twice() {
+    let buffer = E4Buffer()
+    take(buffer)
+    take(buffer)
+}
+```
+
+```swift
+import E4Core
+
+func implicitString() -> String { e4Name() }
+```
+
+```swift
+import E4Core
+
+func implicitOptional() -> CInt? { e4Optional(true) }
+```
+
+A synchronous nonisolated call into the actor is independently **intentionally rejected**; prepend copyBytes and SampleService setups:
 
 ```swift
 func wrongIsolation(_ service: SampleService) -> SampleSnapshot { service.snapshot() }
 ```
 
-**Acceptance cases:** empty/single/representative/all-byte/4096-byte inputs; bitwise inversion; copied input despite later caller mutation; independent snapshots after replacement; 4097-byte rejection in Swift and C++; injected C++ failure translated to nativeFailure with old data unchanged; retry success; multiple serialized actor snapshot callers; value-copy independence/destruction; intended compiler rejections; native header/consumer integration; bounded sanitizer runs. Simulated failure is not a real memory-exhaustion test.
+## Focused exercise
+
+**Task:** Copy an imported C++ value, mutate it, and verify the native copy/lifetime contract alongside a bounded empty-input case.
+
+**Acceptance checks:**
+
+- Original/copy retain independent native values and the observed copy count is at least one.
+- No probe-owned values remain after return; borrowing adds no observed copy in the checked build.
+- Empty/nonempty supported inputs execute; no invalid borrowed return is used.
+
+**Solution:** Prepend valueProbe and bridge/invert setups.
+
+```swift
+let result = valueProbe()
+precondition(result.0 == 1 && result.1 == 9 && result.2 >= 1)
+precondition(e4LiveCount() == 0)
+func borrowedProof() {
+    let value = E4Value()
+    e4ResetCopies()
+    let before = e4CopyCount()
+    precondition(borrowedRead(value) == 1)
+    precondition(e4CopyCount() == before)
+}
+borrowedProof()
+precondition(e4LiveCount() == 0)
+precondition(bridge(Span<UInt8>()) == 0)
+let bytes = Array(UInt8.min...UInt8.max)
+precondition(bridge(bytes.span) == bytes.reduce(0) { $0 &+ UInt32($1) })
+```
+
+**Reasoning:** The native deep-copy constructor explains independence; counters report this call path under recorded optimization. A native consumer and additional snapshot/failure/4096-boundary controls verify other contracts. Simulated failure and bounded sanitizer checks are not general allocation, leak, or speed proofs.
+
+## In practice
+
+**Choose it when:** Use C++ interop when the native API is part of the product, and choose confinement plus owned snapshots when retaining views is unnecessary.
+
+**Investigate by:** Read the actual native members, annotations, dialect and consumer module settings; test empty input and native failure before broadening use.
+
+**Strong evidence:** Separate stable input runtime, conditional return compilation, native consumer execution, and bounded copy/cleanup observations.
 
 ## References
 
