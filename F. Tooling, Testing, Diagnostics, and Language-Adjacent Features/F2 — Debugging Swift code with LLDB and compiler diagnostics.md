@@ -12,106 +12,341 @@ tags:
 
 # F2 — Debugging Swift Code with LLDB and Compiler Diagnostics
 
-**Goal:** Reduce an actor-return diagnostic and verify a value-snapshot repair from its caller.
+**Learning goals:**
+
+- Reduce diagnostics while preserving the failed generic, builder, ownership or actor relationship.
+- Separate stored-state inspection, evaluator execution, precise module tracking and runtime history.
+- Repair a retained actor-return boundary and connect task names to request identity without assuming scheduling or freshness.
+
+**Prerequisites:** [[B3 — Generics, Constraints, and Same-Type Relationships]]/[[B14 — Result Builders and DSL Construction]] for generics/builders, [[C1 — ARC fundamentals]] for lifetime, [[D6 — `Sendable`, `@Sendable`, and `sending`]]/[[D7 — Actor Reentrancy and Logic Races]]/[[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]] for transfer/reentrancy/isolation, and [[F5 — Language mode, build settings, and migration flags]] for the exact compiler settings.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-Compiler diagnostics explain a violated static contract; debugger inspection, expression evaluation, memory tools, and event history answer different runtime questions. Start with the smallest reproducer preserving relevant types, effects, imports, and settings. Accepted code can still contain stale-result logic or unsafe external behavior. [Swift compiler diagnostics](https://docs.swift.org/compiler/documentation/diagnostics/)
+A debugger prints a stored field, but evaluating a computed property fails. Those are different operations. Direct inspection can use debug-described storage; an expression may need to import Swift modules, compile code, and execute it in the stopped process.
 
-## Rules and pitfalls
+Likewise, a compiler error, a retained ownership graph, an unsynchronized access, and a stale response require different evidence. Start with a small reproducer preserving the relationship that failed, then choose the tool that answers the actual question. [Compiler diagnostics](https://docs.swift.org/compiler/documentation/diagnostics/)
 
-### Reduce the actual failed relationship
+## Essential mechanics
 
-Replace unrelated generic/builder layers with explicit intermediate types and keep the original actor boundary. ViewBuilder can support different branch view types through its transform; a branch containing a non-view expression is a different defect.
+### Example setup
 
-**Common pitfall:** Adding sending to a retained mutable actor property does not make its returned reference disconnected. Return an independent snapshot or perform the requested operation inside the actor.
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; examples with invalid memory access or data races are never run. Specified traps, where demonstrated, are isolated in separate processes as stated.
 
-### Inspect before evaluating
+### Make a generic relationship explicit
 
-Stored-field inspection can work without compiling an expression, while computed properties and po can execute application code. Optimized variables, module artifacts, actor context, and debugger evaluator support affect results.
+Standalone generic input. The return type preserves the element’s actual ID rather than guessing its concrete type.
 
-**Common pitfall:** A failed expression does not prove corrupt state, and a successful po is not necessarily passive. Record the selected frame and prefer direct inspection before deliberate evaluation.
+```swift
+struct Row: Identifiable { let id: Int }
+func firstID<S: Sequence>(_ rows: S) -> S.Element.ID? where S.Element: Identifiable {
+    rows.first(where: { _ in true })?.id
+}
+let rows = [Row(id: 7)]
+let identifier: Int? = firstID(rows)
+precondition(identifier == 7)
+```
 
-## Interview questions
+**Walkthrough:** The sequence’s element type supplies its ID relationship. Explicit intermediates expose which assumption is wrong without replacing the generic algorithm with unrelated code.
 
-### How do you isolate a generic or builder error, and why are different ViewBuilder branch types not automatically invalid?
+### Keep mutable reference state inside its actor
 
-Remove unrelated layers while retaining the type/effect constraint that fails, then give intermediate values explicit types. Builder branches can become different generic structural alternatives, so different view types alone are not invalid. Determine whether expression conversion, a hook, result type, or isolation requirement is missing.
-
-### Why can stored-field inspection succeed while a computed-property expression fails, and can po change the target?
-
-Stored-field inspection can read debug-described memory directly. A computed-property expression needs evaluator compilation and can invoke code, mutate state, allocate, or trigger callbacks. po can therefore change the target. Treat it as execution, especially around actor isolation or unsafe access.
-
-### What changed in Swift 6.4 module tracking, and what must custom or archived-build debugging preserve?
-
-Swift 6.4 completes precise explicit-module dependency tracking instead of ambiguous by-name lookup, reducing embedded binary-module data. Custom and archived debug workflows must preserve the referenced exact module artifacts and suitable paths/toolchain context. A matching symbol name alone cannot replace a missing module or correct dSYM.
-
-### What distinguishes a closed ownership cycle, a data race, and a stale result?
-
-A closed strong cycle prevents ARC release; a data race permits unsynchronized concurrent access; a stale result violates temporal business policy despite possible data-race freedom. Use ownership graphs, concurrency checking/sanitizers, and controlled request history respectively. No one tool proves all three absent.
-
-## Focused exercise
-
-**Task:** Reduce a non-Sendable actor-return diagnostic to a small example. Repair it with an isolated operation or snapshot and check the caller.
-
-**Acceptance checks:**
-
-- The caller receives a Sendable Dictionary/Data snapshot.
-- Later actor mutation preserves the earlier snapshot.
-- The retained-class-return variant rejects; warning suppression cannot repair its native error.
-
-**Solution:**
-
-Standalone snapshot repair using Foundation Data:
+Shared ImageLoader setup. The actor owns the ImageCache object; callers receive Dictionary/Data values.
 
 ```swift
 import Foundation
+
 final class ImageCache { var storage: [String: Data] = [:] }
 actor ImageLoader {
     private let cache = ImageCache()
     func put(_ data: Data, for key: String) { cache.storage[key] = data }
     func snapshot() -> [String: Data] { cache.storage }
 }
-@main struct Probe {
-    static func main() async {
-        let loader = ImageLoader()
-        await loader.put(Data([1]), for: "avatar")
-        let old = await loader.snapshot()
-        await loader.put(Data([2]), for: "avatar")
-        let current = await loader.snapshot()
-        precondition(old["avatar"] == Data([1]))
-        precondition(current["avatar"] == Data([2]))
+```
+
+**Walkthrough:** The mutable class is an implementation detail. put executes on the actor, while snapshot returns value behavior that can cross the boundary. This does not measure buffer allocations.
+
+### A debugger expression can have visible effects
+
+Shared DebugProbe.swift source. Compile as a fresh local executable with -g -Onone -emit-module -module-name DebugProbe and its matching module path. A breakpoint in stopHere makes the distinction observable.
+
+```swift
+final class DebugCounter: CustomStringConvertible {
+    let stored = 7
+    var evaluations = 0
+    var computed: Int {
+        evaluations += 1
+        return stored
     }
+    var description: String {
+        evaluations += 1
+        return "counter=\(stored)"
+    }
+}
+@inline(never) func stopHere(_ counter: DebugCounter) {
+    print(counter.stored)  // Stop before this line to inspect the parameter.
+}
+let counter = DebugCounter()
+stopHere(counter)
+```
+
+**Walkthrough:** Reading stored/evaluations directly should not call these accessors. Evaluating computed or po counter can run the getter/description and increment evaluations. The commands below give the expected observations at that breakpoint. This revision builds the fixture and runs an ordinary Swift accessor probe, but live LLDB child launch stalled on this host; the counter changes are not a captured debugger transcript.
+
+## Rules and pitfalls
+
+### A different ViewBuilder branch type is not the defect
+
+**Common pitfall:** Treating every heterogeneous builder branch as invalid instead of finding the expression conversion that actually fails.
+
+**Mistake:** Compile-only; intentionally rejected.
+
+```swift
+import SwiftUI
+
+@MainActor @ViewBuilder func invalidContent(_ selected: Bool) -> some View {
+    if selected { Text("Selected") } else { 42 }
 }
 ```
 
-To reproduce the original error separately, add func cacheForDebugging() -> ImageCache { cache } inside ImageLoader and return it to a caller that mutates storage. That retained non-Sendable reference cannot cross the boundary safely.
+**Consequence:** The Int expression lacks the required View conversion; the error is not merely that the branches have different concrete types.
 
-**Reasoning:** The actor keeps the mutable reference and exposes independent value behavior. This validates isolation and snapshot semantics, not allocation count, image rendering, or a live debugger session. The full diagnostic variants below separate retained returns from fresh disconnected transfer.
+**Why:** ViewBuilder can form a structural alternative from supported view expressions. An arbitrary value still needs a supported buildExpression path.
 
-## In practice
+**Correction:** Use appropriate view expressions and retain the different branch types as a valid control.
 
-**Choose it when:** A compiler or runtime observation needs a smaller reproducible boundary.
+```swift
+import SwiftUI
 
-**Investigate by:** Combine reduced compiler probes, intentional evaluator use, and request/task identities.
+@MainActor @ViewBuilder func content(_ selected: Bool) -> some View {
+    if selected { Text("Selected") } else { Image(systemName: "circle") }
+}
+```
 
-**Strong evidence:** State the limits of compiler, debugger, sanitizer, and memory evidence while validating the chosen repair.
+**What changes:** Text and Image are different types but both satisfy the builder’s view contract. The example is object-compiled; it does not render a UI.
 
-### Module tracking and async diagnostic metadata — optional
+### sending does not disconnect a reference the actor retains
 
-#### Swift 6.4 module tracking
+**Common pitfall:** Adding sending to an actor return while keeping the same mutable object in actor storage.
 
-For explicitly built modules, Swift 6.3 began recording precise dependencies and the current module's path; 6.4 completes the transition. SwiftPM/Xcode handle this through the driver. A custom system invoking the frontend directly must supply `-debug-module-path` and keep paths resolvable, including remapping for distributed builds.
+**Mistake:** Compile-only; intentionally rejected.
 
-Such build systems can remove Linux/Windows module-wrapping steps and Darwin `-add_ast_path` usage. Binary Swift modules are no longer packed into dSYMs. Complex expressions still need compatible modules at their original or remapped locations. A dSYM alone therefore does not promise arbitrary expression evaluation on an archived build. Reflection-based inspection has different requirements. [Swift.org: Module Tracking in Swift Debug Info](https://www.swift.org/blog/module-tracking-in-debug-info/)
+```swift
+final class ImageCache { var count = 0 }
+actor Owner {
+    private let cache = ImageCache()
+    func retained() -> sending ImageCache { cache }
+}
+func receive(_ owner: Owner) async {
+    let value = await owner.retained()
+    value.count += 1
+}
+```
 
-Treat an expression-import failure separately from a source error. Compare the loaded binary, debug information, toolchain, SDK, and module paths; run `swift-healthcheck` after the failure to collect evaluator diagnostics. Do not assume deleting caches repairs the underlying build contract. The module-tracking description above is documented behavior; this chapter's local debugger check is a freshly built macOS executable, not an archive-relocation test.
+**Consequence:** Ownership analysis rejects the retained reference transfer.
 
-#### Async debugging: connect the task to the request
+**Why:** The actor still has an alias to mutable state. A keyword cannot make the returned region independent of the retained storage.
 
-Task naming is 6.2 baseline material retained in 6.4. Names help correlate work in tools; they do not establish ownership, cancellation, or result freshness. Use a request identifier that distinguishes repeated requests without placing full query text or credentials in the name. [SE-0469](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0469-task-names.md)
+**Correction:** Keep the requested mutation isolated and return a Sendable snapshot. Prepend ImageLoader setup.
+
+```swift
+let loader = ImageLoader()
+await loader.put(Data([1]), for: "avatar")
+let old = await loader.snapshot()
+await loader.put(Data([2]), for: "avatar")
+let current = await loader.snapshot()
+precondition(old["avatar"] == Data([1]) && current["avatar"] == Data([2]))
+```
+
+**What changes:** The operation stays inside the actor and the old value remains independent after a later update. A fresh disconnected reference can be a different accepted transfer contract; it is not this retained-return contract.
+
+### po is execution, not a passive memory read
+
+**Common pitfall:** Calling a getter or description while investigating state and assuming the target is unchanged.
+
+**Mistake:** With the DebugProbe breakpoint stopped in stopHere, these commands deliberately evaluate code:
+
+```text
+expression -- counter.computed
+po counter
+```
+
+**Consequence:** DebugCounter.evaluations can increase even though the application has not continued past the breakpoint.
+
+**Why:** LLDB’s evaluator compiles an expression and runs accessors or description code. It can allocate, mutate, invoke callbacks, or need compatible modules.
+
+**Correction:** Start with direct stored-field inspection, then evaluate only the operation you intend:
+
+```text
+frame variable counter
+frame variable counter.evaluations
+expression -- counter.computed
+frame variable counter.evaluations
+```
+
+**What changes:** The first inspection establishes a baseline before evaluator effects. The local fixture checks the actual transcript. A failed expression does not by itself prove corrupt storage; inspect selected frame, modules, optimization and actor context too.
+
+## Worked example
+
+### The actor-return diagnostic survives warning suppression
+
+**Setup:** Independent intentionally rejected source. It preserves the caller that crosses the actor boundary rather than compiling an unused accessor only.
+
+**Predict:** Can suppressing RegionIsolation turn this retained object into a valid cross-actor result?
+
+```swift
+import Foundation
+
+final class ImageCache { var storage: [String: Data] = [:] }
+actor ImageLoader {
+    private let cache = ImageCache()
+    func cacheForDebugging() -> ImageCache { cache }
+}
+@diagnose(RegionIsolation, as: ignored, reason: "Teaching negative: native error remains")
+func use(loader: ImageLoader) async {
+    let cache = await loader.cacheForDebugging()
+    cache.storage["avatar"] = Data()
+}
+```
+
+**Outcome:** The compiler still rejects the non-Sendable result across isolation.
+
+**Why:** This is a native error, not a warning that the annotation can demote. The earlier snapshot correction changes the boundary itself. Reduction must retain the caller or it may remove the operation that exposes the failure.
+
+## Interview questions
+
+### How do you isolate a generic or builder error, and why are different ViewBuilder branch types not automatically invalid?
+
+**Answer:** Keep the relevant constraint/effect, name intermediate types, and remove unrelated composition. Different branch types can be valid structural alternatives; identify the failed expression or result requirement.
+
+**Example:** Standalone runnable example.
+
+```swift
+struct Row: Identifiable { let id: Int }
+func label(_ row: Row) -> String { String(row.id) }
+let row = Row(id: 7)
+let identifier: Int = row.id
+let text: String = label(row)
+precondition(identifier == 7 && text == "7")
+```
+
+**Walkthrough:** The concrete intermediate reveals that ID is Int and text conversion is explicit. The earlier accepted/rejected ViewBuilder pair isolates view conversion rather than blaming heterogeneous branches.
+
+**Boundary:** A reduced example must preserve actor/throws/ownership boundaries if those cause the error. A passing simplified algorithm is not a repair if it changed the intended API.
+
+An independent **intentionally rejected** wrong intermediate type exposes that assumption directly:
+
+```swift
+struct Row { let id: Int }
+let identifier: String = Row(id: 7).id
+```
+
+### Why can stored-field inspection succeed while a computed-property expression fails, and can po change the target?
+
+**Answer:** Stored inspection can use reflection/debug metadata without running a getter. Computed properties and po may need evaluator compilation/module imports and can execute target code. Their failure or success answers a different question from direct storage.
+
+**Example:** Use these commands on the named DebugProbe fixture; expected counter changes follow below:
+
+```sh
+lldb /tmp/debug-probe
+```
+
+```text
+breakpoint set --name stopHere
+run
+frame variable counter.stored counter.evaluations
+expression -- counter.computed
+frame variable counter.evaluations
+po counter
+frame variable counter.evaluations
+```
+
+**Walkthrough:** The fresh fixture starts with evaluations zero. The getter and description each increment it when actually evaluated. The stored counter distinguishes inspection from execution. These are expected effects of the supplied accessors; this host did not establish a live LLDB launch.
+
+**Boundary:** Optimized-out variables, missing modules, incompatible SDKs, actor checks and evaluator limitations can all change what commands succeed. A working local -Onone session is not an archived-build relocation or arbitrary-expression guarantee.
+
+### What changed in Swift 6.4 module tracking, and what must custom or archived-build debugging preserve?
+
+**Answer:** Explicitly built modules and debug info track precise module dependencies/paths rather than relying only on names. SwiftPM/Xcode drivers manage that contract; custom frontend builds must preserve matching module artifacts and remapped paths.
+
+**Example:** This is the actual local debug-fixture build shape, using the baseline flags as well:
+
+```sh
+swiftc -g -Onone -module-name DebugProbe -emit-module \
+  -emit-module-path /tmp/DebugProbe.swiftmodule DebugProbe.swift -o /tmp/debug-probe
+lldb /tmp/debug-probe
+```
+
+```text
+# Run after an evaluator import failure, in the relevant debugger session:
+swift-healthcheck
+```
+
+**Walkthrough:** Keep the executable/debug information, selected toolchain/SDK and exact referenced modules together. For a custom frontend invoking explicit module builds, -debug-module-path communicates its own module path; remapping must keep those paths resolvable. Darwin dSYMs no longer carry embedded binary Swift modules under the new model. [Precise module tracking](https://www.swift.org/blog/module-tracking-in-debug-info/)
+
+**Boundary:** The command above builds a fresh local debugger fixture. Live launch was not established on this host, and no distributed/archive path-remapping matrix is claimed. A dSYM or matching symbol name alone does not promise every expression can compile. Remove old module-wrapping/add_ast_path assumptions only under the documented explicit-build model.
+
+### What distinguishes a closed ownership cycle, a data race, and a stale result?
+
+**Answer:** A cycle preserves a strong ownership graph; a data race violates concurrent access safety; a stale result violates which operation may publish. Each needs an appropriate ownership, synchronization, or request-history check.
+
+**Example:** Standalone runnable example.
+
+```swift
+struct Reply {
+    let requestID: Int
+    let value: String
+}
+var currentRequestID = 2
+var displayed = "new"
+let old = Reply(requestID: 1, value: "old")
+if old.requestID == currentRequestID { displayed = old.value }
+precondition(displayed == "new")
+```
+
+**Walkthrough:** This sequential publication check rejects stale identity without needing a data race. [[C1 — ARC fundamentals|C1]] separately tests an ownership cycle; compiler/sanitizer checking addresses different access defects.
+
+**Boundary:** This small identity example is not a full task owner. [[F1 — Testing Strategy in Modern Swift|F1]] and [[F6 — Observation, property wrappers, and language-adjacent state tools|F6]] use controlled asynchronous request arrival/completion, and memory/sanitizer tools retain their own limits.
+
+The ownership case has a different observable failure. This independent runnable probe creates a closed strong cycle, observes it through a weak reference, then breaks the edge so the example cleans up:
+
+```swift
+final class Owner {
+    var action: (() -> Void)?
+}
+func cycleProbe() {
+    weak var surviving: Owner?
+    do {
+        let owner = Owner()
+        surviving = owner
+        owner.action = { [owner] in withExtendedLifetime(owner) {} }
+    }
+    precondition(surviving != nil)
+    surviving?.action = nil
+    precondition(surviving == nil)
+}
+cycleProbe()
+```
+
+The closure retains its owner, which retains the closure. Clearing action breaks that cycle without changing any request identity. A memory graph can reveal the ownership edges; it does not decide whether a result is current.
+
+This separate source is **intentionally rejected**: it attempts to capture the same mutable class into a Sendable detached operation and also mutate it in the caller. No race is executed.
+
+```swift
+final class UnsafeCounter { var count = 0 }
+func unsafelyShare(_ counter: UnsafeCounter) {
+    Task.detached { @Sendable in counter.count += 1 }
+    counter.count += 1
+}
+```
+
+Here the capture violates the static sharing contract. Dynamic race/memory tools inspect executed paths and cannot prove unexecuted paths safe; neither a passing sanitizer run nor fixing this capture establishes result freshness.
+
+### Extension: What does naming a task establish about its owner or result freshness?
+
+**Answer:** Only diagnostic identity. The caller still owns the unstructured handle, cancellation is cooperative, and publication needs an operation identity distinct from repeated query text.
+
+**Example:** Compile-only shared startSearch setup; callers use its owned handle.
 
 ```swift
 func startSearch(
@@ -128,13 +363,60 @@ func startSearch(
 }
 ```
 
-In the checked SDK, this creation helper compiles for macOS 15 / iOS 18. Reading the current task through `Task.name` requires Apple OS 26; reading a task handle through `handle.name` requires 27. The latter accessor is present in this Swift 6.4 distribution even though the SE-0469 page still labels its amendment unimplemented. Availability-negative checks and the macOS 27 runtime distinguish these APIs; older-runtime name display was not tested.
+**Walkthrough:** The helper checks cancellation before and after the service, propagates domain errors, and returns a named task that its caller must await/cancel. Separate controls distinguish creation, Task.name, and handle.name availability.
 
-The caller owns this unstructured task: retain its handle, await `value` and handle errors, and request cancellation when appropriate. A successful service return after cancellation is rejected by the second check. A domain error thrown by the service still propagates; this helper does not convert every error into cancellation. Dropping a handle does not cancel its task. Naming also does not move work to another executor.
+**Boundary:** The ordinary named initializer is back-deployable to macOS 10.15/iOS 13 in this SDK; current-task name needs OS 26 and handle name OS 27. Compilation for an older target does not establish runtime name support there. The executorPreference initializer has its own newer availability. Naming does not select an executor, cancel on handle drop, or establish freshness.
 
-For UI publication, the owner must additionally compare the captured request identity with the current generation after suspension. Cancelling an old request is not permission to publish a new one, and equal query text does not mean equal request identity. F1 supplies the full controlled search example and regression tests; A8 covers owner lifetime. This helper intentionally covers task creation and observation, not a second UI controller implementation.
+A runnable caller keeps the handle and observes both result and name under the OS 27 baseline:
 
-Trace request start, service completion, cancellation request, and the decision to publish or discard using the same identity. Inspect task/async context alongside thread stacks; a suspended task is not necessarily blocked on a currently executing thread. Use the debugger's actual task views and supported stepping behavior for the selected Xcode/runtime. Do not infer actor isolation solely from thread identity. See [[D7 — Actor Reentrancy and Logic Races]] and [[D8 — Isolation Control - `nonisolated`, `isolated` Parameters, and `assumeIsolated`]].
+```swift
+let task = startSearch(requestID: 7, query: "query") { input in [input.uppercased()] }
+let values = try await task.value
+precondition(values == ["QUERY"] && task.name == "search-7")
+```
+
+A fresh independent result is a separate accepted sending contract, rather than a repair by annotation of retained state:
+
+```swift
+final class FreshState { var count = 0 }
+actor Factory { func make() -> sending FreshState { FreshState() } }
+let state = await Factory().make()
+state.count = 1
+precondition(state.count == 1)
+```
+
+## Focused exercise
+
+**Task:** Reduce a retained non-Sendable actor result, repair it with an isolated operation/snapshot, and verify the actual caller.
+
+**Acceptance checks:**
+
+- The reduced retained-return and annotated variants reject for the intended boundary.
+- The caller receives a Dictionary/Data value snapshot.
+- A later actor mutation leaves the old snapshot intact.
+
+**Solution:** Prepend ImageLoader setup; this is the runnable repair.
+
+```swift
+let loader = ImageLoader()
+await loader.put(Data([1]), for: "avatar")
+let old = await loader.snapshot()
+await loader.put(Data([2]), for: "avatar")
+await loader.put(Data([3]), for: "thumbnail")
+let current = await loader.snapshot()
+precondition(old == ["avatar": Data([1])])
+precondition(current == ["avatar": Data([2]), "thumbnail": Data([3])])
+```
+
+**Reasoning:** The actor retains and mutates the class; only value snapshots cross. Object compilation includes ownership diagnostics, while execution establishes the chosen value behavior. It is independent of allocation counts or image rendering.
+
+## In practice
+
+**Choose it when:** Reduce the actual failed contract before choosing a compiler, debugger or runtime tool.
+
+**Investigate by:** Record the frame/build/modules and distinguish passive inspection from deliberate evaluation; trace request identities across suspension.
+
+**Strong evidence:** State what compiler, debugger, sanitizer and memory evidence establish, then verify the repaired boundary from an actual caller.
 
 ## References
 

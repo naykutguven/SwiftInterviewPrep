@@ -9,98 +9,43 @@ tags:
 
 # F4 — Macros and Compile-Time Code Generation
 
-**Goal:** Generate an expression wrapper that evaluates its argument exactly once and validate the expanded client.
+**Learning goals:**
+
+- Separate the public macro declaration, host syntax plugin, and generated client program.
+- Check supported syntax, expansion diagnostics, compiler integration and runtime effects independently.
+- Choose a macro role deliberately and preserve generated access, isolation, ownership and availability contracts.
+
+**Prerequisites:** [[B10 — API Design Guidelines and Swift-Native Surface Design]]/[[B11 — Library Evolution and Resilience-Aware API Design]]/[[B13 — Property Wrappers and Generated Storage Semantics]]/[[B14 — Result Builders and DSL Construction]] for API, wrappers and builders; [[D6 — `Sendable`, `@Sendable`, and `sending`]]/[[D14 — Approachable Concurrency and Default Isolation]] for isolation; [[E5 — Modules, packages, targets, products, and resources]] for package targets; [[F2 — Debugging Swift code with LLDB and compiler diagnostics]]/[[F5 — Language mode, build settings, and migration flags]] for compiler reproductions and settings.
 
 > **Baseline:** Swift 6.4, Swift 6 mode, Approachable Concurrency enabled, default isolation `nonisolated`. The additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See [[Swift Senior & Staff Rubric and Prioritized Study Checklist#Shared Example Baseline|shared settings]] and [[F5 — Language mode, build settings, and migration flags]].
 
 ## Mental model
 
-A macro has a public declaration contract, a host-side syntax implementation, and generated Swift code compiled in the client. The plugin transforms syntax; it does not evaluate arbitrary arguments as runtime values or query every inferred type/conformance. Generated code still obeys access, ownership, isolation, availability, and ordinary evaluation rules. [Expression macros](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0382-expression-macros.md)
+A macro can replace repeated source structure, but the expanded program still has ordinary Swift rules. Three components participate: a **public declaration** tells client type checking what macro call is supported, a **host plugin** transforms syntax during compilation, and **generated Swift** is checked and executed in the client.
 
-## Rules and pitfalls
+The plugin sees syntax, not a general database of every inferred type or conformance. A syntax snapshot, a successful client build, and a runtime evaluation count answer different questions. [Expression macros](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0382-expression-macros.md)
 
-### Validate expansion and compiled behavior separately
+## Essential mechanics
 
-Use syntax tests for supported input, emitted structure, escaping, and diagnostics. Compile an ordinary client to check generated types, names, access, isolation, and availability; run it to check evaluation count and behavior.
+### Example setup
 
-**Common pitfall:** A snapshot can match expected text that does not compile or evaluates a side effect twice. Keep each expression once in executable output and encode source text as a string literal safely.
+Use the [[D1 — Structured Concurrency Fundamentals#Example setup and how to run it|D1 compiler command]] with this chapter's baseline flags. Each example is a separate Swift script; prepend only the named shared setup. Top-level statements are main-actor isolated. Function-only blocks marked **compile-only** use `-c -o /tmp/Example.o` instead of linking. Object compilation is important: type checking alone can miss transfer and noncopyable-ownership diagnostics. Rejected examples are checked separately from their corrections; examples with invalid memory access or data races are never run. Specified traps, where demonstrated, are isolated in separate processes as stated.
 
-### Choose generation only for a useful contract
+After saving all six package files, build the syntax tests and ordinary client from the package root. SwiftPM handles the public module and host-plugin loading for these targets.
 
-Expression, declaration, member, accessor, conformance/extension, and body roles transform different surfaces. A body macro can replace an original implementation, so macros are not universally additive-only. Host plugin/toolchain dependencies differ from the deployment requirements of generated client code.
-
-**Common pitfall:** A plugin accepting literal syntax does not prove comprehensive route validation or discover every name conflict in other files. State the syntactic domain and let the compiler check resulting Swift relationships.
-
-## Interview questions
-
-### What can a macro validate from syntax, and what must the generated Swift contract leave to the compiler?
-
-It can validate syntax shape, literal spelling/decoded content, declaration kinds, and supported structural arguments. General inferred type relationships, conformance, actor access, and generated-code validity belong to compiler checking. Macro declarations participate in type checking, but SwiftSyntax is not a general semantic-query API.
-
-### Why can a macro snapshot pass while a client fails to compile or behaves incorrectly?
-
-Text can have wrong names, types, access, availability, isolation, or duplicated effects. A snapshot verifies one expansion representation, while a real client verifies integration and runtime behavior. Test all three rather than treating generated text as already checked application code.
-
-### How can a body macro replace an unresolved original body, and what constraints still apply to its replacement?
-
-A body role supplies replacement body syntax, so the discarded unresolved original need not be type-correct as an implementation. The replacement must still satisfy the declaration's result, effects, ownership, isolation, and available APIs. The fixture returning zero fails when its declared result is changed to String.
-
-### Which costs and compatibility obligations justify using a macro rather than a protocol, property wrapper, or ordinary code?
-
-Generation is justified when it removes meaningful repeated structure while preserving a clear contract that ordinary code cannot express as well. Weigh diagnostics, build time, host/plugin distribution, SwiftSyntax compatibility, generated API evolution, and testing burden. A protocol, wrapper, or helper is simpler when it already expresses the behavior.
-
-## Focused exercise
-
-**Task:** Generate one expression wrapper that evaluates its argument once. Check expansion, client compilation, and runtime behavior separately.
-
-**Acceptance checks:**
-
-- Expansion contains the input expression once as executable syntax and its escaped source as data.
-- A separate client compiles and observes one evaluation.
-- Unsupported syntax and incompatible generated result types reject separately; runtime output is checked independently of snapshots.
-
-**Solution:** The public expression declaration names a host implementation. The implementation emits the argument once as executable syntax and its source spelling as escaped string data. Put these declarations in the separate public/implementation targets of the complete package below; SwiftSyntax 604.0.0 and plugin registration are dependencies.
-
-```swift
-// Public declaration target
-@freestanding(expression)
-public macro sourceValue<T>(_ value: T) -> (T, String) =
-    #externalMacro(module: "InterviewPlugin", type: "SourceValueMacro")
+```sh
+cd /tmp/MacroNotes
+swift test --filter MacroTests
+swift run MacroClient
 ```
 
-```swift
-import SwiftSyntax
-import SwiftSyntaxBuilder
-import SwiftSyntaxMacros
-import SwiftParser
+This validation host also needs `--disable-sandbox -Xswiftc -disable-sandbox` to launch compiler plugins in its restricted execution environment. The package dependency remains the pinned public SwiftSyntax release.
 
-public struct SourceValueMacro: ExpressionMacro {
-    public static func expansion(
-        of node: some FreestandingMacroExpansionSyntax,
-        in context: some MacroExpansionContext
-    ) throws -> ExprSyntax {
-        guard node.arguments.count == 1, let argument = node.arguments.first?.expression else {
-            throw MacroExpansionErrorMessage("sourceValue requires one expression")
-        }
-        return "(\(argument), \(literal: argument.trimmedDescription))"
-    }
-}
-```
+### State the client contract before implementing syntax
 
-For next() returning 7 and incrementing a counter, the generated tuple must yield 7, "next()", and one evaluation. Check the emitted expansion, compile that client, and run its counter assertions separately. The full package supplies registration, ordinary client calls, syntax tests, and independent negative cases.
+Create `/tmp/MacroNotes` and save the six complete package files at their stated relative paths, including the MacroClient file in the worked example. The other Swift blocks are independent clients or rejected examples, not extra files in those targets. sourceValue returns the input and its source spelling; RoutePath adds a path member; ReplaceWithZero replaces a function body. These are custom teaching macros, not built-in APIs. The expression’s generic T remains Copyable.
 
-**Reasoning:** The expression wrapper preserves the original expression's runtime evaluation once, while literal interpolation safely encodes its source spelling. Introducing a closure or duplicated argument would change lifetime/effects and must not be an accidental implementation detail. This example's generic input remains Copyable.
-
-
-### Complete package and additional macro roles — optional
-
-Temporary package source follows. The focused expression macro is sourceValue; the attached macros retain distinct role and body-replacement lessons. SwiftSyntax 604.0.0 and a supported compiler/plugin build are dependencies, not built-in APIs.
-
-These are files for a **temporary** package, not additions to this Markdown repository. `sourceValue`, `RoutePath`, and `ReplaceWithZero` are custom macros defined here. They are not built-in Swift APIs. `ReplaceWithZero` is a teaching probe, not a suggested production abstraction.
-
-#### Public declaration target
-
-Place this in `Sources/InterviewMacros/Macros.swift`:
+**File:** Sources/InterviewMacros/Macros.swift
 
 ```swift
 @freestanding(expression)
@@ -116,17 +61,32 @@ public macro ReplaceWithZero() =
     #externalMacro(module: "InterviewPlugin", type: "ReplaceWithZeroMacro")
 ```
 
-The expression's generic parameter is implicitly Copyable. This example does not promise support for a noncopyable argument. The route macro adds a named member; it does not add an endpoint conformance or response type.
+**Walkthrough:** #externalMacro identifies the implementation module/type. Freestanding expression, attached member, and attached body roles transform different surfaces. A member declaration’s names clause constrains what it introduces; it does not automatically add public access or a protocol conformance.
 
-#### Implementation target
+### Read a macro call as a generated expression
 
-Place this in `Sources/InterviewPlugin/Implementation.swift`:
+After building MacroNotes below, this is a separate ordinary InterviewMacros client. Read the call first, then inspect the implementation that produces it.
 
 ```swift
+import InterviewMacros
+
+let pair = #sourceValue(7)
+precondition(pair.0 == 7 && pair.1 == "7")
+```
+
+**Walkthrough:** The caller writes #sourceValue(7). Expansion supplies the tuple (7, "7"); the first element is executable input and the second is its source text. The compiler checks that tuple against the public generic declaration before this client runs.
+
+### Transform syntax, keeping the executable expression once
+
+The complete implementation target follows. SwiftSyntaxBuilder’s literal interpolation escapes source text as data. RoutePath accepts structs and noninterpolated literals whose decoded value begins with /; that is a narrow syntax policy, not comprehensive URL validation. BodyMacro supplies the replacement body rather than adding to the old one.
+
+**File:** Sources/InterviewPlugin/Implementation.swift
+
+```swift
+import SwiftParser
 import SwiftSyntax
 import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
-import SwiftParser
 
 public struct SourceValueMacro: ExpressionMacro {
     public static func expansion(
@@ -151,11 +111,13 @@ public struct RoutePathMacro: MemberMacro {
             throw MacroExpansionErrorMessage("RoutePath requires a struct")
         }
         guard let arguments = node.arguments?.as(LabeledExprListSyntax.self),
-              arguments.count == 1,
-              let literal = arguments.first?.expression.as(StringLiteralExprSyntax.self),
-              let path = literal.representedLiteralValue,
-              path.hasPrefix("/") else {
-            throw MacroExpansionErrorMessage("RoutePath requires a noninterpolated string literal starting with /")
+            arguments.count == 1,
+            let literal = arguments.first?.expression.as(StringLiteralExprSyntax.self),
+            let path = literal.representedLiteralValue,
+            path.hasPrefix("/")
+        else {
+            throw MacroExpansionErrorMessage(
+                "RoutePath requires a noninterpolated string literal starting with /")
         }
         return ["static var path: Swift.String { \(literal: path) }"]
     }
@@ -172,17 +134,13 @@ public struct ReplaceWithZeroMacro: BodyMacro {
 }
 ```
 
-`sourceValue` inserts the argument once as executable syntax and separately encodes its trimmed source spelling as a string literal. SwiftSyntaxBuilder's `literal:` interpolation escapes data for a Swift literal; raw concatenation would mishandle quotes and backslashes.
+**Walkthrough:** SourceValueMacro inserts argument once as executable syntax, then its trimmed spelling through literal:. RoutePathMacro checks declaration kind/literal syntax and emits an internal static Swift.String member. ReplaceWithZeroMacro discards the old body and emits return 0, which must still satisfy the declared function type/effects. The compiler checks resulting relationships.
 
-`RoutePath` deliberately accepts only structs and a noninterpolated literal whose decoded value starts with `/`. `representedLiteralValue` comes from SwiftParser. A variable containing an identical string is outside this syntax contract. This is a prefix rule, not comprehensive URL validation: it does not encode components, reject every invalid route, or implement parameter substitution.
+### Register the host plugin and build its dependency graph
 
-Under this baseline, the generated `path` is nonisolated and **internal**, including on a public struct. A macro promising a nonisolated member across MainActor-default clients would need to emit that annotation explicitly. Access levels do not automatically propagate from the decorated declaration. A production macro must define its intended access policy and test it across modules. The compiler diagnoses duplicate `path` declarations; this sample does not attempt to discover all conflicts across files or extensions.
+The entry lists implementation types that the public declarations name. CompilerPluginSupport’s .macro target is distinct from a build-tool plugin; the implementation runs on the build host even when the generated client targets iOS.
 
-For a macro that introduces local temporaries, use the expansion context's unique-name facilities and check name lookup. Multiple roles must not rely on mutable plugin state or expansion ordering to coordinate generated identifiers. Keep output reproducible from supported inputs and context.
-
-#### Plugin registration
-
-Place this in `Sources/InterviewPlugin/Plugin.swift`:
+**File:** Sources/InterviewPlugin/Plugin.swift
 
 ```swift
 import SwiftCompilerPlugin
@@ -191,21 +149,17 @@ import SwiftSyntaxMacros
 @main
 struct InterviewPlugin: CompilerPlugin {
     let providingMacros: [Macro.Type] = [
-        SourceValueMacro.self, RoutePathMacro.self, ReplaceWithZeroMacro.self
+        SourceValueMacro.self, RoutePathMacro.self, ReplaceWithZeroMacro.self,
     ]
 }
 ```
 
-The module/type strings in `#externalMacro` must identify registered implementation types. Importing the public API module is not enough if the compiler cannot load its plugin when expansion is needed.
-
-#### Package manifest
-
-Place this in `Package.swift`:
+**File:** Package.swift
 
 ```swift
+import CompilerPluginSupport
 // swift-tools-version: 6.4
 import PackageDescription
-import CompilerPluginSupport
 
 let package = Package(
     name: "MacroNotes",
@@ -222,102 +176,54 @@ let package = Package(
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-                .product(name: "SwiftParser", package: "swift-syntax")
+                .product(name: "SwiftParser", package: "swift-syntax"),
             ],
-            swiftSettings: [.defaultIsolation(nil), .enableUpcomingFeature("NonisolatedNonsendingByDefault"), .enableUpcomingFeature("InferIsolatedConformances")]
+            swiftSettings: [
+                .defaultIsolation(nil), .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+                .enableUpcomingFeature("InferIsolatedConformances"),
+            ]
         ),
-        .target(name: "InterviewMacros", dependencies: ["InterviewPlugin"],
-                swiftSettings: [.defaultIsolation(nil), .enableUpcomingFeature("NonisolatedNonsendingByDefault"), .enableUpcomingFeature("InferIsolatedConformances")]),
-        .executableTarget(name: "MacroClient", dependencies: ["InterviewMacros"],
-                          swiftSettings: [.defaultIsolation(nil), .enableUpcomingFeature("NonisolatedNonsendingByDefault"), .enableUpcomingFeature("InferIsolatedConformances")]),
+        .target(
+            name: "InterviewMacros", dependencies: ["InterviewPlugin"],
+            swiftSettings: [
+                .defaultIsolation(nil), .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+                .enableUpcomingFeature("InferIsolatedConformances"),
+            ]),
+        .executableTarget(
+            name: "MacroClient", dependencies: ["InterviewMacros"],
+            swiftSettings: [
+                .defaultIsolation(nil), .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+                .enableUpcomingFeature("InferIsolatedConformances"),
+            ]),
         .testTarget(
             name: "MacroTests",
             dependencies: [
                 "InterviewPlugin",
-                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax")
+                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
             ],
-            swiftSettings: [.defaultIsolation(nil), .enableUpcomingFeature("NonisolatedNonsendingByDefault"), .enableUpcomingFeature("InferIsolatedConformances")]
-        )
+            swiftSettings: [
+                .defaultIsolation(nil), .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+                .enableUpcomingFeature("InferIsolatedConformances"),
+            ]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
 ```
 
-`CompilerPluginSupport` provides `.macro`; it is distinct from a SwiftPM build-tool plugin. The library target exposes the declarations, while its macro dependency supplies the host executable. The test target imports implementation types to inspect expansions. All files named by the target layout are supplied in this chapter.
+**Walkthrough:** The public target depends on its host macro target, while the ordinary executable imports the public module. The package pins SwiftSyntax 604.0.0, aligned with this Swift 6.4 toolchain, for reproducibility. Use a supported compiler/dependency combination and test upgrades rather than assuming every patch needs a new pin. Validation fetched this exact tag and builds it through a temporary local mirror; no private toolchain-library path substitutes for the package dependency. [SwiftSyntax releases](https://github.com/swiftlang/swift-syntax/blob/604.0.0/README.md)
 
-SwiftSyntax 604.0.0 was released alongside Swift 6.4. Its release families track Swift tooling; use a version supported by the selected compiler and verify actual package builds. This example pins one checked version for reproducibility. That is not a claim that every compiler patch needs a new package pin, nor a universal dependency-range policy for libraries. Preserve the resolved dependency graph in applications and exercise supported dependency ranges in library CI. [SwiftSyntax versioning](https://github.com/swiftlang/swift-syntax/blob/604.0.0/README.md), [604.0.0 release](https://github.com/swiftlang/swift-syntax/releases/tag/604.0.0)
+### Inspect generated syntax with dedicated tests
 
-Swift tools version 6.4 and Swift language mode 6 are different settings. The manifest's `.defaultIsolation(nil)` makes its nonisolated default explicit. The checked build uses SwiftPM's Swift Build default; F5 discusses build-system selection. Do not add private toolchain library search paths to application targets as a substitute for a maintained macro package dependency.
+These three tests assert expression expansion, a member expansion, and the unsupported-route diagnostic. They are the syntax layer, not substitutes for the ordinary client used later.
 
-Place this in `Sources/MacroClient/main.swift`:
-
-```swift
-import InterviewMacros
-
-@RoutePath("/users")
-struct UsersRoute {}
-
-@ReplaceWithZero
-func replaced() -> Int {
-    nameThatDoesNotExist
-}
-
-func probe() {
-    var evaluations = 0
-    func next() -> Int { evaluations += 1; return 7 }
-    let (value, source) = #sourceValue(next())
-    precondition(value == 7 && source == "next()" && evaluations == 1)
-    precondition(UsersRoute.path == "/users")
-    precondition(replaced() == 0)
-    print(value, source, evaluations, UsersRoute.path, replaced())
-}
-
-probe()
-```
-
-It prints `7 next() 1 /users 0`. The counter proves one runtime evaluation in this case. The source spelling is a string, not a second invocation. The deliberately unresolved name in `replaced` disappears with the old body; `return 0` is what the compiler checks. Changing that function's return type to String fails because the generated Int is incompatible.
-
-This is an **intentionally rejected** client, separate from the package's passing client:
+**File:** Tests/MacroTests/MacroTests.swift
 
 ```swift
-import InterviewMacros
-@RoutePath("users") struct Users {}
-```
-
-Its diagnostic asks for a noninterpolated literal starting with `/`. Variables, interpolation, and application to a class are also rejected by the implementation. These are syntax-policy diagnostics, not a runtime route validator.
-
-This second client is **intentionally rejected** by type checking the generated body:
-
-```swift
-import InterviewMacros
-@ReplaceWithZero func wrong() -> String { "original" }
-```
-
-The checked negative cases also cover a duplicate member, an incompatible expression result type, a MainActor call from a nonisolated function, a response type that violates the endpoint protocol, inaccessible generated members across modules, and a missing plugin. The error's origin matters: distinguish a plugin diagnostic from a compiler error in the generated program or a plugin-loading failure.
-
-## In practice
-
-**Choose it when:** Repeated syntax warrants a maintained generation boundary with explicit supported inputs.
-
-**Investigate by:** Inspect macro expansion, compile clients across boundaries, and run side-effect-count tests.
-
-**Strong evidence:** Justify the macro against ordinary code and maintain supported host, client, and SwiftSyntax/toolchain configurations.
-
-### Macro test layers and debugging — optional
-
-Use three complementary layers:
-
-1. **Expansion and diagnostic tests:** inspect the syntax produced for supported input, failure messages, and source locations.
-2. **Compiler integration tests:** compile real clients in the relevant modules, language/isolation settings, SDKs, and deployment targets. Include intentional failures.
-3. **Behavior tests:** verify evaluation count, error propagation, generated state/ownership behavior, and the domain contract at runtime.
-
-Place this in `Tests/MacroTests/MacroTests.swift`:
-
-```swift
-import XCTest
+import InterviewPlugin
 import SwiftSyntaxMacros
 import SwiftSyntaxMacrosTestSupport
-import InterviewPlugin
+import XCTest
 
 final class MacroTests: XCTestCase {
     func testOnceOnlyExpansion() {
@@ -335,13 +241,13 @@ final class MacroTests: XCTestCase {
             struct Users {}
             """,
             expandedSource: """
-            struct Users {
+                struct Users {
 
-                static var path: Swift.String {
-                    "/users"
+                    static var path: Swift.String {
+                        "/users"
+                    }
                 }
-            }
-            """,
+                """,
             macros: ["RoutePath": RoutePathMacro.self]
         )
     }
@@ -353,21 +259,347 @@ final class MacroTests: XCTestCase {
             struct Users {}
             """,
             expandedSource: "struct Users {}",
-            diagnostics: [DiagnosticSpec(
-                message: "RoutePath requires a noninterpolated string literal starting with /",
-                line: 1, column: 1
-            )],
+            diagnostics: [
+                DiagnosticSpec(
+                    message: "RoutePath requires a noninterpolated string literal starting with /",
+                    line: 1, column: 1
+                )
+            ],
             macros: ["RoutePath": RoutePathMacro.self]
         )
     }
 }
 ```
 
-Run `swift test --filter MacroTests` from the temporary package. A passing syntax snapshot does not type-check its output as an app. The separate client checks are what establish the sample's compiled behavior. Diagnostic wording is part of the test contract here; maintain useful errors when upgrading syntax libraries.
+**Walkthrough:** A matching expansion string establishes the transformation representation. Diagnostic locations/messages are part of this test contract. A separate client must still check types, access, isolation, deployment and executable effects.
 
-In Xcode, inspect the macro expansion at the invocation. For the checked compiler, `swiftc -Xfrontend -dump-macro-expansions` also shows expansions when the command includes the client imports and host plugin configuration. It is a compiler diagnostic option, not a permanent production build setting. F2 covers reducing compiler failures and recording exact invocations.
+## Rules and pitfalls
 
-This chapter's package passes three expansion/diagnostic tests. Additional temporary checks compile the public API and three client sources for macOS 15 and iOS 18 deployment, and for macOS with MainActor default plus NonisolatedNonsendingByDefault. The clients execute on the macOS 27 host. Extra cases exercise escaped/raw literals, nested/generic structs, and a throwing argument evaluated once. The validation record separates these checks from untested older-OS, iOS-runtime, and cross-platform behavior.
+### Duplicating executable syntax duplicates effects
+
+**Common pitfall:** Emitting an argument twice because both value and description are wanted. This is the mistaken generated Swift, not a supported sourceValue expansion.
+
+**Mistake:** Standalone runnable example.
+
+```swift
+func duplicatedProbe() {
+    var evaluations = 0
+    func next() -> Int {
+        evaluations += 1
+        return 7
+    }
+    let pair = (next(), next())
+    precondition(pair.0 == 7 && pair.1 == 7 && evaluations == 2)
+}
+duplicatedProbe()
+```
+
+**Consequence:** The two tuple elements evaluate next twice.
+
+**Why:** Both positions contain executable syntax. Source spelling must be emitted as string data instead of another invocation.
+
+**Correction:** Use the real expression macro, whose implementation emits the argument only once.
+
+```swift
+import InterviewMacros
+
+func onceProbe() {
+    var evaluations = 0
+    func next() -> Int {
+        evaluations += 1
+        return 7
+    }
+    let pair = #sourceValue(next())
+    precondition(pair.0 == 7 && pair.1 == "next()" && evaluations == 1)
+}
+onceProbe()
+```
+
+**What changes:** The result contains one evaluated Int and one source String. The separate package snapshot verifies that shape, while this executable observes the effect count.
+
+### Raw insertion into a string literal does not escape source text
+
+**Common pitfall:** Generating a source-description literal by concatenating quotes around syntax. This bad expansion is intentionally rejected.
+
+**Mistake:** Compile-only; intentionally rejected.
+
+```swift
+let pair = ("x", "call("x")")
+```
+
+**Consequence:** The embedded quotes break the generated Swift expression.
+
+**Why:** Source spelling can contain quotes, backslashes and raw-string delimiters. Text concatenation does not encode them as literal data.
+
+**Correction:** Use the real macro’s literal interpolation and check an input that contains a quote.
+
+```swift
+import InterviewMacros
+
+let pair = #sourceValue(#"a"b"#)
+precondition(pair.0 == #"a"b"#)
+precondition(pair.1 == ##"#"a"b"#"##)
+```
+
+**What changes:** The input value and its exact source spelling survive as separate values. Expansion and compiled execution both matter; an aesthetically plausible string snapshot can still be invalid Swift.
+
+### A public decorated type does not make a generated member public
+
+Shared PrivateRoutes module for the negative client. It is a separately compiled module, not prepended to its consumer. The sample macro intentionally emits internal path access.
+
+```swift
+import InterviewMacros
+
+@RoutePath("/users") public struct UsersRoute {}
+```
+
+**Common pitfall:** Expecting the macro-generated member to inherit public visibility from the struct.
+
+**Mistake:** Ordinary external client; intentionally rejected:
+
+```swift
+import PrivateRoutes
+
+let path = UsersRoute.path
+```
+
+**Consequence:** Clients can name the public type but not its internal generated path.
+
+**Why:** Generated code has the access/isolation the macro emitted or the client inferred. Access modifiers do not automatically propagate from the decorated declaration.
+
+**Correction:** Publish an explicit supported API or deliberately change the macro’s generation contract. This PublicRoutes module exposes a real public facade over the internal generated detail:
+
+```swift
+import InterviewMacros
+
+@RoutePath("/users") public struct UsersRoute {}
+public func usersPath() -> String { UsersRoute.path }
+```
+
+**What changes:** The ordinary client below calls the intended public function. A macro that promises a public/nonisolated member would need to emit those modifiers deliberately and validate that contract across modules/default-isolation policies.
+
+```swift
+import PublicRoutes
+
+precondition(usersPath() == "/users")
+```
+
+## Worked example
+
+### Expand, compile and execute three distinct roles
+
+**Setup:** Complete ordinary MacroClient in the shared package. It imports public declarations; the package loads the registered host plugin.
+
+**Predict:** Will the unresolved name in the replaced body prevent this valid generated program from compiling?
+
+```swift
+import InterviewMacros
+
+@RoutePath("/users")
+struct UsersRoute {}
+
+@ReplaceWithZero
+func replaced() -> Int {
+    nameThatDoesNotExist
+}
+
+func probe() {
+    var evaluations = 0
+    func next() -> Int {
+        evaluations += 1
+        return 7
+    }
+    let (value, source) = #sourceValue(next())
+    precondition(value == 7 && source == "next()" && evaluations == 1)
+    precondition(UsersRoute.path == "/users")
+    precondition(replaced() == 0)
+    print(value, source, evaluations, UsersRoute.path, replaced())
+}
+
+probe()
+```
+
+**Outcome:** The client prints 7 next() 1 /users 0.
+
+**Why:** The expression evaluates once, the member supplies the path, and the body replacement removes the unresolved original. What is checked is the generated return 0, not the discarded body.
+
+## Interview questions
+
+### What can a macro validate from syntax, and what must the generated contract leave to the compiler?
+
+**Answer:** It can inspect declaration kind, argument syntax and supported literal content. General inferred type/conformance, actor access and generated-program validity remain compiler responsibilities.
+
+**Example:** Standalone runnable example.
+
+```swift
+import InterviewMacros
+
+@RoutePath("/users") struct UsersRoute {}
+precondition(UsersRoute.path == "/users")
+```
+
+**Walkthrough:** The plugin accepts this struct and slash-prefixed literal and emits a path. The variable-form negative below is rejected even if its runtime string would be identical.
+
+**Boundary:** This is a prefix/literal policy, not complete URL validation or a general semantic-query API. A production macro must define conflicts, names and access policy.
+
+An independent **intentionally rejected** syntactic input uses a variable rather than a literal:
+
+```swift
+import InterviewMacros
+
+let path = "/users"
+@RoutePath(path) struct UsersRoute {}
+```
+
+### Why can a macro snapshot pass while a client fails to compile or behaves incorrectly?
+
+**Answer:** The snapshot checks syntax representation; type checking and behavior can still fail because of generated names, effects, access, isolation, availability or duplicated evaluation. Keep separate integration/runtime layers.
+
+**Example:** Independent intentionally rejected client.
+
+```swift
+import InterviewMacros
+
+@RoutePath("/users") struct Conflict {
+    static var path: String { "/existing" }
+}
+```
+
+**Walkthrough:** The syntactically sensible generated member conflicts with an existing member, so the compiler rejects the actual client. The plugin does not discover every declaration in other files/extensions.
+
+**Boundary:** Snapshot tests need useful negative diagnostics too, but cannot replace ordinary compiler clients. A unique-name facility helps local generated temporaries; it does not excuse an undefined public naming contract.
+
+### How can a body macro replace an unresolved original body, and what constraints still apply to its replacement?
+
+**Answer:** The role supplies a new body, so the discarded original does not need to be type-correct as the implementation. The replacement still must satisfy return type, effects, isolation, ownership and availability.
+
+**Example:** Standalone runnable example.
+
+```swift
+import InterviewMacros
+
+@ReplaceWithZero func replaced() -> Int { nameThatDoesNotExist }
+precondition(replaced() == 0)
+```
+
+**Walkthrough:** The unresolved original is replaced by return 0 and the Int result executes correctly. The independent String variant below fails on the generated type relationship.
+
+**Boundary:** A body macro is not universally additive. This teaching macro discards behavior and is not a proposed production abstraction.
+
+```swift
+import InterviewMacros
+
+@ReplaceWithZero func wrong() -> String { "original" }
+```
+
+### Which costs and compatibility obligations justify a macro instead of ordinary code, a protocol or a wrapper?
+
+**Answer:** Use generation when removing repeated syntax is worth maintaining diagnostics, plugin builds, SwiftSyntax/toolchain support and generated API compatibility. Prefer an ordinary abstraction when it already expresses the contract clearly.
+
+**Example:** Standalone runnable example.
+
+```swift
+func withSource<T>(_ value: T, source: String) -> (T, String) { (value, source) }
+func ordinaryProbe() {
+    var evaluations = 0
+    func next() -> Int {
+        evaluations += 1
+        return 7
+    }
+    let pair = withSource(next(), source: "next()")
+    precondition(pair.0 == 7 && pair.1 == "next()" && evaluations == 1)
+}
+ordinaryProbe()
+```
+
+**Walkthrough:** An ordinary helper preserves once-only evaluation, but the caller must keep its source label synchronized manually. The macro buys automatic syntax capture; a protocol or wrapper can address different repeated behavior without a host plugin.
+
+**Boundary:** Build time, diagnostics, generated-member evolution and host/client platform support are real costs. The macro’s deployment requirements come from generated client APIs as well as compiler support, not from the host’s ability to launch the plugin.
+
+### Extension: Does a syntactically accepted declaration prove a conformance or ownership relationship?
+
+**Answer:** No. Generated declarations are ordinary Swift; the compiler must check their constraints and the public macro’s generic input defaults.
+
+**Example:** Independent intentionally rejected compiler-conformance client.
+
+```swift
+import InterviewMacros
+
+protocol Endpoint { associatedtype Response: Decodable }
+struct NotDecodable {}
+@RoutePath("/users") struct InvalidEndpoint: Endpoint { typealias Response = NotDecodable }
+```
+
+**Walkthrough:** The route syntax is accepted, but Endpoint conformance fails because the chosen response does not satisfy Decodable. The macro does not claim to validate inferred conformances.
+
+**Boundary:** The expression macro’s T is also Copyable in this sample; suppressing ownership defaults would require a new supported contract, not a claim that syntax substitution handles every noncopyable value.
+
+The independent **intentionally rejected** expression input exposes that Copyable limit:
+
+```swift
+import InterviewMacros
+
+struct Token: ~Copyable { let id: Int }
+func invalid() {
+    let token = Token(id: 1)
+    _ = #sourceValue(token)
+}
+```
+
+## Focused exercise
+
+**Task:** Generate an expression wrapper that evaluates its argument once; verify expansion, compiler integration and behavior separately.
+
+**Acceptance checks:**
+
+- The emitted tuple contains the expression once as executable syntax and escaped spelling as String data.
+- A separate client compiles and observes exactly one evaluation, including a throwing input.
+- Unsupported syntax, incompatible generated types and missing plugin loading reject independently.
+
+**Solution:** Use the complete package files above and run its three syntax tests and ordinary MacroClient. This separate client demonstrates the throwing expression boundary too:
+
+```swift
+import InterviewMacros
+
+enum Failure: Error { case expected }
+func throwingProbe() throws {
+    var calls = 0
+    func value(_ succeeds: Bool) throws -> Int {
+        calls += 1
+        if !succeeds { throw Failure.expected }
+        return 7
+    }
+    let first = try #sourceValue(value(true))
+    precondition(first.0 == 7 && first.1 == "value(true)" && calls == 1)
+    do {
+        _ = try #sourceValue(value(false))
+        preconditionFailure()
+    } catch Failure.expected {}
+    precondition(calls == 2)
+}
+try throwingProbe()
+```
+
+```sh
+# Run from the complete temporary MacroNotes package.
+swift test --filter MacroTests
+swift run MacroClient
+# For a separately compiled client, include the public module and host plugin.
+# Discover paths from this build rather than assuming a historical .build/debug layout.
+swift build --show-bin-path
+# Add -Xfrontend -dump-macro-expansions to the actual client compiler command
+# to inspect generated syntax while retaining imports and plugin configuration.
+```
+
+**Reasoning:** Runtime checks observe each argument once on success/throw. Syntax snapshots establish the representation; compiled clients check relationships and loaded-plugin integration. The host plugin is built from pinned package sources, while macOS/iOS client compilation and MainActor-default controls are separate. Macro diagnostics, ordinary compiler failures and missing-plugin failures should not be conflated.
+
+## In practice
+
+**Choose it when:** Use generation only for a maintained syntax contract whose benefits exceed an ordinary abstraction’s simplicity.
+
+**Investigate by:** Inspect expansion, compile cross-module/default-isolation clients, and execute side-effect/error cases with a supported toolchain/dependency.
+
+**Strong evidence:** Preserve host/plugin loading and generated access/isolation/ownership/availability contracts, not merely matching expansion text.
 
 ## References
 

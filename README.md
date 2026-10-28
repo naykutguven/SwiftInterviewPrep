@@ -10,7 +10,7 @@ By no means is this an always-correct, always-complete document set. I try to ke
 
 All 70 topic guides were revised on 2026-10-16 using the approved template and revised senior/staff rubric. The [guide revision validation](<./Guide Revision Validation.md>) records settings, compiler/runtime evidence, and remaining limits.
 
-The teaching requirements were strengthened on 2026-10-28 after a review found that the revised guides often stated rules without enough explanation or examples. D1 is the reference chapter for this standard. Guides A1–A16, B1–B14, C1–C12, D1–D14, and E1–E8 now follow it. The six F guides retain the earlier structure and still need review against the new requirements. The validation record separates these October 28 teaching revisions from the October 16 checks.
+The teaching requirements were strengthened on 2026-10-28 after a review found that the revised guides often stated rules without enough explanation or examples. D1 is the reference chapter for this standard. All 70 guides now follow it: A1–A16, B1–B14, C1–C12, D1–D14, E1–E8, and F1–F6. The validation record separates these October 28 teaching revisions from the October 16 checks.
 
 Unless an example explicitly compares other configurations, the shared baseline is:
 
@@ -23,7 +23,7 @@ Unless an example explicitly compares other configurations, the shared baseline 
 
 In Swift 6 mode, the additional opt-ins are `NonisolatedNonsendingByDefault` and `InferIsolatedConformances`. See the rubric's [shared example baseline](<./Swift Senior & Staff Rubric and Prioritized Study Checklist.md#shared-example-baseline>) for equivalent flags. Approachable Concurrency and default actor isolation are separate settings; imported modules retain their own isolation contracts. Read each example's setup for dependencies, availability, and overrides.
 
-iOS/macOS remain central; other platforms receive brief architectural coverage. Validation used temporary fixtures, with runtime checks on arm64 macOS 27 and selected Apple deployment-target compilation. The current validation record identifies unchecked configurations and unresolved SwiftSyntax package integration. This repository remains Markdown-only.
+iOS/macOS remain central; other platforms receive brief architectural coverage. Validation used temporary fixtures, with runtime checks on arm64 macOS 27 and selected Apple deployment-target compilation. The current validation record distinguishes compiled examples, package integration, runtime evidence, and remaining limits. The pinned SwiftSyntax package now builds and its macro tests/client pass; the earlier blocked attempt remains historical evidence. This repository remains Markdown-only.
 
 For Swift 6.4 feature orientation, use the [migration guide](<./Swift 6.4 What's New and Migration Guide.md>). The [update roadmap](<./Swift 6.4 Update Roadmap.md>) and [September validation record](<./Swift 6.4 Validation Record.md>) retain the earlier review's scope and settings; those results do not establish behavior under the revised baseline.
 
@@ -61,7 +61,7 @@ Think of this repo as a study map, not a sacred text.
 
 ## What each guide includes 🔍
 
-The [answer template](<./Swift Section Answer Template Revised.md>) now requires the following teaching structure. A1–A16, B1–B14, C1–C12, D1–D14, and E1–E8 implement it; F is awaiting revision:
+The [answer template](<./Swift Section Answer Template Revised.md>) now requires the following teaching structure. All 70 topic guides implement it:
 
 - Learning goals covering the topic's essential rubric expectations, prerequisites, and explicit example settings.
 - A mental model grounded in a concrete problem, followed by essential mechanics taught through small code examples.
